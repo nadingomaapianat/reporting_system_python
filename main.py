@@ -99,9 +99,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "https://reporting-system-backend.pianat.ai",
         "http://127.0.0.1:3002",
-        "http://localhost:3002"
+        "https://reporting-system-backend.pianat.ai"
     ],
     allow_origin_regex=r"^http://(localhost|127\\.0\\.0\\.1):(3000|3002)$",
     allow_credentials=True,
@@ -2097,7 +2096,7 @@ async def export_controls_pdf(
             if endDate:
                 params["endDate"] = endDate
                 
-            response = await client.get("http://localhost:3002/api/grc/controls", params=params)
+            response = await client.get("https://reporting-system-backend.pianat.ai/api/grc/controls", params=params)
             controls_data = response.json()
         
         # Scope controls_data if onlyCard and cardType provided
@@ -2137,7 +2136,7 @@ async def export_controls_pdf(
                     params_cards['endDate'] = endDate
                 params_cards['page'] = 1
                 params_cards['limit'] = 20000
-                resp = await client.get(f"http://localhost:3002/api/grc/controls/{path}", params=params_cards)
+                resp = await client.get(f"https://reporting-system-backend.pianat.ai/api/grc/controls/{path}", params=params_cards)
                 data = resp.json()
                 scope_card_rows = data.get('data', [])
             section_flags['cardTitle'] = cardType.replace('Controls',' Controls').replace('pending','Pending ').title()
@@ -2398,10 +2397,10 @@ async def export_controls_excel(
                     params["endDate"] = endDate
                 
                 with open(debug_file, 'a') as f:
-                    f.write(f"Excel Debug - Making request to http://localhost:3002/api/grc/controls with params: {params}\n")
+                    f.write(f"Excel Debug - Making request to https://reporting-system-backend.pianat.ai/api/grc/controls with params: {params}\n")
                     f.flush()
                 
-                response = await client.get("http://localhost:3002/api/grc/controls", params=params)
+                response = await client.get("https://reporting-system-backend.pianat.ai/api/grc/controls", params=params)
                 
                 with open(debug_file, 'a') as f:
                     f.write(f"Excel Debug - Got response with status: {response.status_code}\n")
@@ -2500,7 +2499,7 @@ async def export_controls_excel(
             with open(debug_file, 'a') as f:
                 f.write(f"Excel Debug - Fetching card data for cardType: {cardType} -> {backend_card_type}\n")
             try:
-                card_api_url = f"http://localhost:3002/api/grc/controls/{backend_card_type}"
+                card_api_url = f"https://reporting-system-backend.pianat.ai/api/grc/controls/{backend_card_type}"
                 with open(debug_file, 'a') as f:
                     f.write(f"Excel Debug - Card API URL: {card_api_url}\n")
                 
