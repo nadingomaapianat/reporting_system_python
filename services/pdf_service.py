@@ -20,7 +20,6 @@ from shared_pdf_utils import (
     add_standard_title_and_subtitle,
     create_standard_table_style,
     shape_text_for_arabic,
-    add_standard_footer,
     generate_standard_pdf_report
 )
 
