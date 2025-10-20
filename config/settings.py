@@ -21,7 +21,7 @@ DATABASE_CONFIG = {
 API_CONFIG = {
     'node_api_url': 'http://localhost:3002',
     'python_api_url': 'http://localhost:8000',
-    'timeout': 30
+    'timeout': 60
 }
 
 # Export Configuration

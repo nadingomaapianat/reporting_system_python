@@ -2,6 +2,7 @@
 API service for communicating with Node.js backend
 """
 import aiohttp
+import asyncio
 import json
 from typing import Dict, Any, Optional, List
 from config import API_CONFIG
@@ -34,7 +35,7 @@ class APIService:
             return {}
     
     async def get_controls_data(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
-        """Get controls data from Node.js API"""
+        """Get controls data from Node.js API with fallback"""
         try:
             url = f"{self.node_api_url}/api/grc/controls"
             params = {}
@@ -43,14 +44,24 @@ class APIService:
             if end_date:
                 params['endDate'] = end_date
             
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+            # Increase timeout for complex queries
+            timeout = aiohttp.ClientTimeout(total=self.timeout, connect=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
                         return data
                     else:
+                        print(f"DEBUG: Node API returned status {response.status}")
                         return {}
+        except asyncio.TimeoutError:
+            print("DEBUG: Node API timeout - returning empty data")
+            return {}
+        except aiohttp.ClientError as e:
+            print(f"DEBUG: Node API client error: {e}")
+            return {}
         except Exception as e:
+            print(f"DEBUG: Node API error: {e}")
             return {}
     
     async def get_risks_card_data(self, card_type: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -89,7 +100,11 @@ class APIService:
                 'pendingPreparer': 'pending-preparer',
                 'pendingChecker': 'pending-checker',
                 'pendingReviewer': 'pending-reviewer',
-                'pendingAcceptance': 'pending-acceptance'
+                'pendingAcceptance': 'pending-acceptance',
+                'testsPendingPreparer': 'tests/pending-preparer',
+                'testsPendingChecker': 'tests/pending-checker',
+                'testsPendingReviewer': 'tests/pending-reviewer',
+                'testsPendingAcceptance': 'tests/pending-acceptance'
             }
             
             endpoint = endpoint_map.get(card_type, card_type)

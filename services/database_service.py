@@ -13,6 +13,12 @@ class DatabaseService:
     def __init__(self):
         self.connection_string = get_database_connection_string()
     
+    def get_fully_qualified_table_name(self, table_name: str) -> str:
+        """Get fully qualified table name using configuration"""
+        from config import DATABASE_CONFIG
+        database_name = DATABASE_CONFIG.get('database', 'NEWDCC-V4-UAT')
+        return f"[{database_name}].dbo.[{table_name}]"
+    
     async def execute_query(self, query: str, params: Optional[List] = None) -> List[Dict[str, Any]]:
         """Execute a SQL query and return results"""
         try:
@@ -98,7 +104,7 @@ class DatabaseService:
         LEFT JOIN dbo.[Departments] d ON c.department_id = d.id
         WHERE c.isDeleted = 0 
         {date_filter}
-        ORDER BY c.created_at DESC
+        ORDER BY c.createdAt DESC
         """
         
         results = await self.execute_query(query)
@@ -119,13 +125,13 @@ class DatabaseService:
         SELECT 
             c.code as control_code,
             c.name as control_name
-        FROM GRCDB2.dbo.Controls c
+        FROM {self.get_fully_qualified_table_name('Controls')} c
         WHERE c.isDeleted = 0 {date_filter}
           AND NOT EXISTS (
-            SELECT 1 FROM GRCDB2.dbo.ControlCosos ccx 
+            SELECT 1 FROM {self.get_fully_qualified_table_name('ControlCosos')} ccx 
             WHERE ccx.control_id = c.id AND ccx.deletedAt IS NULL
           )
-        ORDER BY c.name
+        ORDER BY c.createdAt DESC, c.name
         """
         return await self.execute_query(query)
 
@@ -157,7 +163,7 @@ class DatabaseService:
         FROM dbo.[Controls] c
         WHERE c.isDeleted = 0 {date_filter}
           AND (c.{field} IS NULL OR c.{field} <> 'approved')
-        ORDER BY c.name
+        ORDER BY c.createdAt DESC, c.name
         """
         return await self.execute_query(query)
     
@@ -208,7 +214,58 @@ class DatabaseService:
         """
         
         return await self.execute_query(query)
-    
+
+    async def get_unmapped_icofr_controls(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get unmapped ICOFR controls data for export"""
+        date_filter = ""
+        if start_date and end_date:
+            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND c.createdAt >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND c.createdAt <= '{end_date}'"
+        
+        query = f"""
+        SELECT c.id, c.name as control_name, c.code as control_code, a.name as assertion_name, a.account_type as assertion_type,
+          'Not Mapped' as coso_component,
+          'Not Mapped' as coso_point
+        FROM {self.get_fully_qualified_table_name('Controls')} c 
+        JOIN {self.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id 
+        WHERE c.isDeleted = 0 AND c.icof_id IS NOT NULL 
+        AND NOT EXISTS (SELECT 1 FROM {self.get_fully_qualified_table_name('ControlCosos')} ccx WHERE ccx.control_id = c.id AND ccx.deletedAt IS NULL) 
+        AND ((a.C = 1 OR a.E = 1 OR a.A = 1 OR a.V = 1 OR a.O = 1 OR a.P = 1) 
+             AND a.account_type IN ('Balance Sheet', 'Income Statement')) 
+        AND a.isDeleted = 0 {date_filter}
+        ORDER BY c.createdAt DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_unmapped_non_icofr_controls(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get unmapped Non-ICOFR controls data for export"""
+        date_filter = ""
+        if start_date and end_date:
+            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND c.createdAt >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND c.createdAt <= '{end_date}'"
+        
+        query = f"""
+        SELECT c.id, c.name as control_name, c.code as control_code, a.name as assertion_name, a.account_type as assertion_type,
+          'Not Mapped' as coso_component,
+          'Not Mapped' as coso_point
+        FROM {self.get_fully_qualified_table_name('Controls')} c 
+        LEFT JOIN {self.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id 
+        WHERE c.isDeleted = 0 
+        AND NOT EXISTS (SELECT 1 FROM {self.get_fully_qualified_table_name('ControlCosos')} ccx WHERE ccx.control_id = c.id AND ccx.deletedAt IS NULL) 
+        AND (c.icof_id IS NULL OR ((a.C IS NULL OR a.C = 0) AND (a.E IS NULL OR a.E = 0) AND (a.A IS NULL OR a.A = 0) 
+             AND (a.V IS NULL OR a.V = 0) AND (a.O IS NULL OR a.O = 0) AND (a.P IS NULL OR a.P = 0) 
+             OR a.account_type NOT IN ('Balance Sheet', 'Income Statement'))) 
+        AND (a.isDeleted = 0 OR a.id IS NULL) {date_filter}
+        ORDER BY c.createdAt DESC
+        """
+        return await self.execute_query(query)
+
     async def get_controls_by_department(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get controls grouped by department"""
         date_filter = ""

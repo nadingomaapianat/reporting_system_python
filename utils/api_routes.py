@@ -1,6 +1,7 @@
 """
 API routes for the reporting system
 """
+import asyncio
 import json
 from datetime import datetime
 import os
@@ -401,16 +402,20 @@ async def export_risks_excel(
 
 @router.get("/api/grc/controls/export-pdf")
 async def export_controls_pdf(
+    request: Request,
     startDate: str = Query(None),
     endDate: str = Query(None),
     headerConfig: str = Query(None),
     cardType: str = Query(None),
-    onlyCard: bool = Query(False),
-    onlyChart: bool = Query(False),
+    onlyCard: str = Query("False"),
+    onlyChart: str = Query("False"),
     chartType: str = Query(None),
-    onlyOverallTable: bool = Query(False)
+    onlyOverallTable: str = Query("False")
 ):
     """Export controls report in PDF format"""
+    print("=== PDF EXPORT CALLED ===")
+    print(f"onlyChart={onlyChart}, chartType={chartType}")
+    print("=== TESTING CHART EXPORT ===")
     try:
         # Parse header config
         header_config = {}
@@ -424,20 +429,93 @@ async def export_controls_pdf(
         default_config = get_default_header_config("controls")
         header_config = {**default_config, **header_config}
         
+        # Get table type from query params
+        table_type = request.query_params.get('tableType', 'overallStatuses')
+        
+        # Convert string parameters to boolean
+        onlyCard = onlyCard.lower() in ['true', '1', 'yes']
+        onlyChart = onlyChart.lower() in ['true', '1', 'yes']
+        onlyOverallTable = onlyOverallTable.lower() in ['true', '1', 'yes']
+        
         # Normalize table/chart params → card params to support onlyChart/onlyOverallTable
-        if onlyChart and chartType in ['department', 'risk']:
+        if onlyChart and chartType in ['department', 'risk', 'quarterlyControlCreationTrend', 'controlsByType', 'antiFraudDistribution', 'controlsPerLevel', 'controlExecutionFrequency', 'numberOfControlsByIcofrStatus', 'numberOfFocusPointsPerPrinciple', 'numberOfFocusPointsPerComponent', 'numberOfControlsPerComponent', 'actionPlansStatus']:
             cardType = chartType
             onlyCard = True
-        if onlyOverallTable:
+            # Keep onlyChart as True for PDF service
+            onlyChart = True
+            print(f"DEBUG: Chart export - onlyChart={onlyChart}, chartType={chartType}, cardType={cardType}, onlyCard={onlyCard}")
+        elif onlyOverallTable:
+            # Check if specific table type is requested
+            if table_type == 'controlsTestingApprovalCycle':
+                cardType = 'controlsTestingApprovalCycle'
+            elif table_type == 'keyNonKeyControlsPerDepartment':
+                cardType = 'keyNonKeyControlsPerDepartment'
+            elif table_type == 'keyNonKeyControlsPerProcess':
+                cardType = 'keyNonKeyControlsPerProcess'
+            elif table_type == 'keyNonKeyControlsPerBusinessUnit':
+                cardType = 'keyNonKeyControlsPerBusinessUnit'
+            elif table_type == 'controlCountByAssertionName':
+                cardType = 'controlCountByAssertionName'
+            elif table_type == 'icofrControlCoverageByCoso':
+                cardType = 'icofrControlCoverageByCoso'
+            elif table_type == 'actionPlanForAdequacy':
+                cardType = 'actionPlanForAdequacy'
+            elif table_type == 'actionPlanForEffectiveness':
+                cardType = 'actionPlanForEffectiveness'
+            elif table_type == 'controlSubmissionStatusByQuarterFunction':
+                cardType = 'controlSubmissionStatusByQuarterFunction'
+            elif table_type == 'functionsWithFullyTestedControlTests':
+                cardType = 'functionsWithFullyTestedControlTests'
+            elif table_type == 'controlsNotMappedToAssertions':
+                cardType = 'controlsNotMappedToAssertions'
+            elif table_type == 'controlsNotMappedToPrinciples':
+                cardType = 'controlsNotMappedToPrinciples'
+            else:
+                cardType = 'overallStatuses'
+                onlyCard = True
+        elif table_type == 'controlCountByAssertionName':
+            cardType = 'controlCountByAssertionName'
+        elif table_type == 'icofrControlCoverageByCoso':
+            cardType = 'icofrControlCoverageByCoso'
+        elif table_type == 'actionPlanForAdequacy':
+            cardType = 'actionPlanForAdequacy'
+        elif table_type == 'actionPlanForEffectiveness':
+            cardType = 'actionPlanForEffectiveness'
+        elif table_type == 'functionsWithFullyTestedControlTests':
+            cardType = 'functionsWithFullyTestedControlTests'
+        elif table_type == 'functionsWithFullySubmittedControlTests':
+            cardType = 'functionsWithFullySubmittedControlTests'
+        else:
             cardType = 'overallStatuses'
             onlyCard = True
 
-        # Get controls data
-        controls_data = await api_service.get_controls_data(startDate, endDate)
+        # Get controls data with timeout handling
+        try:
+            print("DEBUG: About to call get_controls_data")
+            controls_data = await asyncio.wait_for(
+                api_service.get_controls_data(startDate, endDate), 
+                timeout=45.0
+            )
+            print(f"DEBUG: Controls data keys from API: {list(controls_data.keys())}")
+            print(f"DEBUG: Controls data type: {type(controls_data)}")
+            # Check if any values are Response objects
+            for key, value in controls_data.items():
+                if hasattr(value, 'status'):
+                    print(f"DEBUG: WARNING - {key} is a Response object: {type(value)}")
+                elif isinstance(value, list) and len(value) > 0:
+                    print(f"DEBUG: {key} is a list with {len(value)} items")
+                    if hasattr(value[0], 'status'):
+                        print(f"DEBUG: WARNING - {key}[0] is a Response object: {type(value[0])}")
+        except asyncio.TimeoutError:
+            print("DEBUG: Controls data API timeout - using empty data")
+            controls_data = {}
+        except Exception as e:
+            print(f"DEBUG: Controls data API error: {e}")
+            controls_data = {}
         
         # Ensure specific data exists for card-only routes (and add SQL fallbacks)
         if onlyCard and cardType:
-            if cardType in ['totalControls', 'unmappedControls', 'pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance']:
+            if cardType in ['totalControls', 'unmappedControls', 'pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance', 'testsPendingPreparer', 'testsPendingChecker', 'testsPendingReviewer', 'testsPendingAcceptance', 'unmappedIcofrControls', 'unmappedNonIcofrControls']:
                 card_data = await api_service.get_controls_card_data(cardType, startDate, endDate)
                 if not card_data:
                     if cardType == 'unmappedControls':
@@ -450,12 +528,12 @@ async def export_controls_pdf(
                         card_data = await db_service.get_pending_controls('reviewer', startDate, endDate)
                     elif cardType == 'pendingAcceptance':
                         card_data = await db_service.get_pending_controls('acceptance', startDate, endDate)
-                    elif cardType == 'totalControls':
-                        all_controls = await db_service.execute_query("""
-                            SELECT c.code as control_code, c.name as control_name
-                            FROM dbo.[Controls] c WHERE c.isDeleted = 0 ORDER BY c.name
-                        """)
-                        card_data = all_controls
+                    elif cardType == 'unmappedIcofrControls':
+                        card_data = await db_service.get_unmapped_icofr_controls(startDate, endDate)
+                    elif cardType == 'unmappedNonIcofrControls':
+                        card_data = await db_service.get_unmapped_non_icofr_controls(startDate, endDate)
+                    else:
+                        card_data = []
                 controls_data[f'{cardType}'] = card_data
             elif cardType == 'overallStatuses':
                 # Prefer API aggregate if present
@@ -472,22 +550,40 @@ async def export_controls_pdf(
                             c.acceptanceStatus
                         FROM dbo.[Controls] c
                         WHERE c.isDeleted = 0
-                        ORDER BY c.name
+                        ORDER BY c.createdAt DESC
                         """
                     )
                     controls_data['statusOverview'] = rows
 
     # Generate PDF
-        pdf_content = await pdf_service.generate_controls_pdf(
-            controls_data, startDate, endDate, header_config, cardType, onlyCard
-        )
+        try:
+            print(f"DEBUG: About to call generate_controls_pdf with cardType={cardType}, onlyOverallTable={onlyOverallTable}")
+            pdf_content = await pdf_service.generate_controls_pdf(
+                controls_data, startDate, endDate, header_config, cardType, onlyCard, onlyOverallTable, onlyChart
+            )
+            print(f"DEBUG: PDF generated successfully, type={type(pdf_content)}")
+        except Exception as pdf_error:
+            print(f"DEBUG: Error in generate_controls_pdf: {pdf_error}")
+            import traceback
+            traceback.print_exc()
+            raise
         
         # Generate filename
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        print(f"DEBUG: Filename generation - onlyCard={onlyCard}, onlyChart={onlyChart}, onlyOverallTable={onlyOverallTable}")
+        print(f"DEBUG: Filename generation - cardType={cardType}, chartType={chartType}, table_type={table_type}")
         if onlyCard and cardType:
             filename = f"controls_{cardType}_{timestamp}.pdf"
+            print(f"DEBUG: Using card filename: {filename}")
+        elif onlyOverallTable and table_type:
+            filename = f"controls_{table_type}_{timestamp}.pdf"
+            print(f"DEBUG: Using table filename: {filename}")
+        elif onlyChart and chartType:
+            filename = f"controls_{chartType}_{timestamp}.pdf"
+            print(f"DEBUG: Using chart filename: {filename}")
         else:
             filename = f"controls_report_{timestamp}.pdf"
+            print(f"DEBUG: Using default filename: {filename}")
         
         return Response(
             content=pdf_content,
@@ -500,14 +596,15 @@ async def export_controls_pdf(
 
 @router.get("/api/grc/controls/export-excel")
 async def export_controls_excel(
+    request: Request,
     startDate: str = Query(None),
     endDate: str = Query(None),
     headerConfig: str = Query(None),
     cardType: str = Query(None),
-    onlyCard: bool = Query(False),
-    onlyChart: bool = Query(False),
+    onlyCard: str = Query("False"),
+    onlyChart: str = Query("False"),
     chartType: str = Query(None),
-    onlyOverallTable: bool = Query(False)
+    onlyOverallTable: str = Query("False")
 ):
     """Export controls report in Excel format"""
     try:
@@ -523,21 +620,80 @@ async def export_controls_excel(
         default_config = get_default_header_config("controls")
         header_config = {**default_config, **header_config}
         
+        # Get table type from query params
+        table_type = request.query_params.get('tableType', 'overallStatuses')
+        
+        # Convert string parameters to boolean
+        onlyCard = onlyCard.lower() in ['true', '1', 'yes']
+        onlyChart = onlyChart.lower() in ['true', '1', 'yes']
+        onlyOverallTable = onlyOverallTable.lower() in ['true', '1', 'yes']
+        
         # Normalize table/chart params → card params for backend handling
         # This lets URLs with onlyChart=true&chartType=... or onlyOverallTable work
-        if onlyChart and chartType in ['department', 'risk']:
+        if onlyChart and chartType in ['department', 'risk', 'quarterlyControlCreationTrend', 'controlsByType', 'antiFraudDistribution', 'controlsPerLevel', 'controlExecutionFrequency', 'numberOfControlsByIcofrStatus', 'numberOfFocusPointsPerPrinciple', 'numberOfFocusPointsPerComponent', 'numberOfControlsPerComponent', 'actionPlansStatus']:
             cardType = chartType
             onlyCard = True
-        if onlyOverallTable:
+        elif onlyOverallTable:
+            # Check if specific table type is requested
+            if table_type == 'controlsTestingApprovalCycle':
+                cardType = 'controlsTestingApprovalCycle'
+            elif table_type == 'keyNonKeyControlsPerDepartment':
+                cardType = 'keyNonKeyControlsPerDepartment'
+            elif table_type == 'keyNonKeyControlsPerProcess':
+                cardType = 'keyNonKeyControlsPerProcess'
+            elif table_type == 'keyNonKeyControlsPerBusinessUnit':
+                cardType = 'keyNonKeyControlsPerBusinessUnit'
+            elif table_type == 'controlCountByAssertionName':
+                cardType = 'controlCountByAssertionName'
+            elif table_type == 'icofrControlCoverageByCoso':
+                cardType = 'icofrControlCoverageByCoso'
+            elif table_type == 'actionPlanForAdequacy':
+                cardType = 'actionPlanForAdequacy'
+            elif table_type == 'actionPlanForEffectiveness':
+                cardType = 'actionPlanForEffectiveness'
+            elif table_type == 'controlSubmissionStatusByQuarterFunction':
+                cardType = 'controlSubmissionStatusByQuarterFunction'
+            elif table_type == 'functionsWithFullyTestedControlTests':
+                cardType = 'functionsWithFullyTestedControlTests'
+            elif table_type == 'controlsNotMappedToAssertions':
+                cardType = 'controlsNotMappedToAssertions'
+            elif table_type == 'controlsNotMappedToPrinciples':
+                cardType = 'controlsNotMappedToPrinciples'
+            else:
+                cardType = 'overallStatuses'
+                onlyCard = True
+        elif table_type == 'controlCountByAssertionName':
+            cardType = 'controlCountByAssertionName'
+        elif table_type == 'icofrControlCoverageByCoso':
+            cardType = 'icofrControlCoverageByCoso'
+        elif table_type == 'actionPlanForAdequacy':
+            cardType = 'actionPlanForAdequacy'
+        elif table_type == 'actionPlanForEffectiveness':
+            cardType = 'actionPlanForEffectiveness'
+        elif table_type == 'functionsWithFullyTestedControlTests':
+            cardType = 'functionsWithFullyTestedControlTests'
+        elif table_type == 'functionsWithFullySubmittedControlTests':
+            cardType = 'functionsWithFullySubmittedControlTests'
+        else:
             cardType = 'overallStatuses'
             onlyCard = True
 
-        # Get controls data
-        controls_data = await api_service.get_controls_data(startDate, endDate)
+        # Get controls data with timeout handling
+        try:
+            controls_data = await asyncio.wait_for(
+                api_service.get_controls_data(startDate, endDate), 
+                timeout=45.0
+            )
+        except asyncio.TimeoutError:
+            print("DEBUG: Controls data API timeout - using empty data")
+            controls_data = {}
+        except Exception as e:
+            print(f"DEBUG: Controls data API error: {e}")
+            controls_data = {}
         
         # For card-specific exports, fetch specific card data (large page size)
         if onlyCard and cardType:
-            if cardType in ['totalControls', 'unmappedControls', 'pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance']:
+            if cardType in ['totalControls', 'unmappedControls', 'pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance', 'testsPendingPreparer', 'testsPendingChecker', 'testsPendingReviewer', 'testsPendingAcceptance', 'unmappedIcofrControls', 'unmappedNonIcofrControls']:
                 # Try Node API first
                 card_data = await api_service.get_controls_card_data(cardType, startDate, endDate)
                 # If empty, fallback to direct SQL for reliability
@@ -552,13 +708,12 @@ async def export_controls_excel(
                         card_data = await db_service.get_pending_controls('reviewer', startDate, endDate)
                     elif cardType == 'pendingAcceptance':
                         card_data = await db_service.get_pending_controls('acceptance', startDate, endDate)
-                    elif cardType == 'totalControls':
-                        # For total, return all controls with code/name minimal set
-                        all_controls = await db_service.execute_query("""
-                            SELECT c.code as control_code, c.name as control_name
-                            FROM dbo.[Controls] c WHERE c.isDeleted = 0 ORDER BY c.name
-                        """)
-                        card_data = all_controls
+                    elif cardType == 'unmappedIcofrControls':
+                        card_data = await db_service.get_unmapped_icofr_controls(startDate, endDate)
+                    elif cardType == 'unmappedNonIcofrControls':
+                        card_data = await db_service.get_unmapped_non_icofr_controls(startDate, endDate)
+                    else:
+                        card_data = []
                 controls_data[f'{cardType}'] = card_data
             elif cardType == 'overallStatuses':
                 if not controls_data.get('statusOverview'):
@@ -573,13 +728,406 @@ async def export_controls_excel(
                             c.acceptanceStatus
                         FROM dbo.[Controls] c
                         WHERE c.isDeleted = 0
-                        ORDER BY c.name
+                        ORDER BY c.createdAt DESC
                         """
                     )
                     controls_data['statusOverview'] = rows
+            elif cardType == 'controlsTestingApprovalCycle':
+                if not controls_data.get('controlsTestingApprovalCycle'):
+                    print("DEBUG: Fetching controlsTestingApprovalCycle data from database")
+                    try:
+                        rows = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                c.name AS [Control Name],
+                                c.createdAt AS [Created At],
+                                c.id AS [Control ID],
+                                c.code AS [Code],
+                                t.preparerStatus AS [Preparer Status],
+                                t.checkerStatus AS [Checker Status],
+                                t.reviewerStatus AS [Reviewer Status],
+                                t.acceptanceStatus AS [Acceptance Status],
+                                f.name AS [Business Unit]
+                            FROM {db_service.get_fully_qualified_table_name('ControlDesignTests')} AS t
+                            INNER JOIN {db_service.get_fully_qualified_table_name('Controls')} AS c ON t.control_id = c.id
+                            INNER JOIN {db_service.get_fully_qualified_table_name('Functions')} AS f ON t.function_id = f.id
+                            WHERE c.isDeleted = 0 AND (t.deletedAt IS NULL) AND t.function_id IS NOT NULL
+                            ORDER BY c.createdAt DESC, c.name
+                            """
+                        )
+                        print(f"DEBUG: Fetched {len(rows)} rows for controlsTestingApprovalCycle")
+                        if rows:
+                            print(f"DEBUG: First row sample: {rows[0]}")
+                        else:
+                            print("DEBUG: No rows returned from query")
+                        controls_data['controlsTestingApprovalCycle'] = rows
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching controlsTestingApprovalCycle data: {e}")
+                        controls_data['controlsTestingApprovalCycle'] = []
+            elif cardType == 'quarterlyControlCreationTrend':
+                print(f"DEBUG: Processing quarterlyControlCreationTrend, current data: {controls_data.get('quarterlyControlCreationTrend', 'NOT_FOUND')}")
+                if not controls_data.get('quarterlyControlCreationTrend'):
+                    print("DEBUG: Fetching quarterlyControlCreationTrend data from database")
+                    try:
+                        rows = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                CONCAT('Q', DATEPART(QUARTER, c.createdAt), ' ', YEAR(c.createdAt)) AS name,
+                                COUNT(c.id) AS value
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            WHERE c.isDeleted = 0
+                            GROUP BY YEAR(c.createdAt), DATEPART(QUARTER, c.createdAt)
+                            ORDER BY YEAR(c.createdAt), DATEPART(QUARTER, c.createdAt)
+                            """
+                        )
+                        print(f"DEBUG: Fetched {len(rows)} rows for quarterlyControlCreationTrend")
+                        controls_data['quarterlyControlCreationTrend'] = rows
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching quarterlyControlCreationTrend data: {e}")
+                        controls_data['quarterlyControlCreationTrend'] = []
+            elif cardType == 'controlsByType':
+                print(f"DEBUG: Processing controlsByType, current data: {controls_data.get('controlsByType', 'NOT_FOUND')}")
+                if not controls_data.get('controlsByType'):
+                    print("DEBUG: Fetching controlsByType data from database")
+                    try:
+                        rows = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                CASE 
+                                    WHEN c.type IS NULL OR c.type = '' THEN 'Not Specified'
+                                    ELSE c.type
+                                END AS name,
+                                COUNT(c.id) AS value
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            WHERE c.isDeleted = 0
+                            GROUP BY c.type
+                            ORDER BY COUNT(c.id) DESC
+                            """
+                        )
+                        print(f"DEBUG: Fetched {len(rows)} rows for controlsByType")
+                        controls_data['controlsByType'] = rows
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching controlsByType data: {e}")
+                        controls_data['controlsByType'] = []
+            elif cardType == 'keyNonKeyControlsPerDepartment':
+                if not controls_data.get('keyNonKeyControlsPerDepartment'):
+                    print("DEBUG: Fetching keyNonKeyControlsPerDepartment data from database")
+                    try:
+                        rows = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                COALESCE(jt.name, 'Unassigned Department') AS [Department],
+                                SUM(CASE WHEN c.keyControl = 1 THEN 1 ELSE 0 END) AS [Key Controls],
+                                SUM(CASE WHEN c.keyControl = 0 THEN 1 ELSE 0 END) AS [Non-Key Controls],
+                                COUNT(c.id) AS [Total Controls]
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            LEFT JOIN {db_service.get_fully_qualified_table_name('JobTitles')} jt ON c.departmentId = jt.id
+                            WHERE c.isDeleted = 0
+                            GROUP BY COALESCE(jt.name, 'Unassigned Department'), c.departmentId
+                            ORDER BY COUNT(c.id) DESC, COALESCE(jt.name, 'Unassigned Department')
+                            """
+                        )
+                        print(f"DEBUG: Fetched {len(rows)} rows for keyNonKeyControlsPerDepartment")
+                        controls_data['keyNonKeyControlsPerDepartment'] = rows
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching keyNonKeyControlsPerDepartment data: {e}")
+                        controls_data['keyNonKeyControlsPerDepartment'] = []
+            elif cardType == 'keyNonKeyControlsPerProcess':
+                if not controls_data.get('keyNonKeyControlsPerProcess'):
+                    print("DEBUG: Fetching keyNonKeyControlsPerProcess data from database")
+                    try:
+                        rows = await db_service.execute_query(
+                            """
+                            SELECT 
+                                p.name AS [Process],
+                                SUM(CASE WHEN c.keyControl = 1 THEN 1 ELSE 0 END) AS [Key Controls],
+                                SUM(CASE WHEN c.keyControl = 0 THEN 1 ELSE 0 END) AS [Non-Key Controls],
+                                COUNT(c.id) AS [Total Controls]
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            LEFT JOIN {db_service.get_fully_qualified_table_name('ControlProcesses')} cp ON c.id = cp.control_id
+                            LEFT JOIN {db_service.get_fully_qualified_table_name('Processes')} p ON cp.process_id = p.id
+                            WHERE c.isDeleted = 0
+                            GROUP BY p.name
+                            ORDER BY COUNT(c.id) DESC, p.name
+                            """
+                        )
+                        print(f"DEBUG: Fetched {len(rows)} rows for keyNonKeyControlsPerProcess")
+                        controls_data['keyNonKeyControlsPerProcess'] = rows
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching keyNonKeyControlsPerProcess data: {e}")
+                        controls_data['keyNonKeyControlsPerProcess'] = []
+            elif cardType == 'keyNonKeyControlsPerBusinessUnit':
+                if not controls_data.get('keyNonKeyControlsPerBusinessUnit'):
+                    print("DEBUG: Fetching keyNonKeyControlsPerBusinessUnit data from database")
+                    try:
+                        rows = await db_service.execute_query(
+                            """
+                            SELECT 
+                                f.name AS [Business Unit],
+                                SUM(CASE WHEN c.keyControl = 1 THEN 1 ELSE 0 END) AS [Key Controls],
+                                SUM(CASE WHEN c.keyControl = 0 THEN 1 ELSE 0 END) AS [Non-Key Controls],
+                                COUNT(c.id) AS [Total Controls]
+                            FROM {db_service.get_fully_qualified_table_name('ControlFunctions')} cf
+                            JOIN {db_service.get_fully_qualified_table_name('Functions')} f ON cf.function_id = f.id
+                            JOIN {db_service.get_fully_qualified_table_name('Controls')} c ON cf.control_id = c.id
+                            WHERE c.isDeleted = 0
+                            GROUP BY f.name
+                            ORDER BY COUNT(c.id) DESC, f.name
+                            """
+                        )
+                        print(f"DEBUG: Fetched {len(rows)} rows for keyNonKeyControlsPerBusinessUnit")
+                        controls_data['keyNonKeyControlsPerBusinessUnit'] = rows
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching keyNonKeyControlsPerBusinessUnit data: {e}")
+                        controls_data['keyNonKeyControlsPerBusinessUnit'] = []
+            elif cardType == 'controlCountByAssertionName':
+                if not controls_data.get('controlCountByAssertionName'):
+                    print("DEBUG: Fetching controlCountByAssertionName data from database")
+                    try:
+                        rows = await db_service.execute_query(
+                            """
+                            SELECT 
+                                COALESCE(a.name, 'Unassigned Assertion') AS [Assertion Name],
+                                COALESCE(a.account_type, 'Not Specified') AS [Type],
+                                COUNT(c.id) AS [Control Count]
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            LEFT JOIN {db_service.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id AND a.isDeleted = 0
+                            WHERE c.isDeleted = 0
+                            GROUP BY a.name, a.account_type
+                            ORDER BY COUNT(c.id) DESC, a.name
+                            """
+                        )
+                        print(f"DEBUG: Fetched {len(rows)} rows for controlCountByAssertionName")
+                        controls_data['controlCountByAssertionName'] = rows
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching controlCountByAssertionName data: {e}")
+                        controls_data['controlCountByAssertionName'] = []
+            elif cardType == 'icofrControlCoverageByCoso':
+                if not controls_data.get('icofrControlCoverageByCoso'):
+                    print("DEBUG: Fetching icofrControlCoverageByCoso data from database")
+                    try:
+                        # Try simplified query first for better performance
+                        rows = await db_service.execute_query(
+                            """
+                            SELECT 
+                                'Control Environment' AS [Component], 
+                                'ICOFR' AS [IcofrStatus], 
+                                COUNT(*) AS [Control Count]
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            WHERE c.isDeleted = 0 AND c.icof_id IS NOT NULL
+                            UNION ALL
+                            SELECT 
+                                'Control Environment' AS [Component], 
+                                'Non-ICOFR' AS [IcofrStatus], 
+                                COUNT(*) AS [Control Count]
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            WHERE c.isDeleted = 0 AND c.icof_id IS NULL
+                            ORDER BY [Component], [IcofrStatus]
+                            """
+                        )
+                        if not rows:
+                            # Fallback to complex query if simplified doesn't work
+                            rows = await db_service.execute_query(
+                                """
+                                SELECT 
+                                    comp.name AS [Component], 
+                                    CASE 
+                                      WHEN c.icof_id IS NOT NULL 
+                                        AND (a.C = 1 OR a.E = 1 OR a.A = 1 OR a.V = 1 OR a.O = 1 OR a.P = 1) 
+                                        AND (a.account_type IN ('Balance Sheet', 'Income Statement')) 
+                                      THEN 'ICOFR' 
+                                      WHEN c.icof_id IS NULL 
+                                        OR ((a.C IS NULL OR a.C = 0) AND (a.E IS NULL OR a.E = 0) AND (a.A IS NULL OR a.A = 0) 
+                                            AND (a.V IS NULL OR a.V = 0) AND (a.O IS NULL OR a.O = 0) AND (a.P IS NULL OR a.P = 0)) 
+                                        OR a.account_type NOT IN ('Balance Sheet', 'Income Statement')
+                                      THEN 'Non-ICOFR'
+                                      ELSE 'Other'
+                                    END AS [IcofrStatus], 
+                                    COUNT(DISTINCT c.id) AS [Control Count]
+                                FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                                LEFT JOIN {db_service.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id AND (a.isDeleted = 0 OR a.id IS NULL)
+                                JOIN {db_service.get_fully_qualified_table_name('ControlCosos')} ccx ON c.id = ccx.control_id AND ccx.deletedAt IS NULL
+                                JOIN {db_service.get_fully_qualified_table_name('CosoPoints')} point ON ccx.coso_id = point.id AND point.deletedAt IS NULL
+                                JOIN {db_service.get_fully_qualified_table_name('CosoPrinciples')} prin ON point.principle_id = prin.id AND prin.deletedAt IS NULL
+                                JOIN {db_service.get_fully_qualified_table_name('CosoComponents')} comp ON prin.component_id = comp.id AND comp.deletedAt IS NULL
+                                WHERE c.isDeleted = 0
+                                GROUP BY comp.name, 
+                                  CASE 
+                                    WHEN c.icof_id IS NOT NULL 
+                                      AND (a.C = 1 OR a.E = 1 OR a.A = 1 OR a.V = 1 OR a.O = 1 OR a.P = 1) 
+                                      AND (a.account_type IN ('Balance Sheet', 'Income Statement')) 
+                                    THEN 'ICOFR' 
+                                    WHEN c.icof_id IS NULL 
+                                      OR ((a.C IS NULL OR a.C = 0) AND (a.E IS NULL OR a.E = 0) AND (a.A IS NULL OR a.A = 0) 
+                                          AND (a.V IS NULL OR a.V = 0) AND (a.O IS NULL OR a.O = 0) AND (a.P IS NULL OR a.P = 0)) 
+                                      OR a.account_type NOT IN ('Balance Sheet', 'Income Statement')
+                                    THEN 'Non-ICOFR'
+                                    ELSE 'Other'
+                                  END
+                                ORDER BY comp.name, [IcofrStatus]
+                                """
+                            )
+                        print(f"DEBUG: Fetched {len(rows)} rows for icofrControlCoverageByCoso")
+                        controls_data['icofrControlCoverageByCoso'] = rows
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching icofrControlCoverageByCoso data: {e}")
+                        controls_data['icofrControlCoverageByCoso'] = []
+            elif cardType == 'actionPlanForAdequacy':
+                if not controls_data.get('actionPlanForAdequacy'):
+                    print("DEBUG: Fetching actionPlanForAdequacy data from database")
+                    try:
+                        rows = await db_service.execute_query(
+                            """
+                            SELECT 
+                                COALESCE(c.name, 'N/A') AS [Control Name], 
+                                COALESCE(f.name, 'N/A') AS [Function Name], 
+                                ap.factor AS [Factor], 
+                                ap.riskType AS [Risk Treatment], 
+                                ap.control_procedure AS [Control Procedure], 
+                                ap.[type] AS [Control Procedure Type], 
+                                ap.responsible AS [Action Plan Owner], 
+                                ap.expected_cost AS [Expected Cost], 
+                                ap.business_unit AS [Business Unit Status], 
+                                ap.meeting_date AS [Meeting Date], 
+                                ap.implementation_date AS [Expected Implementation Date], 
+                                ap.not_attend AS [Did Not Attend]
+                            FROM {db_service.get_fully_qualified_table_name('Actionplans')} ap
+                            LEFT JOIN {db_service.get_fully_qualified_table_name('ControlDesignTests')} cdt ON ap.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL
+                            LEFT JOIN {db_service.get_fully_qualified_table_name('Controls')} c ON cdt.control_id = c.id AND c.isDeleted = 0
+                            LEFT JOIN {db_service.get_fully_qualified_table_name('Functions')} f ON cdt.function_id = f.id AND f.deletedAt IS NULL
+                            WHERE ap.[from] = 'adequacy' 
+                                AND ap.deletedAt IS NULL
+                            ORDER BY ap.createdAt DESC
+                            """
+                        )
+                        print(f"DEBUG: Fetched {len(rows)} rows for actionPlanForAdequacy")
+                        controls_data['actionPlanForAdequacy'] = rows
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching actionPlanForAdequacy data: {e}")
+                        controls_data['actionPlanForAdequacy'] = []
+            elif cardType == 'actionPlanForEffectiveness':
+                if not controls_data.get('actionPlanForEffectiveness'):
+                    print("DEBUG: Fetching actionPlanForEffectiveness data from Node.js API")
+                    try:
+                        # Use the Node.js API data directly since it's working
+                        node_data = await api_service.get_controls_data(startDate, endDate)
+                        if node_data.get('actionPlanForEffectiveness'):
+                            controls_data['actionPlanForEffectiveness'] = node_data['actionPlanForEffectiveness']
+                            print(f"DEBUG: Fetched {len(controls_data['actionPlanForEffectiveness'])} rows for actionPlanForEffectiveness from Node.js API")
+                        else:
+                            print("DEBUG: No actionPlanForEffectiveness data in Node.js API response")
+                            controls_data['actionPlanForEffectiveness'] = []
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching actionPlanForEffectiveness data from Node.js API: {e}")
+                        controls_data['actionPlanForEffectiveness'] = []
+            elif cardType == 'controlSubmissionStatusByQuarterFunction':
+                if not controls_data.get('controlSubmissionStatusByQuarterFunction'):
+                    print("DEBUG: Fetching controlSubmissionStatusByQuarterFunction data from database")
+                    try:
+                        rows = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                c.name AS [Control Name], 
+                                f.name AS [Function Name], 
+                                CASE WHEN cdt.quarter = 'quarterOne' THEN 1 
+                                     WHEN cdt.quarter = 'quarterTwo' THEN 2 
+                                     WHEN cdt.quarter = 'quarterThree' THEN 3 
+                                     WHEN cdt.quarter = 'quarterFour' THEN 4 
+                                     ELSE NULL END AS [Quarter], 
+                                cdt.year AS [Year], 
+                                -- Submitted? (Control-level full approval cycle)
+                                CASE WHEN ( c.preparerStatus = 'sent' AND c.acceptanceStatus = 'approved' ) 
+                                     THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS [Control Submitted?], 
+                                -- Approved? (ControlDesignTests-level full approval cycle)
+                                CASE WHEN ( cdt.preparerStatus = 'sent' AND cdt.acceptanceStatus = 'approved' ) 
+                                     THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS [Test Approved?] 
+                            FROM {db_service.get_fully_qualified_table_name('ControlDesignTests')} cdt 
+                            JOIN {db_service.get_fully_qualified_table_name('Controls')} c ON cdt.control_id = c.id 
+                            JOIN {db_service.get_fully_qualified_table_name('Functions')} f ON cdt.function_id = f.id 
+                            WHERE c.isDeleted = 0 AND cdt.deletedAt IS NULL
+                            ORDER BY c.createdAt DESC
+                            """
+                        )
+                        print(f"DEBUG: Fetched {len(rows)} rows for controlSubmissionStatusByQuarterFunction")
+                        controls_data['controlSubmissionStatusByQuarterFunction'] = rows
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching controlSubmissionStatusByQuarterFunction data: {e}")
+                        controls_data['controlSubmissionStatusByQuarterFunction'] = []
+            elif cardType == 'functionsWithFullyTestedControlTests':
+                if not controls_data.get('functionsWithFullyTestedControlTests'):
+                    print("DEBUG: Fetching functionsWithFullyTestedControlTests data from database")
+                    try:
+                        rows = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                f.name AS [Function Name],
+                                CASE WHEN cdt.quarter = 'quarterOne' THEN 1 
+                                     WHEN cdt.quarter = 'quarterTwo' THEN 2 
+                                     WHEN cdt.quarter = 'quarterThree' THEN 3 
+                                     WHEN cdt.quarter = 'quarterFour' THEN 4 
+                                     ELSE NULL END AS [Quarter],
+                                cdt.year AS [Year],
+                                COUNT(DISTINCT c.id) AS [Total Controls],
+                                COUNT(DISTINCT CASE WHEN (c.preparerStatus = 'sent' AND c.acceptanceStatus = 'approved') THEN c.id END) AS [Controls Submitted],
+                                COUNT(DISTINCT CASE WHEN (cdt.preparerStatus = 'sent' AND cdt.acceptanceStatus = 'approved') THEN c.id END) AS [Tests Approved]
+                            FROM {db_service.get_fully_qualified_table_name('Functions')} AS f 
+                            JOIN {db_service.get_fully_qualified_table_name('ControlFunctions')} AS cf ON f.id = cf.function_id 
+                            JOIN {db_service.get_fully_qualified_table_name('Controls')} AS c ON cf.control_id = c.id AND c.isDeleted = 0 
+                            LEFT JOIN {db_service.get_fully_qualified_table_name('ControlDesignTests')} AS cdt ON cdt.control_id = c.id AND cdt.deletedAt IS NULL 
+                            GROUP BY f.name, cdt.quarter, cdt.year
+                            ORDER BY f.name, cdt.year, cdt.quarter
+                            """
+                        )
+                        print(f"DEBUG: Fetched {len(rows)} rows for functionsWithFullyTestedControlTests")
+                        controls_data['functionsWithFullyTestedControlTests'] = rows
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching functionsWithFullyTestedControlTests data: {e}")
+                        controls_data['functionsWithFullyTestedControlTests'] = []
+            elif cardType == 'controlsNotMappedToAssertions':
+                if not controls_data.get('controlsNotMappedToAssertions'):
+                    print("DEBUG: Fetching controlsNotMappedToAssertions data from database")
+                    try:
+                        rows = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                c.name AS [Control Name], 
+                                c.departmentId AS [Department]
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            LEFT JOIN {db_service.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id AND a.isDeleted = 0
+                            WHERE a.id IS NULL AND c.isDeleted = 0 {date_filter}
+                            ORDER BY c.createdAt DESC
+                            """
+                        )
+                        print(f"DEBUG: Fetched {len(rows)} rows for controlsNotMappedToAssertions")
+                        controls_data['controlsNotMappedToAssertions'] = rows
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching controlsNotMappedToAssertions data: {e}")
+                        controls_data['controlsNotMappedToAssertions'] = []
+            elif cardType == 'controlsNotMappedToPrinciples':
+                if not controls_data.get('controlsNotMappedToPrinciples'):
+                    print("DEBUG: Fetching controlsNotMappedToPrinciples data from database")
+                    try:
+                        rows = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                c.name AS [Control Name], 
+                                c.departmentId AS [Department]
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            LEFT JOIN {db_service.get_fully_qualified_table_name('ControlCosos')} ccx ON ccx.control_id = c.id AND ccx.deletedAt IS NULL
+                            LEFT JOIN {db_service.get_fully_qualified_table_name('CosoPoints')} point ON point.id = ccx.coso_id
+                            LEFT JOIN {db_service.get_fully_qualified_table_name('CosoPrinciples')} prin ON prin.id = point.principle_id
+                            WHERE prin.id IS NULL AND c.isDeleted = 0 {date_filter}
+                            ORDER BY c.createdAt DESC
+                            """
+                        )
+                        print(f"DEBUG: Fetched {len(rows)} rows for controlsNotMappedToPrinciples")
+                        controls_data['controlsNotMappedToPrinciples'] = rows
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching controlsNotMappedToPrinciples data: {e}")
+                        controls_data['controlsNotMappedToPrinciples'] = []
         
         # Ensure chart data is present for chart-only exports
-        if onlyCard and cardType in ['department', 'risk']:
+        if onlyCard and cardType in ['department', 'risk', 'quarterlyControlCreationTrend', 'controlsByType', 'antiFraudDistribution', 'controlsPerLevel', 'controlExecutionFrequency']:
             # department chart expects departmentDistribution: [{name, value}]
             if cardType == 'department':
                 dist = controls_data.get('departmentDistribution', []) or []
@@ -600,16 +1148,214 @@ async def export_controls_excel(
                         { 'name': (r.get('risk_response_type') or r.get('name') or 'Unknown'), 'value': r.get('control_count', 0) }
                         for r in rows
                     ]
+            # antiFraudDistribution chart expects antiFraudDistribution: [{name, value}]
+            if cardType == 'antiFraudDistribution':
+                dist = controls_data.get('antiFraudDistribution', []) or []
+                if not dist:
+                    rows = await db_service.execute_query(
+                        """
+                        SELECT 
+                            CASE 
+                                WHEN c.AntiFraud = 1 THEN 'Anti-Fraud'
+                                WHEN c.AntiFraud = 0 THEN 'Non-Anti-Fraud'
+                                ELSE 'Unknown'
+                            END AS name,
+                            COUNT(c.id) AS value
+                        FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                        WHERE c.isDeleted = 0
+                        GROUP BY c.AntiFraud
+                        ORDER BY COUNT(c.id) DESC
+                        """
+                    )
+                    controls_data['antiFraudDistribution'] = [
+                        { 'name': (r.get('name') or 'Unknown'), 'value': r.get('value', 0) }
+                        for r in rows
+                    ]
+            # controlsPerLevel chart expects controlsPerLevel: [{name, value}]
+            if cardType == 'controlsPerLevel':
+                dist = controls_data.get('controlsPerLevel', []) or []
+                if not dist:
+                    rows = await db_service.execute_query(
+                        """
+                        SELECT 
+                            CASE 
+                                WHEN c.entityLevel IS NULL OR c.entityLevel = '' THEN 'Not Specified'
+                                ELSE c.entityLevel
+                            END AS name,
+                            COUNT(c.id) AS value
+                        FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                        WHERE c.isDeleted = 0
+                        GROUP BY c.entityLevel
+                        ORDER BY COUNT(c.id) DESC
+                        """
+                    )
+                    controls_data['controlsPerLevel'] = [
+                        { 'name': (r.get('name') or 'Unknown'), 'value': r.get('value', 0) }
+                        for r in rows
+                    ]
+            # controlExecutionFrequency chart expects controlExecutionFrequency: [{name, value}]
+            if cardType == 'controlExecutionFrequency':
+                dist = controls_data.get('controlExecutionFrequency', []) or []
+                if not dist:
+                    rows = await db_service.execute_query(
+                        """
+                        SELECT 
+                            CASE 
+                                WHEN c.frequency = 'Daily' THEN 'Daily'
+                                WHEN c.frequency = 'Event Base' THEN 'Event Base'
+                                WHEN c.frequency = 'Weekly' THEN 'Weekly'
+                                WHEN c.frequency = 'Monthly' THEN 'Monthly'
+                                WHEN c.frequency = 'Quarterly' THEN 'Quarterly'
+                                WHEN c.frequency = 'Semi Annually' THEN 'Semi Annually'
+                                WHEN c.frequency = 'Annually' THEN 'Annually'
+                                WHEN c.frequency IS NULL OR c.frequency = '' THEN 'Not Specified'
+                                ELSE c.frequency
+                            END AS name,
+                            COUNT(c.id) AS value
+                        FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                        WHERE c.isDeleted = 0
+                        GROUP BY c.frequency
+                        ORDER BY COUNT(c.id) DESC
+                        """
+                    )
+                    controls_data['controlExecutionFrequency'] = [
+                        { 'name': (r.get('name') or 'Unknown'), 'value': r.get('value', 0) }
+                        for r in rows
+                    ]
+            # numberOfControlsByIcofrStatus chart expects numberOfControlsByIcofrStatus: [{name, value}]
+            if cardType == 'numberOfControlsByIcofrStatus':
+                dist = controls_data.get('numberOfControlsByIcofrStatus', []) or []
+                if not dist:
+                    rows = await db_service.execute_query(
+                        """
+                        SELECT 
+                            CASE 
+                                WHEN a.id IS NULL THEN 'Non-ICOFR'
+                                WHEN (a.C = 1 OR a.E = 1 OR a.A = 1 OR a.V = 1 OR a.O = 1 OR a.P = 1) 
+                                     AND (a.account_type IN ('Balance Sheet', 'Income Statement')) 
+                                  THEN 'ICOFR' 
+                                ELSE 'Non-ICOFR' 
+                            END AS name,
+                            COUNT(c.id) AS value
+                        FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                        LEFT JOIN {db_service.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id AND a.isDeleted = 0
+                        WHERE c.isDeleted = 0
+                        GROUP BY 
+                            CASE 
+                                WHEN a.id IS NULL THEN 'Non-ICOFR'
+                                WHEN (a.C = 1 OR a.E = 1 OR a.A = 1 OR a.V = 1 OR a.O = 1 OR a.P = 1) 
+                                     AND (a.account_type IN ('Balance Sheet', 'Income Statement')) 
+                                  THEN 'ICOFR' 
+                                ELSE 'Non-ICOFR' 
+                            END
+                        ORDER BY COUNT(c.id) DESC
+                        """
+                    )
+                    controls_data['numberOfControlsByIcofrStatus'] = [
+                        { 'name': (r.get('name') or 'Unknown'), 'value': r.get('value', 0) }
+                        for r in rows
+                    ]
+            # numberOfFocusPointsPerPrinciple chart expects numberOfFocusPointsPerPrinciple: [{name, value}]
+            if cardType == 'numberOfFocusPointsPerPrinciple':
+                dist = controls_data.get('numberOfFocusPointsPerPrinciple', []) or []
+                if not dist:
+                    rows = await db_service.execute_query(
+                        f"""
+                        SELECT 
+                            prin.name AS name,
+                            COUNT(point.id) AS value
+                        FROM {db_service.get_fully_qualified_table_name('CosoPrinciples')} prin
+                        LEFT JOIN {db_service.get_fully_qualified_table_name('CosoPoints')} point ON prin.id = point.principle_id
+                        WHERE prin.deletedAt IS NULL
+                        GROUP BY prin.name
+                        ORDER BY COUNT(point.id) DESC, prin.name
+                        """
+                    )
+                    controls_data['numberOfFocusPointsPerPrinciple'] = [
+                        { 'name': (r.get('name') or 'Unknown'), 'value': r.get('value', 0) }
+                        for r in rows
+                    ]
+            # numberOfFocusPointsPerComponent chart expects numberOfFocusPointsPerComponent: [{name, value}]
+            if cardType == 'numberOfFocusPointsPerComponent':
+                dist = controls_data.get('numberOfFocusPointsPerComponent', []) or []
+                if not dist:
+                    rows = await db_service.execute_query(
+                        f"""
+                        SELECT 
+                            comp.name AS name,
+                            COUNT(point.id) AS value
+                        FROM {db_service.get_fully_qualified_table_name('CosoComponents')} comp
+                        JOIN {db_service.get_fully_qualified_table_name('CosoPrinciples')} prin ON prin.component_id = comp.id
+                        LEFT JOIN {db_service.get_fully_qualified_table_name('CosoPoints')} point ON point.principle_id = prin.id
+                        WHERE comp.deletedAt IS NULL AND prin.deletedAt IS NULL
+                        GROUP BY comp.name
+                        ORDER BY COUNT(point.id) DESC
+                        """
+                    )
+                    controls_data['numberOfFocusPointsPerComponent'] = [
+                        { 'name': (r.get('name') or 'Unknown'), 'value': r.get('value', 0) }
+                        for r in rows
+                    ]
+        
+        # Add ICOFR metrics if not present
+        if not controls_data.get('unmappedIcofrControls'):
+            try:
+                rows = await db_service.execute_query(
+                    """
+                    SELECT COUNT(*) AS total 
+                    FROM {db_service.get_fully_qualified_table_name('Controls')} c 
+                    JOIN {db_service.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id 
+                    WHERE c.isDeleted = 0 AND c.icof_id IS NOT NULL 
+                    AND NOT EXISTS (
+                        SELECT 1 FROM {db_service.get_fully_qualified_table_name('ControlCosos')} ccx 
+                        WHERE ccx.control_id = c.id AND ccx.deletedAt IS NULL
+                    ) 
+                    AND ((a.C = 1 OR a.E = 1 OR a.A = 1 OR a.V = 1 OR a.O = 1 OR a.P = 1) 
+                         AND a.account_type IN ('Balance Sheet', 'Income Statement')) 
+                    AND a.isDeleted = 0
+                    """
+                )
+                controls_data['unmappedIcofrControls'] = rows[0].get('total', 0) if rows else 0
+            except Exception as e:
+                print(f"DEBUG: Error fetching unmappedIcofrControls: {e}")
+                controls_data['unmappedIcofrControls'] = 0
+        
+        if not controls_data.get('unmappedNonIcofrControls'):
+            try:
+                rows = await db_service.execute_query(
+                    """
+                    SELECT COUNT(*) AS total 
+                    FROM {db_service.get_fully_qualified_table_name('Controls')} c 
+                    LEFT JOIN {db_service.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id 
+                    WHERE c.isDeleted = 0 
+                    AND NOT EXISTS (
+                        SELECT 1 FROM {db_service.get_fully_qualified_table_name('ControlCosos')} ccx 
+                        WHERE ccx.control_id = c.id AND ccx.deletedAt IS NULL
+                    ) 
+                    AND (c.icof_id IS NULL OR ((a.C IS NULL OR a.C = 0) AND (a.E IS NULL OR a.E = 0) AND (a.A IS NULL OR a.A = 0) 
+                         AND (a.V IS NULL OR a.V = 0) AND (a.O IS NULL OR a.O = 0) AND (a.P IS NULL OR a.P = 0) 
+                         OR a.account_type NOT IN ('Balance Sheet', 'Income Statement'))) 
+                    AND (a.isDeleted = 0 OR a.id IS NULL)
+                    """
+                )
+                controls_data['unmappedNonIcofrControls'] = rows[0].get('total', 0) if rows else 0
+            except Exception as e:
+                print(f"DEBUG: Error fetching unmappedNonIcofrControls: {e}")
+                controls_data['unmappedNonIcofrControls'] = 0
 
         # Generate Excel
         excel_content = await excel_service.generate_controls_excel(
-            controls_data, startDate, endDate, header_config, cardType, onlyCard
+            controls_data, startDate, endDate, header_config, cardType, onlyCard, onlyOverallTable, onlyChart
         )
         
         # Generate filename
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         if onlyCard and cardType:
             filename = f"controls_{cardType}_{timestamp}.xlsx"
+        elif onlyOverallTable and table_type:
+            filename = f"controls_{table_type}_{timestamp}.xlsx"
+        elif onlyChart and chartType:
+            filename = f"controls_{chartType}_{timestamp}.xlsx"
         else:
             filename = f"controls_report_{timestamp}.xlsx"
         
@@ -852,8 +1598,8 @@ async def log_report_export(request: Request):
         return {"success": False, "error": str(e)}
 
 @router.get("/api/exports/recent")
-async def list_recent_exports(limit: int = Query(50)):
-    """Return recent report exports (newest first)."""
+async def list_recent_exports(limit: int = Query(50), page: int = Query(1), search: str = Query("")):
+    """Return recent report exports (newest first) with simple pagination."""
     try:
         import pyodbc
         from config import get_database_connection_string
@@ -882,14 +1628,31 @@ async def list_recent_exports(limit: int = Query(50)):
             )
             conn.commit()
 
-            cursor.execute(
-                """
-                SELECT TOP (?) id, title, src, format, dashboard, created_at
+            # Build search condition
+            search_condition = ""
+            search_params = []
+            if search and search.strip():
+                search_condition = "WHERE title LIKE ?"
+                search_params.append(f"%{search.strip()}%")
+
+            # Total count with search
+            count_query = f"SELECT COUNT(*) FROM dbo.report_exports {search_condition}"
+            cursor.execute(count_query, search_params)
+            total_count = int(cursor.fetchone()[0])
+
+            # Pagination via OFFSET/FETCH
+            safe_limit = max(1, min(200, int(limit)))
+            safe_page = max(1, int(page))
+            offset = (safe_page - 1) * safe_limit
+            
+            select_query = f"""
+                SELECT id, title, src, format, dashboard, created_at
                 FROM dbo.report_exports
+                {search_condition}
                 ORDER BY created_at DESC, id DESC
-                """,
-                (limit,)
-            )
+                OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+            """
+            cursor.execute(select_query, search_params + [offset, safe_limit])
             rows = cursor.fetchall()
             exports = [
                 {
@@ -902,12 +1665,1571 @@ async def list_recent_exports(limit: int = Query(50)):
                 }
                 for r in rows
             ]
-            return {"success": True, "exports": exports}
+            return {
+                "success": True,
+                "exports": exports,
+                "pagination": {
+                    "page": safe_page,
+                    "limit": safe_limit,
+                    "total": total_count,
+                    "totalPages": (total_count + safe_limit - 1) // safe_limit,
+                    "hasNext": offset + safe_limit < total_count,
+                    "hasPrev": safe_page > 1
+                }
+            }
         finally:
             cursor.close()
             conn.close()
     except Exception as e:
-        return {"success": False, "error": str(e), "exports": []}
+        return {"success": False, "error": str(e), "exports": [], "pagination": {}}
+
+@router.delete("/api/exports/{export_id}")
+async def delete_export(export_id: int):
+    """Delete an export row and its file if present"""
+    try:
+        import pyodbc
+        from config import get_database_connection_string
+        connection_string = get_database_connection_string()
+        conn = pyodbc.connect(connection_string)
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT src FROM dbo.report_exports WHERE id = ?", export_id)
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Export not found")
+            src = row[0]
+
+            # Delete DB row
+            cursor.execute("DELETE FROM dbo.report_exports WHERE id = ?", export_id)
+            conn.commit()
+
+            # Delete file if exists
+            if src:
+                try:
+                    import os
+                    file_path = src if os.path.isabs(src) else os.path.join(os.getcwd(), src)
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                except Exception as fe:
+                    return {"success": True, "deleted": True, "fileDeleted": False, "warning": str(fe)}
+
+            return {"success": True, "deleted": True, "fileDeleted": True}
+        finally:
+            cursor.close()
+            conn.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@router.post("/api/reports/dynamic")
+async def generate_dynamic_report(request: Request):
+    """Generate dynamic report based on table selection, joins, columns, and conditions"""
+    try:
+        body = await request.json()
+        tables = body.get('tables', [])
+        joins = body.get('joins', [])
+        columns = body.get('columns', [])
+        where_conditions = body.get('whereConditions', [])
+        time_filter = body.get('timeFilter')
+        format_type = body.get('format', 'excel')
+        
+        if not tables or not columns:
+            raise HTTPException(status_code=400, detail="Tables and columns are required")
+        
+        # Build SQL query
+        sql_query = build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter)
+        
+        # Execute query and get data
+        import pyodbc
+        from config import get_database_connection_string
+        
+        connection_string = get_database_connection_string()
+        conn = pyodbc.connect(connection_string)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute(sql_query)
+            rows = cursor.fetchall()
+            
+            # Convert to list of dictionaries
+            data_rows = []
+            for row in rows:
+                data_rows.append([str(cell) if cell is not None else '' for cell in row])
+            
+            # Get header configuration from request body
+            header_config = body.get('headerConfig', {})
+            if header_config:
+                from export_utils import get_default_header_config
+                default_config = get_default_header_config("dynamic")
+                merged_config = {**default_config, **header_config}
+            else:
+                from export_utils import get_default_header_config
+                merged_config = get_default_header_config("dynamic")
+            
+            # Generate report based on format
+            if format_type == 'excel':
+                return generate_excel_report(columns, data_rows, merged_config)
+            elif format_type == 'word':
+                return generate_word_report(columns, data_rows, merged_config)
+            elif format_type == 'pdf':
+                return generate_pdf_report(columns, data_rows, merged_config)
+            else:
+                raise HTTPException(status_code=400, detail="Unsupported format")
+                
+        finally:
+            cursor.close()
+            conn.close()
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate dynamic report: {str(e)}")
+
+def build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter):
+    """Build SQL query from dynamic report configuration"""
+    # Start with SELECT clause
+    select_columns = ', '.join(columns) if columns else '*'
+    sql = f"SELECT {select_columns}"
+    
+    # Add FROM clause with first table
+    if not tables:
+        raise ValueError("At least one table is required")
+    
+    sql += f" FROM {tables[0]}"
+    
+    # Add JOINs
+    for join in joins:
+        if join.get('leftTable') and join.get('rightTable') and join.get('leftColumn') and join.get('rightColumn'):
+            join_type = join.get('type', 'INNER')
+            sql += f" {join_type} JOIN {join['rightTable']} ON {join['leftTable']}.{join['leftColumn']} = {join['rightTable']}.{join['rightColumn']}"
+    
+    # Add WHERE clause
+    where_clauses = []
+    
+    # Add time filter
+    if time_filter and time_filter.get('column') and time_filter.get('startDate') and time_filter.get('endDate'):
+        where_clauses.append(f"{time_filter['column']} BETWEEN '{time_filter['startDate']}' AND '{time_filter['endDate']}'")
+    
+    # Add custom WHERE conditions
+    for i, condition in enumerate(where_conditions):
+        if condition.get('column') and condition.get('value'):
+            operator = condition.get('operator', '=')
+            value = condition.get('value', '')
+            logical_op = condition.get('logicalOperator', 'AND') if i > 0 else ''
+            
+            if logical_op:
+                where_clauses.append(f" {logical_op} {condition['column']} {operator} '{value}'")
+            else:
+                where_clauses.append(f"{condition['column']} {operator} '{value}'")
+    
+    if where_clauses:
+        sql += " WHERE " + " ".join(where_clauses)
+    
+    return sql
+
+def generate_excel_report(columns, data_rows, header_config=None):
+    """Generate Excel report from dynamic data with full header configuration support"""
+    from io import BytesIO
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+    import os
+    import base64
+    
+    # Get default header config if none provided
+    if not header_config:
+        from export_utils import get_default_header_config
+        header_config = get_default_header_config("dynamic")
+    
+    wb = Workbook()
+    ws = wb.active
+    ws.title = header_config.get('title', 'Dynamic Report')
+    
+    # Extract ALL configuration values from header modal configuration
+    # Basic report settings
+    include_header = header_config.get("includeHeader", True)
+    title = header_config.get("title", "Dynamic Report")
+    subtitle = header_config.get("subtitle", "")
+    icon = header_config.get("icon", "chart-line")
+    
+    # Date and time settings
+    show_date = header_config.get("showDate", True)
+    footer_show_date = header_config.get("footerShowDate", True)
+    
+    # Bank information settings
+    show_bank_info = header_config.get("showBankInfo", True)
+    bank_info_location = header_config.get("bankInfoLocation", "top")  # top, bottom, none
+    bank_info_align = (
+        header_config.get("bankInfoAlign")
+        or header_config.get("logoPosition", "center")
+        or "center"
+    ).lower()  # left, center, right
+    bank_name = header_config.get("bankName", "")
+    bank_address = header_config.get("bankAddress", "")
+    bank_phone = header_config.get("bankPhone", "")
+    bank_website = header_config.get("bankWebsite", "")
+    
+    # Logo settings
+    show_logo = header_config.get("showLogo", True)
+    logo_base64 = header_config.get("logoBase64", "")
+    logo_position = header_config.get("logoPosition", "left")
+    logo_height = header_config.get("logoHeight", 36)
+    logo_file = header_config.get("logoFile", None)
+    
+    # Color and styling settings
+    font_color = header_config.get("fontColor", "#1F4E79")
+    table_header_bg_color = header_config.get("tableHeaderBgColor", "#1F4E79")
+    table_body_bg_color = header_config.get("tableBodyBgColor", "#FFFFFF")
+    background_color = header_config.get("backgroundColor", "#FFFFFF")
+    border_style = header_config.get("borderStyle", "solid")
+    border_color = header_config.get("borderColor", "#E5E7EB")
+    border_width = header_config.get("borderWidth", 1)
+    
+    # Font and size settings
+    font_size = header_config.get("fontSize", "medium")
+    padding = header_config.get("padding", 20)
+    margin = header_config.get("margin", 72)  # 1 inch = 72 points
+    
+    # Excel specific settings
+    excel_auto_fit_columns = header_config.get("excelAutoFitColumns", True)
+    excel_zebra_stripes = header_config.get("excelZebraStripes", True)
+    excel_fit_to_width = header_config.get("excelFitToWidth", True)
+    excel_freeze_top_row = header_config.get("excelFreezeTopRow", True)
+    
+    # Watermark settings
+    watermark_enabled = header_config.get("watermarkEnabled", False)
+    watermark_text = header_config.get("watermarkText", "CONFIDENTIAL")
+    watermark_opacity = header_config.get("watermarkOpacity", 10)
+    watermark_diagonal = header_config.get("watermarkDiagonal", True)
+    
+    # Footer settings
+    footer_show_confidentiality = header_config.get("footerShowConfidentiality", True)
+    footer_confidentiality_text = header_config.get("footerConfidentialityText", "Confidential Report - Internal Use Only")
+    footer_show_page_numbers = header_config.get("footerShowPageNumbers", True)
+    footer_align = header_config.get("footerAlign", "center")
+    
+    # Page settings
+    show_page_numbers = header_config.get("showPageNumbers", True)
+    location = header_config.get("location", "top")
+    
+    # Convert hex colors to RGB for openpyxl
+    def hex_to_rgb(hex_color):
+        if hex_color.startswith('#'):
+            hex_color = hex_color[1:]
+        return hex_color
+    
+    font_color_rgb = hex_to_rgb(font_color)
+    header_bg_rgb = hex_to_rgb(table_header_bg_color)
+    body_bg_rgb = hex_to_rgb(table_body_bg_color)
+    background_rgb = hex_to_rgb(background_color)
+    border_rgb = hex_to_rgb(border_color)
+    
+    current_row = 1
+    
+    # Only add header if includeHeader is True
+    if include_header:
+        # Add logo if available
+        if show_logo and logo_base64:
+            try:
+                import base64
+                from PIL import Image as PILImage
+                from openpyxl.drawing.image import Image as XLImage
+                
+                logo_bytes = base64.b64decode(logo_base64.split(',')[-1])
+                logo_buf = BytesIO(logo_bytes)
+                pil_img = PILImage.open(logo_buf)
+                
+                # Resize logo based on configuration
+                desired_h = min(logo_height, 64)
+                w, h = pil_img.size
+                if h > 0:
+                    scale = desired_h / h
+                    new_w = int(w * scale)
+                    max_w = 180
+                    if new_w > max_w:
+                        new_w = max_w
+                        scale = new_w / w
+                        desired_h = int(h * scale)
+                    pil_img = pil_img.resize((new_w, desired_h), PILImage.Resampling.LANCZOS)
+                
+                # Save to BytesIO for openpyxl
+                logo_buf = BytesIO()
+                pil_img.save(logo_buf, format='PNG')
+                logo_buf.seek(0)
+                
+                # Create openpyxl image
+                xl_image = XLImage(logo_buf)
+                
+                # Position logo based on logoPosition
+                if logo_position == 'left':
+                    ws.add_image(xl_image, 'A1')
+                elif logo_position == 'center':
+                    ws.add_image(xl_image, 'C1')
+                elif logo_position == 'right':
+                    ws.add_image(xl_image, 'E1')
+                
+                current_row += 2  # Leave space for logo
+            except Exception as e:
+                pass  # Continue without logo if there's an error
+        
+        # Add bank information at top if configured
+        if show_bank_info and bank_name and bank_info_location == "top":
+            # Resolve Excel horizontal alignment from bank_info_align
+            _xl_bank_align = 'center'
+            if bank_info_align == 'left':
+                _xl_bank_align = 'left'
+            elif bank_info_align == 'right':
+                _xl_bank_align = 'right'
+            ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(columns))
+            ws.cell(row=current_row, column=1, value=bank_name)
+            ws.cell(row=current_row, column=1).font = Font(size=12, bold=True, color=font_color_rgb)
+            ws.cell(row=current_row, column=1).alignment = Alignment(horizontal=_xl_bank_align)
+            current_row += 1
+            
+            if bank_address:
+                ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(columns))
+                ws.cell(row=current_row, column=1, value=bank_address)
+                ws.cell(row=current_row, column=1).font = Font(size=10, color=font_color_rgb)
+                ws.cell(row=current_row, column=1).alignment = Alignment(horizontal=_xl_bank_align)
+                current_row += 1
+                
+            if bank_phone or bank_website:
+                contact_info = []
+                if bank_phone:
+                    contact_info.append(f"Tel: {bank_phone}")
+                if bank_website:
+                    contact_info.append(f"Web: {bank_website}")
+                
+                ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(columns))
+                ws.cell(row=current_row, column=1, value=" | ".join(contact_info))
+                ws.cell(row=current_row, column=1).font = Font(size=10, color=font_color_rgb)
+                ws.cell(row=current_row, column=1).alignment = Alignment(horizontal=_xl_bank_align)
+                current_row += 1
+        
+        # Add title
+        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(columns))
+        ws.cell(row=current_row, column=1, value=title)
+        ws.cell(row=current_row, column=1).font = Font(size=16, bold=True, color=font_color_rgb)
+        ws.cell(row=current_row, column=1).alignment = Alignment(horizontal='center', vertical='center')
+        current_row += 1
+        
+        # Add subtitle
+        if subtitle:
+            ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(columns))
+            ws.cell(row=current_row, column=1, value=subtitle)
+            ws.cell(row=current_row, column=1).font = Font(size=12, italic=True, color=font_color_rgb)
+            ws.cell(row=current_row, column=1).alignment = Alignment(horizontal='center')
+            current_row += 1
+        
+        # Add generation date
+        if show_date:
+            ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(columns))
+            ws.cell(row=current_row, column=1, value=f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            ws.cell(row=current_row, column=1).font = Font(size=10, italic=True, color=font_color_rgb)
+            ws.cell(row=current_row, column=1).alignment = Alignment(horizontal='center')
+            current_row += 1
+        
+        # Add empty row for spacing
+        current_row += 1
+    
+    # Table headers
+    header_row = current_row
+    for idx, col in enumerate(columns, start=1):
+        cell = ws.cell(row=header_row, column=idx, value=col)
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = PatternFill(start_color=header_bg_rgb, end_color=header_bg_rgb, fill_type='solid')
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+    
+    # Data rows
+    for row_idx, row_data in enumerate(data_rows, start=header_row + 1):
+        for col_idx, value in enumerate(row_data, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.alignment = Alignment(vertical='top')
+            
+            # Apply zebra stripes if enabled
+            if excel_zebra_stripes and (row_idx - header_row) % 2 == 0:
+                cell.fill = PatternFill(start_color=body_bg_rgb, end_color=body_bg_rgb, fill_type='solid')
+
+    # Optional footer totals row
+    footer_totals_cols = header_config.get("tableFooterTotals", []) or []
+    if isinstance(footer_totals_cols, list) and len(footer_totals_cols) > 0:
+        name_to_index = {str(col): idx for idx, col in enumerate(columns)}
+        totals = [None] * len(columns)
+        for col_name in footer_totals_cols:
+            if str(col_name) in name_to_index:
+                idx = name_to_index[str(col_name)]
+                total_value = 0.0
+                for row_data in data_rows:
+                    try:
+                        val = row_data[idx]
+                        if val is None or val == "":
+                            continue
+                        total_value += float(str(val).replace(',', ''))
+                    except Exception:
+                        pass
+                totals[idx] = total_value
+        totals_row = ws.max_row + 1
+        for i in range(len(columns)):
+            cell = ws.cell(row=totals_row, column=i + 1)
+            if i == 0:
+                cell.value = "Total"
+                cell.alignment = Alignment(horizontal='left', vertical='center')
+            elif totals[i] is not None:
+                cell.value = totals[i]
+                cell.number_format = '#,##0.00'
+                cell.alignment = Alignment(horizontal='right', vertical='center')
+            else:
+                cell.alignment = Alignment(horizontal='right', vertical='center')
+            # Style totals row
+            cell.fill = PatternFill(start_color=header_bg_rgb, end_color=header_bg_rgb, fill_type='solid')
+            cell.font = Font(bold=True, color='FFFFFF')
+    
+    # Freeze top row if enabled
+    if excel_freeze_top_row:
+        ws.freeze_panes = f"A{header_row + 1}"
+    
+    # Generate chart if chart_data is provided (right side)
+    chart_data = header_config.get('chart_data')
+    chart_type = header_config.get('chart_type', 'bar')
+    if chart_data and chart_data.get('labels') and chart_data.get('values'):
+        try:
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+            from io import BytesIO
+            from openpyxl.drawing.image import Image as XLImage
+            
+            # Create chart
+            fig, ax = plt.subplots(figsize=(8, 5))
+            
+            if chart_type == 'bar':
+                ax.barh(chart_data['labels'], chart_data['values'], color='#4472C4')
+                ax.set_xlabel('Controls Count')
+                ax.set_ylabel('Component')
+            elif chart_type == 'pie':
+                ax.pie(chart_data['values'], labels=chart_data['labels'], autopct='%1.1f%%')
+            
+            ax.set_title(title if title else 'Chart')
+            plt.tight_layout()
+            
+            # Save chart to buffer
+            chart_buffer = BytesIO()
+            plt.savefig(chart_buffer, format='png', dpi=150, bbox_inches='tight')
+            chart_buffer.seek(0)
+            plt.close()
+            
+            # Add chart to Excel on the right side
+            img = XLImage(chart_buffer)
+            img.width = 500
+            img.height = 300
+            # Position chart to the right of the table (column F)
+            chart_col = len(columns) + 2  # Start after the table columns + 1 space
+            ws.add_image(img, f'{get_column_letter(chart_col)}{header_row}')
+        except Exception as e:
+            print(f"Error generating chart for Excel: {e}")
+            pass
+    
+    # Auto-fit columns if enabled
+    if excel_auto_fit_columns:
+        for col_idx in range(1, len(columns) + 1):
+            max_length = 0
+            column_letter = get_column_letter(col_idx)
+            for row_idx in range(1, ws.max_row + 1):
+                try:
+                    cell = ws.cell(row=row_idx, column=col_idx)
+                    if hasattr(cell, 'value') and cell.value:
+                        cell_length = len(str(cell.value))
+                        if cell_length > max_length:
+                            max_length = cell_length
+                except:
+                    pass
+            adjusted_width = min(max_length + 3, 50)
+            ws.column_dimensions[column_letter].width = adjusted_width
+    else:
+        # Set default column width
+        for i in range(1, len(columns) + 1):
+            ws.column_dimensions[get_column_letter(i)].width = 15
+    
+    # Apply fit to width if enabled
+    if excel_fit_to_width:
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
+    
+    # Add watermark if enabled
+    if watermark_enabled:
+        try:
+            from export_utils import add_watermark_to_excel_sheet
+            add_watermark_to_excel_sheet(ws, header_config)
+        except Exception as e:
+            pass  # Continue without watermark if there's an error
+    
+    # Add bank information at bottom if configured
+    if show_bank_info and bank_name and bank_info_location == "bottom":
+        # Add some spacing before bank info
+        current_row += 2
+        
+        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(columns))
+        ws.cell(row=current_row, column=1, value=bank_name)
+        ws.cell(row=current_row, column=1).font = Font(size=12, bold=True, color=font_color_rgb)
+        ws.cell(row=current_row, column=1).alignment = Alignment(horizontal='center')
+        current_row += 1
+        
+        if bank_address:
+            ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(columns))
+            ws.cell(row=current_row, column=1, value=bank_address)
+            ws.cell(row=current_row, column=1).font = Font(size=10, color=font_color_rgb)
+            ws.cell(row=current_row, column=1).alignment = Alignment(horizontal='center')
+            current_row += 1
+            
+        if bank_phone or bank_website:
+            contact_info = []
+            if bank_phone:
+                contact_info.append(f"Tel: {bank_phone}")
+            if bank_website:
+                contact_info.append(f"Web: {bank_website}")
+            
+            ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(columns))
+            ws.cell(row=current_row, column=1, value=" | ".join(contact_info))
+            ws.cell(row=current_row, column=1).font = Font(size=10, color=font_color_rgb)
+            ws.cell(row=current_row, column=1).alignment = Alignment(horizontal='center')
+            current_row += 1
+
+    # Configure page setup and headers/footers
+    if show_page_numbers:
+        ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE if len(columns) > 6 else ws.ORIENTATION_PORTRAIT
+    
+    # Add footer if configured
+    if footer_show_date or footer_show_confidentiality or footer_show_page_numbers:
+        footer_text = []
+        if footer_show_date:
+            footer_text.append(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        if footer_show_confidentiality:
+            footer_text.append(footer_confidentiality_text)
+        if footer_show_page_numbers:
+            footer_text.append("Page &P of &N")
+        
+        if footer_align == "center":
+            ws.HeaderFooter.oddFooter.center.text = " | ".join(footer_text)
+        elif footer_align == "left":
+            ws.HeaderFooter.oddFooter.left.text = " | ".join(footer_text)
+        elif footer_align == "right":
+            ws.HeaderFooter.oddFooter.right.text = " | ".join(footer_text)
+    
+    # Save to file
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    date_folder = datetime.now().strftime('%Y-%m-%d')
+    os.makedirs(f"reports_export/{date_folder}", exist_ok=True)
+    filename = f"dynamic_report_{ts}.xlsx"
+    file_path = f"reports_export/{date_folder}/{filename}"
+    
+    wb.save(file_path)
+    
+    # Save export record to database (best-effort)
+    try:
+        import pyodbc
+        from config import get_database_connection_string
+        connection_string = get_database_connection_string()
+        conn = pyodbc.connect(connection_string)
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                IF NOT EXISTS (
+                  SELECT * FROM INFORMATION_SCHEMA.TABLES 
+                  WHERE TABLE_NAME = 'report_exports' AND TABLE_SCHEMA='dbo'
+                )
+                BEGIN
+                  CREATE TABLE dbo.report_exports (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    title NVARCHAR(255) NOT NULL,
+                    src NVARCHAR(1024) NULL,
+                    format NVARCHAR(20) NOT NULL,
+                    dashboard NVARCHAR(100) NULL,
+                    created_at DATETIME2 DEFAULT GETDATE()
+                  )
+                END
+                """
+            )
+            conn.commit()
+            export_title = header_config.get("title", "Dynamic Report") if header_config else "Dynamic Report"
+            export_title = f"{export_title} - {datetime.now().strftime('%Y-%m-%d')}"
+            export_dashboard = header_config.get("dashboard", "dynamic") if header_config else "dynamic"
+            cursor.execute(
+                """
+                INSERT INTO dbo.report_exports (title, src, format, dashboard)
+                VALUES (?, ?, ?, ?)
+                """,
+                (export_title, file_path, 'excel', export_dashboard)
+            )
+            conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception:
+        pass
+
+    with open(file_path, 'rb') as f:
+        content = f.read()
+    
+    return content
+
+def generate_word_report(columns, data_rows, header_config=None):
+    """Generate Word report from dynamic data with full header configuration support"""
+    from io import BytesIO
+    from docx import Document
+    from docx.shared import Pt, RGBColor
+    from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
+    from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    import os
+    
+    # Get default header config if none provided
+    if not header_config:
+        from export_utils import get_default_header_config
+        header_config = get_default_header_config("dynamic")
+    
+    doc = Document()
+    
+    # Extract ALL configuration values from header modal configuration
+    # Basic report settings
+    include_header = header_config.get("includeHeader", True)
+    title = header_config.get("title", "Dynamic Report")
+    subtitle = header_config.get("subtitle", "")
+    icon = header_config.get("icon", "chart-line")
+    
+    # Date and time settings
+    show_date = header_config.get("showDate", True)
+    footer_show_date = header_config.get("footerShowDate", True)
+    
+    # Bank information settings
+    show_bank_info = header_config.get("showBankInfo", True)
+    bank_info_location = header_config.get("bankInfoLocation", "top")  # top, bottom, none
+    bank_info_align = (
+        header_config.get("bankInfoAlign")
+        or header_config.get("logoPosition", "center")
+        or "center"
+    ).lower()  # left, center, right
+    bank_name = header_config.get("bankName", "")
+    bank_address = header_config.get("bankAddress", "")
+    bank_phone = header_config.get("bankPhone", "")
+    bank_website = header_config.get("bankWebsite", "")
+    
+    # Logo settings
+    show_logo = header_config.get("showLogo", True)
+    logo_base64 = header_config.get("logoBase64", "")
+    logo_position = header_config.get("logoPosition", "left")
+    logo_height = header_config.get("logoHeight", 36)
+    logo_file = header_config.get("logoFile", None)
+    
+    # Color and styling settings
+    font_color = header_config.get("fontColor", "#1F4E79")
+    table_header_bg_color = header_config.get("tableHeaderBgColor", "#1F4E79")
+    table_body_bg_color = header_config.get("tableBodyBgColor", "#FFFFFF")
+    background_color = header_config.get("backgroundColor", "#FFFFFF")
+    border_style = header_config.get("borderStyle", "solid")
+    border_color = header_config.get("borderColor", "#E5E7EB")
+    border_width = header_config.get("borderWidth", 1)
+    
+    # Font and size settings
+    font_size = header_config.get("fontSize", "medium")
+    padding = header_config.get("padding", 20)
+    margin = header_config.get("margin", 72)  # 1 inch = 72 points
+    
+    # Watermark settings
+    watermark_enabled = header_config.get("watermarkEnabled", False)
+    watermark_text = header_config.get("watermarkText", "CONFIDENTIAL")
+    watermark_opacity = header_config.get("watermarkOpacity", 10)
+    watermark_diagonal = header_config.get("watermarkDiagonal", True)
+    
+    # Footer settings
+    footer_show_confidentiality = header_config.get("footerShowConfidentiality", True)
+    footer_confidentiality_text = header_config.get("footerConfidentialityText", "Confidential Report - Internal Use Only")
+    footer_show_page_numbers = header_config.get("footerShowPageNumbers", True)
+    footer_align = header_config.get("footerAlign", "center")
+    
+    # Page settings
+    show_page_numbers = header_config.get("showPageNumbers", True)
+    location = header_config.get("location", "top")
+    
+    # Convert hex colors to RGB for python-docx
+    def hex_to_rgb(hex_color):
+        if hex_color.startswith('#'):
+            hex_color = hex_color[1:]
+        try:
+            r = int(hex_color[0:2], 16)
+            g = int(hex_color[2:4], 16)
+            b = int(hex_color[4:6], 16)
+            return RGBColor(r, g, b)
+        except:
+            return RGBColor(31, 78, 121)  # Default color
+    
+    font_color_rgb = hex_to_rgb(font_color)
+    header_bg_color_rgb = hex_to_rgb(table_header_bg_color)
+    body_bg_color_rgb = hex_to_rgb(table_body_bg_color)
+    background_color_rgb = hex_to_rgb(background_color)
+    border_color_rgb = hex_to_rgb(border_color)
+    
+    # Set document margins
+    sections = doc.sections
+    for section in sections:
+        section.top_margin = Pt(margin)
+        section.bottom_margin = Pt(margin)
+        section.left_margin = Pt(margin)
+        section.right_margin = Pt(margin)
+    
+    # Only add header if includeHeader is True
+    if include_header:
+        # Add logo image into document header if configured
+        if show_logo and (logo_base64 or logo_file):
+            try:
+                img_bytes_io = None
+                if logo_base64:
+                    b64_data = logo_base64
+                    if ',' in b64_data:
+                        b64_data = b64_data.split(',')[1]
+                    img_bytes_io = BytesIO(base64.b64decode(b64_data))
+                elif logo_file and os.path.exists(logo_file):
+                    with open(logo_file, 'rb') as lf:
+                        img_bytes_io = BytesIO(lf.read())
+                if img_bytes_io:
+                    header = doc.sections[0].header
+                    # Use existing header paragraph if available, else add one
+                    header_para = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+                    run = header_para.add_run()
+                    # Preserve aspect ratio by setting only height
+                    run.add_picture(img_bytes_io, height=Pt(float(logo_height)))
+                    if logo_position == 'left':
+                        header_para.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+                    elif logo_position == 'right':
+                        header_para.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+                    else:
+                        header_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            except Exception:
+                pass
+        # Add bank information at top if configured
+        if show_bank_info and bank_name and bank_info_location == "top":
+            bank_para = doc.add_paragraph()
+            bank_run = bank_para.add_run(f"🏦 {bank_name}")
+            bank_run.font.size = Pt(12)
+            bank_run.font.bold = True
+            bank_run.font.color.rgb = font_color_rgb
+            if bank_info_align == 'left':
+                bank_para.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+            elif bank_info_align == 'right':
+                bank_para.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+            else:
+                bank_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            
+            if bank_address:
+                address_para = doc.add_paragraph()
+                address_run = address_para.add_run(bank_address)
+                address_run.font.size = Pt(10)
+                address_run.font.color.rgb = font_color_rgb
+                if bank_info_align == 'left':
+                    address_para.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+                elif bank_info_align == 'right':
+                    address_para.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+                else:
+                    address_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            
+            if bank_phone or bank_website:
+                contact_info = []
+                if bank_phone:
+                    contact_info.append(f"Tel: {bank_phone}")
+                if bank_website:
+                    contact_info.append(f"Web: {bank_website}")
+                
+                contact_para = doc.add_paragraph()
+                contact_run = contact_para.add_run(" | ".join(contact_info))
+                contact_run.font.size = Pt(10)
+                contact_run.font.color.rgb = font_color_rgb
+                if bank_info_align == 'left':
+                    contact_para.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+                elif bank_info_align == 'right':
+                    contact_para.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+                else:
+                    contact_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            
+            # Add spacing
+            doc.add_paragraph()
+        
+        # Add title
+        title_para = doc.add_paragraph()
+        title_run = title_para.add_run(title)
+        title_run.font.size = Pt(16)
+        title_run.font.bold = True
+        title_run.font.color.rgb = font_color_rgb
+        title_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        
+        # Add subtitle
+        if subtitle:
+            subtitle_para = doc.add_paragraph()
+            subtitle_run = subtitle_para.add_run(subtitle)
+            subtitle_run.font.size = Pt(12)
+            subtitle_run.font.italic = True
+            subtitle_run.font.color.rgb = font_color_rgb
+            subtitle_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        
+        # Add generation date
+        if show_date:
+            date_para = doc.add_paragraph()
+            current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            date_run = date_para.add_run(f"Generated on: {current_date}")
+            date_run.font.size = Pt(10)
+            date_run.font.italic = True
+            date_run.font.color.rgb = font_color_rgb
+            date_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        
+        # Add spacing
+        doc.add_paragraph()
+    
+    # Create table with configuration-based styling
+    table = doc.add_table(rows=1, cols=len(columns))
+    table.style = 'Table Grid'
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    
+    # Helper function to shade table cells
+    def shade_cell(cell, fill_color):
+        tcPr = cell._tc.get_or_add_tcPr()
+        shd = OxmlElement('w:shd')
+        shd.set(qn('w:val'), 'clear')
+        shd.set(qn('w:color'), 'auto')
+        shd.set(qn('w:fill'), fill_color.replace('#', ''))
+        tcPr.append(shd)
+    
+    # Headers
+    hdr_cells = table.rows[0].cells
+    for i, col in enumerate(columns):
+        hdr_cells[i].text = str(col)
+        # Style header cell
+        for paragraph in hdr_cells[i].paragraphs:
+            for run in paragraph.runs:
+                run.font.bold = True
+                run.font.color.rgb = RGBColor(255, 255, 255)  # White text
+            paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        hdr_cells[i].vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+        # Apply header background color
+        shade_cell(hdr_cells[i], table_header_bg_color)
+    
+    # Data rows
+    for row_idx, row_data in enumerate(data_rows):
+        row_cells = table.add_row().cells
+        for i, value in enumerate(row_data):
+            row_cells[i].text = str(value)
+            # Style data cell
+            for paragraph in row_cells[i].paragraphs:
+                paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+            row_cells[i].vertical_alignment = WD_ALIGN_VERTICAL.TOP
+            
+            # Apply alternating row colors if needed
+            if row_idx % 2 == 0:
+                shade_cell(row_cells[i], table_body_bg_color)
+
+    # Optional footer totals row for Word
+    footer_totals_cols = header_config.get("tableFooterTotals", []) or []
+    if isinstance(footer_totals_cols, list) and len(footer_totals_cols) > 0:
+        totals_row = table.add_row().cells
+        for i in range(len(columns)):
+            totals_row[i].text = ""
+        totals_row[0].text = "Total"
+        name_to_index = {str(col): idx for idx, col in enumerate(columns)}
+        for col_name in footer_totals_cols:
+            if str(col_name) in name_to_index:
+                idx = name_to_index[str(col_name)]
+                s = 0.0
+                for r in data_rows:
+                    try:
+                        val = r[idx]
+                        if val is None or val == "":
+                            continue
+                        s += float(str(val).replace(',', ''))
+                    except Exception:
+                        pass
+                totals_row[idx].text = f"{s:,.2f}"
+        # Bold and align totals row
+        for i in range(len(columns)):
+            for paragraph in totals_row[i].paragraphs:
+                for run in paragraph.runs:
+                    run.font.bold = True
+                paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT if i > 0 else WD_PARAGRAPH_ALIGNMENT.LEFT
+    
+    # Add bank information at bottom if configured
+    if show_bank_info and bank_name and bank_info_location == "bottom":
+        doc.add_paragraph()  # Add spacing
+        
+        bank_para = doc.add_paragraph()
+        bank_run = bank_para.add_run(f"🏦 {bank_name}")
+        bank_run.font.size = Pt(12)
+        bank_run.font.bold = True
+        bank_run.font.color.rgb = font_color_rgb
+        if bank_info_align == 'left':
+            bank_para.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+        elif bank_info_align == 'right':
+            bank_para.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+        else:
+            bank_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        
+        if bank_address:
+            address_para = doc.add_paragraph()
+            address_run = address_para.add_run(bank_address)
+            address_run.font.size = Pt(10)
+            address_run.font.color.rgb = font_color_rgb
+            if bank_info_align == 'left':
+                address_para.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+            elif bank_info_align == 'right':
+                address_para.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+            else:
+                address_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        
+        if bank_phone or bank_website:
+            contact_info = []
+            if bank_phone:
+                contact_info.append(f"Tel: {bank_phone}")
+            if bank_website:
+                contact_info.append(f"Web: {bank_website}")
+            
+            contact_para = doc.add_paragraph()
+            contact_run = contact_para.add_run(" | ".join(contact_info))
+            contact_run.font.size = Pt(10)
+            contact_run.font.color.rgb = font_color_rgb
+            if bank_info_align == 'left':
+                contact_para.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+            elif bank_info_align == 'right':
+                contact_para.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+            else:
+                contact_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+
+    # Add footer if configured
+    if footer_show_date or footer_show_confidentiality or footer_show_page_numbers:
+        doc.add_paragraph()  # Add spacing
+        
+        footer_text = []
+        if footer_show_date:
+            current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            footer_text.append(f"Generated on: {current_date}")
+        if footer_show_confidentiality:
+            footer_text.append(footer_confidentiality_text)
+        if footer_show_page_numbers:
+            footer_text.append("Page &P of &N")
+        
+        if footer_text:
+            footer_para = doc.add_paragraph()
+            footer_run = footer_para.add_run(" | ".join(footer_text))
+            footer_run.font.size = Pt(8)
+            footer_run.font.color.rgb = RGBColor(128, 128, 128)  # Gray color
+            
+            if footer_align == "center":
+                footer_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            elif footer_align == "left":
+                footer_para.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+            elif footer_align == "right":
+                footer_para.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+    
+    # Add watermark if enabled (single centered line)
+    if watermark_enabled:
+        try:
+            watermark_para = doc.add_paragraph()
+            if watermark_diagonal:
+                spaced_text = " ".join(watermark_text)
+                watermark_run = watermark_para.add_run(spaced_text)
+            else:
+                watermark_run = watermark_para.add_run(watermark_text)
+            watermark_run.font.size = Pt(48)
+            watermark_run.font.color.rgb = RGBColor(200, 200, 200)
+            watermark_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            watermark_para.space_after = Pt(0)
+            watermark_para.space_before = Pt(0)
+        except Exception:
+            pass
+    
+    # Save to file
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    date_folder = datetime.now().strftime('%Y-%m-%d')
+    os.makedirs(f"reports_export/{date_folder}", exist_ok=True)
+    filename = f"dynamic_report_{ts}.docx"
+    file_path = f"reports_export/{date_folder}/{filename}"
+    
+    doc.save(file_path)
+    
+    # Save export record to database (best-effort)
+    try:
+        import pyodbc
+        from config import get_database_connection_string
+        connection_string = get_database_connection_string()
+        conn = pyodbc.connect(connection_string)
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                IF NOT EXISTS (
+                  SELECT * FROM INFORMATION_SCHEMA.TABLES 
+                  WHERE TABLE_NAME = 'report_exports' AND TABLE_SCHEMA='dbo'
+                )
+                BEGIN
+                  CREATE TABLE dbo.report_exports (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    title NVARCHAR(255) NOT NULL,
+                    src NVARCHAR(1024) NULL,
+                    format NVARCHAR(20) NOT NULL,
+                    dashboard NVARCHAR(100) NULL,
+                    created_at DATETIME2 DEFAULT GETDATE()
+                  )
+                END
+                """
+            )
+            conn.commit()
+            export_title = header_config.get("title", "Dynamic Report") if header_config else "Dynamic Report"
+            export_title = f"{export_title} - {datetime.now().strftime('%Y-%m-%d')}"
+            export_dashboard = header_config.get("dashboard", "dynamic") if header_config else "dynamic"
+            cursor.execute(
+                """
+                INSERT INTO dbo.report_exports (title, src, format, dashboard)
+                VALUES (?, ?, ?, ?)
+                """,
+                (export_title, file_path, 'word', export_dashboard)
+            )
+            conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception:
+        pass
+
+    with open(file_path, 'rb') as f:
+        content = f.read()
+    
+    return Response(
+        content=content,
+        media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        headers={
+            'Content-Disposition': f'attachment; filename="{filename}"',
+            'X-Export-Src': file_path
+        }
+    )
+
+def generate_pdf_report(columns, data_rows, header_config=None):
+    """Generate PDF report from dynamic data with full header configuration support"""
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.lib.units import inch
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+    import os
+    import base64
+    from io import BytesIO
+    try:
+        from PIL import Image as PILImage
+    except Exception:
+        PILImage = None
+    
+    # Import Arabic text support
+    from shared_pdf_utils import shape_text_for_arabic, ARABIC_FONT_NAME
+    
+    # Get default header config if none provided
+    if not header_config:
+        from export_utils import get_default_header_config
+        header_config = get_default_header_config("dynamic")
+    
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    date_folder = datetime.now().strftime('%Y-%m-%d')
+    os.makedirs(f"reports_export/{date_folder}", exist_ok=True)
+    filename = f"dynamic_report_{ts}.pdf"
+    file_path = f"reports_export/{date_folder}/{filename}"
+    
+    # Extract ALL configuration values from header modal configuration
+    # Basic report settings
+    include_header = header_config.get("includeHeader", True)
+    title = header_config.get("title", "Dynamic Report")
+    subtitle = header_config.get("subtitle", "")
+    icon = header_config.get("icon", "chart-line")
+    
+    # Date and time settings
+    show_date = header_config.get("showDate", True)
+    footer_show_date = header_config.get("footerShowDate", True)
+    
+    # Bank information settings
+    show_bank_info = header_config.get("showBankInfo", True)
+    bank_info_location = header_config.get("bankInfoLocation", "top")  # top, bottom, none
+    bank_info_align = (
+        header_config.get("bankInfoAlign")
+        or header_config.get("logoPosition", "center")
+        or "center"
+    ).lower()
+    bank_name = header_config.get("bankName", "")
+    bank_address = header_config.get("bankAddress", "")
+    bank_phone = header_config.get("bankPhone", "")
+    bank_website = header_config.get("bankWebsite", "")
+    
+    # Logo settings
+    show_logo = header_config.get("showLogo", True)
+    logo_base64 = header_config.get("logoBase64", "")
+    logo_position = header_config.get("logoPosition", "left")
+    logo_height = header_config.get("logoHeight", 36)
+    logo_file = header_config.get("logoFile", None)
+    
+    # Color and styling settings
+    font_color = header_config.get("fontColor", "#1F4E79")
+    table_header_bg_color = header_config.get("tableHeaderBgColor", "#1F4E79")
+    table_body_bg_color = header_config.get("tableBodyBgColor", "#FFFFFF")
+    background_color = header_config.get("backgroundColor", "#FFFFFF")
+    border_style = header_config.get("borderStyle", "solid")
+    border_color = header_config.get("borderColor", "#E5E7EB")
+    border_width = header_config.get("borderWidth", 1)
+    
+    # Font and size settings
+    font_size = header_config.get("fontSize", "medium")
+    padding = header_config.get("padding", 20)
+    margin = header_config.get("margin", 72)  # 1 inch = 72 points
+    
+    # Watermark settings
+    watermark_enabled = header_config.get("watermarkEnabled", False)
+    watermark_text = header_config.get("watermarkText", "CONFIDENTIAL")
+    watermark_opacity = header_config.get("watermarkOpacity", 10)
+    watermark_diagonal = header_config.get("watermarkDiagonal", True)
+    
+    # Footer settings
+    footer_show_confidentiality = header_config.get("footerShowConfidentiality", True)
+    footer_confidentiality_text = header_config.get("footerConfidentialityText", "Confidential Report - Internal Use Only")
+    footer_show_page_numbers = header_config.get("footerShowPageNumbers", True)
+    footer_align = header_config.get("footerAlign", "center")
+    
+    # Page settings
+    show_page_numbers = header_config.get("showPageNumbers", True)
+    location = header_config.get("location", "top")
+    
+    # Convert hex colors to ReportLab colors
+    def hex_to_color(hex_color):
+        if hex_color.startswith('#'):
+            hex_color = hex_color[1:]
+        try:
+            r = int(hex_color[0:2], 16) / 255.0
+            g = int(hex_color[2:4], 16) / 255.0
+            b = int(hex_color[4:6], 16) / 255.0
+            return colors.Color(r, g, b)
+        except:
+            return colors.HexColor(f"#{hex_color}")
+    
+    font_color_rl = hex_to_color(font_color)
+    header_bg_color_rl = hex_to_color(table_header_bg_color)
+    body_bg_color_rl = hex_to_color(table_body_bg_color)
+    background_color_rl = hex_to_color(background_color)
+    border_color_rl = hex_to_color(border_color)
+    
+    # Choose page size based on number of columns
+    page_size = A4 if len(columns) <= 6 else letter
+    
+    # Create document with margins
+    doc = SimpleDocTemplate(
+        file_path, 
+        pagesize=page_size,
+        rightMargin=margin,
+        leftMargin=margin,
+        topMargin=margin,
+        bottomMargin=margin
+    )
+    
+    styles = getSampleStyleSheet()
+    story = []
+    
+    # Create custom styles based on configuration
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Title'],
+        fontSize=16,
+        textColor=font_color_rl,
+        alignment=TA_CENTER,
+        spaceAfter=12
+    )
+    
+    subtitle_style = ParagraphStyle(
+        'CustomSubtitle',
+        parent=styles['Normal'],
+        fontSize=12,
+        textColor=font_color_rl,
+        alignment=TA_CENTER,
+        spaceAfter=6
+    )
+    
+    # Resolve text alignment for bank info
+    _pdf_align = TA_CENTER
+    if bank_info_align == 'left':
+        _pdf_align = TA_LEFT
+    elif bank_info_align == 'right':
+        _pdf_align = TA_RIGHT
+
+    bank_style = ParagraphStyle(
+        'BankInfo',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=font_color_rl,
+        alignment=_pdf_align,
+        spaceAfter=3
+    )
+    
+    date_style = ParagraphStyle(
+        'DateInfo',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=font_color_rl,
+        alignment=TA_CENTER,
+        spaceAfter=6
+    )
+    
+    # Only add header if includeHeader is True
+    if include_header:
+        # Add logo image if configured
+        if show_logo and (logo_base64 or logo_file):
+            try:
+                img_stream = None
+                if logo_base64:
+                    b64_data = logo_base64
+                    if ',' in b64_data:
+                        b64_data = b64_data.split(',')[1]
+                    img_bytes = base64.b64decode(b64_data)
+                    img_stream = BytesIO(img_bytes)
+                elif logo_file and os.path.exists(logo_file):
+                    with open(logo_file, 'rb') as lf:
+                        img_stream = BytesIO(lf.read())
+                if img_stream:
+                    width_arg = None
+                    height_arg = None
+                    if PILImage is not None:
+                        img_stream.seek(0)
+                        pil_img = PILImage.open(img_stream)
+                        orig_w, orig_h = pil_img.size
+                        if orig_h > 0:
+                            scale = float(logo_height) / float(orig_h)
+                            width_arg = orig_w * scale
+                            height_arg = logo_height
+                        img_stream.seek(0)
+                    rl_img = RLImage(img_stream, width=width_arg, height=height_arg)
+                    if logo_position == 'left':
+                        rl_img.hAlign = 'LEFT'
+                    elif logo_position == 'right':
+                        rl_img.hAlign = 'RIGHT'
+                    else:
+                        rl_img.hAlign = 'CENTER'
+                    story.append(rl_img)
+                    story.append(Spacer(1, 6))
+            except Exception:
+                pass
+        # Add bank information at top if configured
+        if show_bank_info and bank_name and bank_info_location == "top":
+            story.append(Paragraph(f"🏦 {bank_name}", bank_style))
+            if bank_address:
+                story.append(Paragraph(bank_address, bank_style))
+            if bank_phone or bank_website:
+                contact_info = []
+                if bank_phone:
+                    contact_info.append(f"Tel: {bank_phone}")
+                if bank_website:
+                    contact_info.append(f"Web: {bank_website}")
+                story.append(Paragraph(" | ".join(contact_info), bank_style))
+            story.append(Spacer(1, 12))
+        
+        # Add title
+        story.append(Paragraph(title, title_style))
+        
+        # Add subtitle
+        if subtitle:
+            story.append(Paragraph(subtitle, subtitle_style))
+        
+        # Add generation date
+        if show_date:
+            current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            story.append(Paragraph(f"Generated on: {current_date}", date_style))
+        
+        story.append(Spacer(1, 20))
+    
+    # Generate chart if chart_data is provided
+    chart_data = header_config.get('chart_data')
+    chart_type = header_config.get('chart_type', 'bar')
+    if chart_data and chart_data.get('labels') and chart_data.get('values'):
+        try:
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+            from io import BytesIO
+            
+            # Create chart
+            fig, ax = plt.subplots(figsize=(8, 5))
+            
+            if chart_type == 'bar':
+                ax.barh(chart_data['labels'], chart_data['values'], color='#4472C4')
+                ax.set_xlabel('Controls Count')
+                ax.set_ylabel('Component')
+            elif chart_type == 'pie':
+                ax.pie(chart_data['values'], labels=chart_data['labels'], autopct='%1.1f%%')
+            
+            ax.set_title(title if title else 'Chart')
+            plt.tight_layout()
+            
+            # Save chart to buffer
+            chart_buffer = BytesIO()
+            plt.savefig(chart_buffer, format='png', dpi=150, bbox_inches='tight')
+            chart_buffer.seek(0)
+            plt.close()
+            
+            # Add chart to PDF
+            chart_img = RLImage(chart_buffer, width=6*inch, height=3.5*inch)
+            chart_img.hAlign = 'CENTER'
+            story.append(chart_img)
+            story.append(Spacer(1, 20))
+        except Exception as e:
+            print(f"Error generating chart: {e}")
+            pass
+    
+    # Table data with Arabic text support and multi-line text handling
+    # Create styles for table cells
+    styles = getSampleStyleSheet()
+    
+    # Header style
+    header_style = ParagraphStyle(
+        'TableHeader',
+        parent=styles['Normal'],
+        fontSize=12,
+        fontName=ARABIC_FONT_NAME or 'Helvetica-Bold',
+        alignment=TA_CENTER,
+        textColor=colors.whitesmoke,
+        spaceAfter=6,
+        spaceBefore=6
+    )
+    
+    # Data cell style
+    data_style = ParagraphStyle(
+        'TableCell',
+        parent=styles['Normal'],
+        fontSize=10,
+        fontName=ARABIC_FONT_NAME or 'Helvetica',
+        alignment=TA_CENTER,
+        spaceAfter=4,
+        spaceBefore=4,
+        leading=12
+    )
+    
+    # Process columns with Paragraph objects for multi-line support
+    processed_columns = [Paragraph(shape_text_for_arabic(str(col)), header_style) for col in columns]
+    
+    # Process data rows with Paragraph objects for multi-line support
+    processed_data_rows = []
+    for row in data_rows:
+        processed_row = [Paragraph(shape_text_for_arabic(str(cell)), data_style) for cell in row]
+        processed_data_rows.append(processed_row)
+    
+    table_data = [processed_columns] + processed_data_rows
+
+    # Optional footer totals row for PDF
+    footer_totals_cols = header_config.get("tableFooterTotals", []) or []
+    if isinstance(footer_totals_cols, list) and len(footer_totals_cols) > 0:
+        name_to_index = {str(col): idx for idx, col in enumerate(columns)}
+        totals_row = [Paragraph("", data_style)] * len(columns)
+        totals_row[0] = Paragraph(shape_text_for_arabic("Total"), data_style)
+        for col_name in footer_totals_cols:
+            if str(col_name) in name_to_index:
+                idx = name_to_index[str(col_name)]
+                s = 0.0
+                for r in data_rows:
+                    try:
+                        val = r[idx]
+                        if val is None or val == "":
+                            continue
+                        s += float(str(val).replace(',', ''))
+                    except Exception:
+                        pass
+                totals_row[idx] = Paragraph(shape_text_for_arabic(f"{s:,.2f}"), data_style)
+        table_data.append(totals_row)
+    
+    # Create table with configuration-based styling and column widths
+    # Calculate column widths to leave some margin
+    num_cols = len(table_data[0]) if table_data else 1
+    available_width = page_size[0] - (margin * 2)  # Subtract left and right margins
+    col_width = available_width / num_cols if num_cols > 0 else available_width
+    col_widths = [col_width] * num_cols
+    
+    table = Table(table_data, repeatRows=1, colWidths=col_widths)
+    
+    # Build table style based on configuration with Arabic font support
+    table_style = [
+        # Header row styling
+        ('BACKGROUND', (0, 0), (-1, 0), header_bg_color_rl),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), ARABIC_FONT_NAME or 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('TOPPADDING', (0, 0), (-1, 0), 12),
+        
+        # Data rows styling
+        ('BACKGROUND', (0, 1), (-1, -1), body_bg_color_rl),
+        ('FONTNAME', (0, 1), (-1, -1), ARABIC_FONT_NAME or 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 10),
+        ('TOPPADDING', (0, 1), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+        
+        # Grid lines
+        ('GRID', (0, 0), (-1, -1), border_width, border_color_rl),
+        
+        # Alternating row colors if needed
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey])
+    ]
+
+    # If totals row exists, style it like a bold footer
+    if isinstance(footer_totals_cols, list) and len(footer_totals_cols) > 0:
+        last_row_index = len(table_data) - 1
+        table_style += [
+            ('BACKGROUND', (0, last_row_index), (-1, last_row_index), header_bg_color_rl),
+            ('TEXTCOLOR', (0, last_row_index), (-1, last_row_index), colors.whitesmoke),
+            ('FONTNAME', (0, last_row_index), (-1, last_row_index), 'Helvetica-Bold'),
+        ]
+    
+    table.setStyle(TableStyle(table_style))
+    story.append(table)
+    
+    # Add watermark if enabled
+    if watermark_enabled:
+        try:
+            from export_utils import add_watermark_to_pdf
+            add_watermark_to_pdf(story, header_config)
+        except Exception as e:
+            pass  # Continue without watermark if there's an error
+    
+    # Add bank information at bottom if configured
+    if show_bank_info and bank_name and bank_info_location == "bottom":
+        story.append(Spacer(1, 20))
+        story.append(Paragraph(f"🏦 {bank_name}", bank_style))
+        if bank_address:
+            story.append(Paragraph(bank_address, bank_style))
+        if bank_phone or bank_website:
+            contact_info = []
+            if bank_phone:
+                contact_info.append(f"Tel: {bank_phone}")
+            if bank_website:
+                contact_info.append(f"Web: {bank_website}")
+            story.append(Paragraph(" | ".join(contact_info), bank_style))
+
+    # Add footer elements
+    if footer_show_date or footer_show_confidentiality or footer_show_page_numbers:
+        story.append(Spacer(1, 20))
+        
+        footer_style = ParagraphStyle(
+            'Footer',
+            parent=styles['Normal'],
+            fontSize=8,
+            textColor=colors.grey,
+            alignment=TA_CENTER
+        )
+        
+        footer_text = []
+        if footer_show_date:
+            current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            footer_text.append(f"Generated on: {current_date}")
+        if footer_show_confidentiality:
+            footer_text.append(footer_confidentiality_text)
+        if footer_show_page_numbers:
+            footer_text.append("Page &P of &N")
+        
+        if footer_text:
+            story.append(Paragraph(" | ".join(footer_text), footer_style))
+    
+    # Build the PDF
+    doc.build(story)
+    
+    # Save export record to database (best-effort)
+    try:
+        import pyodbc
+        from config import get_database_connection_string
+        connection_string = get_database_connection_string()
+        conn = pyodbc.connect(connection_string)
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                IF NOT EXISTS (
+                  SELECT * FROM INFORMATION_SCHEMA.TABLES 
+                  WHERE TABLE_NAME = 'report_exports' AND TABLE_SCHEMA='dbo'
+                )
+                BEGIN
+                  CREATE TABLE dbo.report_exports (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    title NVARCHAR(255) NOT NULL,
+                    src NVARCHAR(1024) NULL,
+                    format NVARCHAR(20) NOT NULL,
+                    dashboard NVARCHAR(100) NULL,
+                    created_at DATETIME2 DEFAULT GETDATE()
+                  )
+                END
+                """
+            )
+            conn.commit()
+            export_title = header_config.get("title", "Dynamic Report") if header_config else "Dynamic Report"
+            export_title = f"{export_title} - {datetime.now().strftime('%Y-%m-%d')}"
+            export_dashboard = header_config.get("dashboard", "dynamic") if header_config else "dynamic"
+            cursor.execute(
+                """
+                INSERT INTO dbo.report_exports (title, src, format, dashboard)
+                VALUES (?, ?, ?, ?)
+                """,
+                (export_title, file_path, 'pdf', export_dashboard)
+            )
+            conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception:
+        pass
+
+    with open(file_path, 'rb') as f:
+        content = f.read()
+    
+    return content
+
+@router.post("/api/reports/schedule")
+async def save_report_schedule(request: Request):
+    """Save scheduled report configuration"""
+    try:
+        body = await request.json()
+        report_config = body.get('reportConfig', {})
+        schedule = body.get('schedule', {})
+        
+        # Save to database (you can create a scheduled_reports table)
+        import pyodbc
+        from config import get_database_connection_string
+        
+        connection_string = get_database_connection_string()
+        conn = pyodbc.connect(connection_string)
+        cursor = conn.cursor()
+        
+        try:
+            # Create table if not exists
+            cursor.execute("""
+                IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='scheduled_reports' and xtype='U')
+                CREATE TABLE scheduled_reports (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    report_config NVARCHAR(MAX) NOT NULL,
+                    schedule_config NVARCHAR(MAX) NOT NULL,
+                    is_active BIT DEFAULT 1,
+                    created_at DATETIME2 DEFAULT GETDATE()
+                );
+            """)
+            conn.commit()
+            
+            # Insert schedule
+            import json
+            cursor.execute("""
+                INSERT INTO scheduled_reports (report_config, schedule_config)
+                VALUES (?, ?)
+            """, json.dumps(report_config), json.dumps(schedule))
+            conn.commit()
+            
+            return {"success": True, "message": "Schedule saved successfully"}
+            
+        finally:
+            cursor.close()
+            conn.close()
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save schedule: {str(e)}")
 
 @router.get("/health")
 async def health_check():
@@ -1043,35 +3365,238 @@ async def create_enhanced_bank_check_report(
             # Create ZIP with both files
             import zipfile
             from io import BytesIO
+            import os
+            
             buffer = BytesIO()
+            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+            date_folder = datetime.now().strftime('%Y-%m-%d')
+            
             with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-                ts = datetime.now().strftime('%Y%m%d_%H%M%S')
                 zf.writestr(f"bank_check_analysis_{ts}.xlsx", excel_bytes)
                 zf.writestr(f"bank_check_report_{ts}.docx", word_bytes)
             buffer.seek(0)
             
-            filename = f"bank_check_reports_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
-            return Response(content=buffer.getvalue(), media_type='application/zip', headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+            # Save to persistent storage
+            os.makedirs(f"exports/{date_folder}", exist_ok=True)
+            filename = f"bank_check_reports_{ts}.zip"
+            file_path = f"exports/{date_folder}/{filename}"
+            
+            with open(file_path, 'wb') as f:
+                f.write(buffer.getvalue())
+            
+            return Response(
+                content=buffer.getvalue(), 
+                media_type='application/zip', 
+                headers={
+                    'Content-Disposition': f'attachment; filename="{filename}"',
+                    'X-Export-Src': file_path
+                }
+            )
         
         else:
-            # Handle JSON data with records
+            # Handle JSON data with dynamic records (arbitrary headers)
             body = await request.json()
             records = body.get('records', [])
-            format_type = body.get('format', 'both')
-            
-            if not records:
-                raise HTTPException(status_code=400, detail="No records provided")
-            
+            columns = body.get('columns')  # optional explicit headers
+            rows = body.get('rows')        # optional explicit rows
+            format_type = body.get('format', 'excel')
+
             if format_type == 'word':
-                # Return only Word document
+                # If explicit columns/rows provided, build a simple Word report with a table
+                if columns and rows:
+                    from io import BytesIO
+                    from docx import Document
+                    from docx.shared import Pt
+                    from docx.oxml.ns import qn
+                    from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
+                    from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+                    from docx.oxml import OxmlElement
+
+                    def shade_cell(cell, fill="E6F0FF"):
+                        tcPr = cell._tc.get_or_add_tcPr()
+                        shd = OxmlElement('w:shd')
+                        shd.set(qn('w:val'), 'clear')
+                        shd.set(qn('w:color'), 'auto')
+                        shd.set(qn('w:fill'), fill)
+                        tcPr.append(shd)
+
+                    doc = Document()
+                    # Base font
+                    doc.styles['Normal'].font.name = 'Arial'
+                    doc.styles['Normal']._element.rPr.rFonts.set(qn('w:eastAsia'), 'Arial')
+
+                    # Title
+                    title = doc.add_paragraph()
+                    run = title.add_run('تقرير سجلات الشيكات / Bank Check Records Report')
+                    run.font.size = Pt(16)
+                    run.bold = True
+                    title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+
+                    # Meta
+                    meta = doc.add_paragraph()
+                    meta.add_run(f"Report Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n").font.size = Pt(10)
+                    meta.add_run(f"Number of Records: {len(rows)}\n").font.size = Pt(10)
+
+                    # Table
+                    table = doc.add_table(rows=1, cols=len(columns))
+                    table.style = 'Table Grid'
+                    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+                    hdr_cells = table.rows[0].cells
+                    for i, col in enumerate(columns):
+                        hdr_cells[i].text = str(col)
+                        shade_cell(hdr_cells[i], 'E6F0FF')
+                        for p in hdr_cells[i].paragraphs:
+                            p.runs and setattr(p.runs[0].font, 'bold', True)
+                            p.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+                        hdr_cells[i].vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+
+                    for r in rows:
+                        row_cells = table.add_row().cells
+                        for i, val in enumerate(r):
+                            row_cells[i].text = str(val)
+                            for p in row_cells[i].paragraphs:
+                                p.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+
+                    # Footer summary
+                    doc.add_paragraph().add_run('\n')
+                    summary = doc.add_paragraph()
+                    summary.add_run('ملخص التقرير / Report Summary').bold = True
+                    summary.add_run(f"\nإجمالي عدد السجلات: {len(rows)}")
+
+                    out = BytesIO()
+                    doc.save(out)
+                    out.seek(0)
+                    
+                    # Save to persistent storage
+                    import os
+                    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    date_folder = datetime.now().strftime('%Y-%m-%d')
+                    os.makedirs(f"exports/{date_folder}", exist_ok=True)
+                    filename = f"bank_check_report_{ts}.docx"
+                    file_path = f"exports/{date_folder}/{filename}"
+                    
+                    with open(file_path, 'wb') as f:
+                        f.write(out.getvalue())
+                    
+                    return Response(
+                        content=out.getvalue(), 
+                        media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+                        headers={
+                            'Content-Disposition': f'attachment; filename="{filename}"',
+                            'X-Export-Src': file_path
+                        }
+                    )
+
+                if not records:
+                    raise HTTPException(status_code=400, detail="No records provided for Word export")
+                # Fallback to service template
                 _, word_bytes = await enhanced_bank_check_service.process_records(records)
-                filename = f"bank_check_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
-                return Response(content=word_bytes, media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document', headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+                
+                # Save to persistent storage
+                import os
+                ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+                date_folder = datetime.now().strftime('%Y-%m-%d')
+                os.makedirs(f"exports/{date_folder}", exist_ok=True)
+                filename = f"bank_check_report_{ts}.docx"
+                file_path = f"exports/{date_folder}/{filename}"
+                
+                with open(file_path, 'wb') as f:
+                    f.write(word_bytes)
+                
+                return Response(
+                    content=word_bytes, 
+                    media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+                    headers={
+                        'Content-Disposition': f'attachment; filename="{filename}"',
+                        'X-Export-Src': file_path
+                    }
+                )
             else:
-                # Return only Excel document
-                excel_bytes, _ = await enhanced_bank_check_service.process_records(records)
-                filename = f"bank_check_records_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                return Response(content=excel_bytes, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+                # Build a well-formatted Excel dynamically from provided data (robust to arbitrary labels)
+                from io import BytesIO
+                from openpyxl import Workbook
+                from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+                from openpyxl.utils import get_column_letter
+
+                wb = Workbook()
+                ws = wb.active
+                ws.title = 'Bank Check Records'
+
+                # Determine headers and rows
+                if rows and columns:
+                    headers = columns
+                    data_rows = rows
+                else:
+                    if not records:
+                        raise HTTPException(status_code=400, detail="No records provided")
+                    headers = list(records[0].keys())
+                    seen = set(headers)
+                    for rec in records[1:]:
+                        for k in rec.keys():
+                            if k not in seen:
+                                headers.append(k)
+                                seen.add(k)
+                    data_rows = [[str(rec.get(h, '')) for h in headers] for rec in records]
+
+                # Custom header block
+                title_font = Font(name='Calibri', size=14, bold=True, color='003366')
+                meta_font = Font(name='Calibri', size=11)
+                ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(1, len(headers)))
+                ws.cell(row=1, column=1, value='Bank Check Records Report').font = title_font
+                ws.cell(row=1, column=1).alignment = Alignment(horizontal='center')
+                ws.cell(row=2, column=1, value=f"Report Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}").font = meta_font
+                ws.cell(row=3, column=1, value=f"Number of Records: {len(data_rows)}").font = meta_font
+
+                # Table header row
+                header_row_idx = 5
+                thin = Side(border_style='thin', color='CCCCCC')
+                border = Border(top=thin, left=thin, right=thin, bottom=thin)
+                fill = PatternFill('solid', fgColor='E6F0FF')
+
+                for idx, h in enumerate(headers, start=1):
+                    c = ws.cell(row=header_row_idx, column=idx, value=str(h))
+                    c.font = Font(bold=True)
+                    c.fill = fill
+                    c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                    c.border = border
+
+                # Data rows
+                for ridx, r in enumerate(data_rows, start=header_row_idx + 1):
+                    for cidx, val in enumerate(r, start=1):
+                        c = ws.cell(row=ridx, column=cidx, value=str(val))
+                        c.alignment = Alignment(vertical='top')
+                        c.border = border
+
+                # Column widths
+                for i in range(1, len(headers) + 1):
+                    max_len = max(
+                        [len(str(headers[i-1]))] + [len(str(row[i-1])) for row in data_rows if len(row) >= i]
+                    )
+                    ws.column_dimensions[get_column_letter(i)].width = min(max(12, max_len + 2), 40)
+
+                buf = BytesIO()
+                wb.save(buf)
+                buf.seek(0)
+                
+                # Save to persistent storage
+                import os
+                ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+                date_folder = datetime.now().strftime('%Y-%m-%d')
+                os.makedirs(f"exports/{date_folder}", exist_ok=True)
+                filename = f"bank_check_records_{ts}.xlsx"
+                file_path = f"exports/{date_folder}/{filename}"
+                
+                with open(file_path, 'wb') as f:
+                    f.write(buf.getvalue())
+                
+                return Response(
+                    content=buf.getvalue(), 
+                    media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+                    headers={
+                        'Content-Disposition': f'attachment; filename="{filename}"',
+                        'X-Export-Src': file_path
+                    }
+                )
                 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Enhanced bank check processing failed: {str(e)}")
@@ -1164,17 +3689,70 @@ async def insert_check_record(
                 VALUES ({placeholders})
             """
             
-            # Prepare values in the correct order
+            # Helper to coerce python value to SQL Server expected type
+            from datetime import datetime, date, time
+            def coerce_value(sql_type: str, val):
+                if val is None:
+                    return None
+                if isinstance(val, str) and val.strip() == "":
+                    return None
+                t = (sql_type or '').lower()
+                try:
+                    if t in ['int', 'bigint', 'smallint', 'tinyint']:
+                        # Extract digits if possible
+                        if isinstance(val, (int, float)):
+                            return int(val)
+                        if isinstance(val, str):
+                            return int(val.strip())
+                    if t in ['float', 'real']:
+                        return float(val)
+                    if t in ['decimal', 'numeric', 'money', 'smallmoney']:
+                        from decimal import Decimal
+                        return Decimal(str(val))
+                    if t in ['bit']:
+                        if isinstance(val, bool):
+                            return 1 if val else 0
+                        if isinstance(val, (int, float)):
+                            return 1 if int(val) != 0 else 0
+                        if isinstance(val, str):
+                            return 1 if val.strip().lower() in ['1','true','yes','y'] else 0
+                    if t in ['date']:
+                        if isinstance(val, (datetime, date)):
+                            return val if isinstance(val, date) and not isinstance(val, datetime) else val.date()
+                        if isinstance(val, str):
+                            # isoformat yyyy-mm-dd
+                            return datetime.fromisoformat(val.strip()).date()
+                    if t in ['datetime', 'datetime2', 'smalldatetime']:
+                        if isinstance(val, (datetime, date)):
+                            return val if isinstance(val, datetime) else datetime.combine(val, time())
+                        if isinstance(val, str):
+                            # try parse ISO; append time if date-only
+                            s = val.strip()
+                            if len(s) == 10:
+                                return datetime.fromisoformat(s + 'T00:00:00')
+                            return datetime.fromisoformat(s)
+                    if t in ['time']:
+                        if isinstance(val, time):
+                            return val
+                        if isinstance(val, str):
+                            return time.fromisoformat(val.strip())
+                    # Text-likes as NVARCHAR/VARCHAR
+                    return str(val)
+                except Exception:
+                    # If coercion fails, return None to let NULL insert where allowed
+                    return None
+
+            # Prepare values in the correct order with type coercion
             values = []
-            for col_name in column_names:
-                value = record.get(col_name, None)
-                if value is None and any(col[0] == col_name and col[2] == 'NO' for col in columns):
-                    # Required field is missing
+            for col_name, _, is_nullable in columns:
+                raw_value = record.get(col_name, None)
+                coerced = coerce_value(_, raw_value)  # _ is DATA_TYPE from SELECT
+                if coerced is None and is_nullable == 'NO':
                     return {
                         "success": False,
-                        "error": f"Required field '{col_name}' is missing"
+                        "error": f"Required field '{col_name}' is missing or invalid type (expected {_.lower()})"
                     }
-                values.append(value)
+                values.append(coerced)
             
             # Execute insert
             cursor.execute(insert_query, values)
@@ -1259,6 +3837,7 @@ async def get_database_tables():
                     "schema": schema_name,
                     "full_name": full_table_name,
                     "fields": column_names,
+                    "columns": column_names,  # Add columns for frontend compatibility
                     "field_count": len(column_names)
                 })
             
@@ -1284,6 +3863,7 @@ async def get_database_tables():
                 "schema": "dbo",
                 "full_name": "bank_checks",
                 "fields": ["id", "bank_name", "date", "payee_name", "amount_value", "amount_text", "currency", "status_note", "issuer_signature", "created_at"],
+                "columns": ["id", "bank_name", "date", "payee_name", "amount_value", "amount_text", "currency", "status_note", "issuer_signature", "created_at"],
                 "field_count": 10
             },
             {
@@ -1292,6 +3872,7 @@ async def get_database_tables():
                 "schema": "dbo",
                 "full_name": "customer_records",
                 "fields": ["id", "customer_name", "project_name", "building_number", "apartment_number", "check_number", "due_date", "collection_date", "remaining_days", "collection_status", "total_receivables", "created_at"],
+                "columns": ["id", "customer_name", "project_name", "building_number", "apartment_number", "check_number", "due_date", "collection_date", "remaining_days", "collection_status", "total_receivables", "created_at"],
                 "field_count": 12
             }
         ]
@@ -1472,13 +4053,14 @@ async def create_table(request: Request):
                 field_name = field.get('name', '').strip()
                 field_type = field.get('type', 'NVARCHAR(255)')
                 is_required = field.get('required', False)
-                
+
                 if field_name:
-                    # Sanitize field name (remove spaces, special chars)
-                    clean_name = ''.join(c for c in field_name if c.isalnum() or c in '_')
+                    # Sanitize field name: replace spaces with underscore, then remove other special chars
+                    safe_name = field_name.replace(' ', '_')
+                    clean_name = ''.join(c for c in safe_name if c.isalnum() or c in '_')
                     if not clean_name:
                         clean_name = f"field_{len(columns)}"
-                    
+
                     null_constraint = "NOT NULL" if is_required else "NULL"
                     columns.append(f"[{clean_name}] {field_type} {null_constraint}")
             
@@ -1525,7 +4107,9 @@ async def create_table(request: Request):
                             # Find matching field by name (case-insensitive)
                             field_name = None
                             for field in fields:
-                                clean_field_name = ''.join(c for c in field.get('name', '') if c.isalnum() or c in '_')
+                                _raw = field.get('name', '')
+                                _safe = _raw.replace(' ', '_')
+                                clean_field_name = ''.join(c for c in _safe if c.isalnum() or c in '_')
                                 if clean_field_name.lower() == col_name.lower():
                                     field_name = field.get('name', '')
                                     break

@@ -58,6 +58,15 @@ def get_default_header_config(dashboard_type: str = "dashboard") -> Dict[str, An
             "subtitle": "Key Risk Indicators Monitoring & Assessment",
             "fontColor": "#1F4E79",
             "watermarkEnabled": True
+        },
+        "dynamic": {
+            "includeHeader": True,
+            "icon": "chart-line",
+            "title": "Dynamic Report 9999", 
+            "subtitle": "Custom Data Analysis Report",
+            "fontColor": "#1F4E79",
+            "watermarkEnabled": True,
+            "tableHeaderBgColor": "#366092"
         }
     }
     
@@ -78,6 +87,7 @@ def get_default_header_config(dashboard_type: str = "dashboard") -> Dict[str, An
         "margin": 10,
         "logoHeight": 36,
         "showBankInfo": True,
+        "bankInfoLocation": "top",  # top, bottom, none
         "bankName": DEFAULT_BANK_CONFIG['name'],
         "bankAddress": DEFAULT_BANK_CONFIG['address'],
         "bankPhone": DEFAULT_BANK_CONFIG['phone'],
@@ -129,66 +139,140 @@ def merge_header_config(user_config: Optional[Dict[str, Any]], dashboard_type: s
     return merged_config
 
 def add_watermark_to_pdf(story, header_config: Dict[str, Any]) -> None:
-    """Add watermark to PDF story as background text"""
+    """Add watermark to PDF story as background text positioned in the middle"""
     if not header_config.get('watermarkEnabled', False):
         return
     
     watermark_text = header_config.get('watermarkText', 'CONFIDENTIAL')
+    watermark_opacity = header_config.get('watermarkOpacity', 10)
+    watermark_diagonal = header_config.get('watermarkDiagonal', True)
     
     try:
-        from reportlab.platypus import Paragraph, Spacer
+        from reportlab.platypus import Paragraph, Spacer, KeepTogether
         from reportlab.lib.styles import ParagraphStyle
         from reportlab.lib import colors
         from reportlab.lib.units import inch
+        from reportlab.platypus.flowables import Flowable
+        from reportlab.graphics.shapes import Drawing, String
+        from reportlab.graphics import renderPDF
         
-        # Create watermark style
-        watermark_style = ParagraphStyle(
-            'Watermark',
-            parent=getSampleStyleSheet()['Normal'],
-            fontSize=48,
-            textColor=colors.lightgrey,
-            alignment=1,  # Center alignment
-            spaceAfter=0,
-            spaceBefore=0,
-            leading=60
-        )
+        # Create a custom watermark flowable that positions in the middle
+        class WatermarkFlowable(Flowable):
+            def __init__(self, text, opacity, diagonal):
+                self.text = text
+                self.opacity = opacity / 100.0
+                self.diagonal = diagonal
+                # Required attributes for Flowable
+                self.width = 0
+                self.height = 0
+                
+            def draw(self):
+                # Get canvas dimensions
+                canvas = self.canv
+                width = canvas._pagesize[0]
+                height = canvas._pagesize[1]
+                
+                # Save current state
+                canvas.saveState()
+                
+                # Set opacity
+                canvas.setFillAlpha(self.opacity)
+                canvas.setStrokeAlpha(self.opacity)
+                
+                # Set text color to light gray
+                canvas.setFillColor(colors.lightgrey)
+                canvas.setStrokeColor(colors.lightgrey)
+                
+                # Calculate center position
+                center_x = width / 2
+                center_y = height / 2
+                
+                # Set font and size
+                canvas.setFont("Helvetica-Bold", 48)
+                
+                if self.diagonal:
+                    # Rotate for diagonal effect
+                    canvas.rotate(45)
+                    # Adjust position for rotation
+                    canvas.drawCentredString(center_x, center_y, self.text)
+                else:
+                    # Horizontal text
+                    canvas.drawCentredString(center_x, center_y, self.text)
+                
+                # Restore state
+                canvas.restoreState()
         
-        # Add watermark as a paragraph (will appear behind content)
-        watermark_para = Paragraph(watermark_text, watermark_style)
+        # Create and add watermark
+        watermark = WatermarkFlowable(watermark_text, watermark_opacity, watermark_diagonal)
         
-        # Insert watermark at the beginning of the story
-        story.insert(0, watermark_para)
+        # Insert watermark at the beginning so it appears behind content
+        story.insert(0, watermark)
         story.insert(1, Spacer(1, 0.1*inch))  # Small spacer
         
-        pass
-        
     except Exception as e:
-        pass
+        # Fallback to simple paragraph watermark
+        try:
+            from reportlab.platypus import Paragraph
+            from reportlab.lib.styles import ParagraphStyle
+            from reportlab.lib import colors
+            
+            # Create watermark style
+            watermark_style = ParagraphStyle(
+                'Watermark',
+                parent=getSampleStyleSheet()['Normal'],
+                fontSize=48,
+                textColor=colors.lightgrey,
+                alignment=1,  # Center alignment
+                spaceAfter=0,
+                spaceBefore=0,
+                leading=60
+            )
+            
+            # Add watermark as a paragraph
+            watermark_para = Paragraph(watermark_text, watermark_style)
+            story.insert(0, watermark_para)
+            story.insert(1, Spacer(1, 0.1*inch))
+        except:
+            pass
 
 def add_watermark_to_excel_sheet(worksheet, header_config: Dict[str, Any]) -> None:
-    """Add watermark to Excel worksheet as background image"""
+    """Add watermark to Excel worksheet as background image positioned in the middle"""
     if not header_config.get('watermarkEnabled', False):
         return
     
     watermark_text = header_config.get('watermarkText', 'CONFIDENTIAL')
+    watermark_opacity = header_config.get('watermarkOpacity', 10)
+    watermark_diagonal = header_config.get('watermarkDiagonal', True)
     
     try:
         from PIL import Image, ImageDraw, ImageFont
         import io
+        import math
         
-        # Create a transparent watermark image
-        width, height = 400, 200
+        # Get worksheet dimensions to calculate center position
+        max_row = worksheet.max_row
+        max_col = worksheet.max_column
+        
+        # Calculate center position (approximate)
+        center_row = max(1, max_row // 2)
+        center_col = max(1, max_col // 2)
+        
+        # Create a larger watermark image for better visibility
+        width, height = 600, 300
         watermark_img = Image.new('RGBA', (width, height), (255, 255, 255, 0))  # Transparent background
         draw = ImageDraw.Draw(watermark_img)
         
         # Try to use a system font, fallback to default
         try:
-            font = ImageFont.truetype("arial.ttf", 24)
+            font = ImageFont.truetype("arial.ttf", 36)
         except:
             try:
-                font = ImageFont.truetype("Arial.ttf", 24)
+                font = ImageFont.truetype("Arial.ttf", 36)
             except:
-                font = ImageFont.load_default()
+                try:
+                    font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", 36)
+                except:
+                    font = ImageFont.load_default()
         
         # Get text size
         bbox = draw.textbbox((0, 0), watermark_text, font=font)
@@ -200,13 +284,14 @@ def add_watermark_to_excel_sheet(worksheet, header_config: Dict[str, Any]) -> No
         y = (height - text_height) // 2
         
         # Draw text with transparency
-        opacity = header_config.get('watermarkOpacity', 10) / 100.0
+        opacity = watermark_opacity / 100.0
         text_color = (128, 128, 128, int(255 * opacity))  # Gray with opacity
         
         draw.text((x, y), watermark_text, font=font, fill=text_color)
         
         # Rotate the image if diagonal watermark is enabled
-        if header_config.get('watermarkDiagonal', True):
+        if watermark_diagonal:
+            # Rotate 45 degrees for diagonal effect
             watermark_img = watermark_img.rotate(45, expand=True)
         
         # Save to BytesIO
@@ -219,16 +304,20 @@ def add_watermark_to_excel_sheet(worksheet, header_config: Dict[str, Any]) -> No
         xl_watermark = XLImage(watermark_buf)
         
         # Position watermark in center of worksheet
-        worksheet.add_image(xl_watermark, 'H10')  # Center-ish position
-        
-        pass
+        # Convert center position to Excel cell reference
+        from openpyxl.utils import get_column_letter
+        center_cell = f"{get_column_letter(center_col)}{center_row}"
+        worksheet.add_image(xl_watermark, center_cell)
         
     except Exception as e:
-        pass
         # Fallback: Add watermark text to header
         try:
-            worksheet.HeaderFooter.center_header.text = f"&C{watermark_text}"
-            pass
+            if watermark_diagonal:
+                # For diagonal effect, add multiple spaces to create visual effect
+                diagonal_text = " ".join(watermark_text)
+                worksheet.HeaderFooter.center_header.text = f"&C{diagonal_text}"
+            else:
+                worksheet.HeaderFooter.center_header.text = f"&C{watermark_text}"
         except Exception as header_error:
             pass
 
