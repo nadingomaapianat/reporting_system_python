@@ -74,29 +74,44 @@ class ExcelService:
                 # Get the data from controls_data
                 data = controls_data.get(cardType, [])
                 
-                # Define columns based on cardType (as strings for Excel generation)
-                if cardType == 'numberOfControlsPerComponent':
-                    columns = ['Component', 'Controls Count']
-                    # Convert data to rows format
+                # Define columns and process data based on cardType
+                if cardType in ['numberOfControlsPerComponent', 'quarterlyControlCreationTrend', 'controlsByType', 'department', 'risk', 'antiFraudDistribution', 'controlsPerLevel', 'controlExecutionFrequency', 'numberOfControlsByIcofrStatus', 'numberOfFocusPointsPerPrinciple', 'numberOfFocusPointsPerComponent', 'actionPlansStatus']:
+                    # All chart types use the same format: name/value pairs
+                    columns = [{'key': 'name', 'label': 'Name'}, {'key': 'value', 'label': 'Value'}]
                     data_rows = []
-                    chart_data = {'labels': [], 'values': []}
-                    if data:  # Only process if data exists
+                    chart_data = []
+                    
+                    if data and len(data) > 0:  # Only process if data exists
                         for item in data:
                             data_rows.append([
                                 item.get('name', 'N/A'),
                                 str(item.get('value', 0))
                             ])
-                            chart_data['labels'].append(item.get('name', 'N/A'))
-                            chart_data['values'].append(item.get('value', 0))
+                            chart_data.append({
+                                'name': item.get('name', 'N/A'),
+                                'value': item.get('value', 0)
+                            })
                     else:
                         data_rows.append(['No data available', 'No data available'])
+                        chart_data = [{'name': 'No data available', 'value': 0}]
                     
                     # Add chart_data to header_config for chart generation
                     header_config['chart_data'] = chart_data
-                    header_config['chart_type'] = 'bar'
+                    
+                    # Set chart type based on cardType
+                    if cardType == 'risk':
+                        header_config['chart_type'] = 'pie'
+                    elif cardType == 'quarterlyControlCreationTrend':
+                        header_config['chart_type'] = 'line'
+                    elif cardType in ['department', 'controlsPerLevel', 'controlExecutionFrequency', 'numberOfFocusPointsPerPrinciple', 'numberOfFocusPointsPerComponent']:
+                        header_config['chart_type'] = 'bar'
+                    elif cardType in ['controlsByType', 'antiFraudDistribution', 'numberOfControlsByIcofrStatus', 'actionPlansStatus']:
+                        header_config['chart_type'] = 'pie'
+                    else:
+                        header_config['chart_type'] = 'bar'
                 else:
                     # Default columns for other chart types
-                    columns = ['Data']
+                    columns = [{'key': 'data', 'label': 'Data'}]
                     data_rows = [['No data available']]
                 
                 return generate_excel_report(columns, data_rows, header_config)
@@ -188,7 +203,7 @@ class ExcelService:
                             print(f"DEBUG: Error fetching from database: {e}")
                             data_rows.append(['1', 'No data available', 'No data available'])
                 elif cardType == 'controlsTestingApprovalCycle':
-                    columns = ['#', 'Code', 'Control Name', 'Business Unit', 'Preparer Status', 'Checker Status', 'Reviewer Status', 'Acceptance Status']
+                    columns = [{'key': 'index', 'label': '#'}, {'key': 'Code', 'label': 'Code'}, {'key': 'Control Name', 'label': 'Control Name'}, {'key': 'Business Unit', 'label': 'Business Unit'}, {'key': 'Preparer Status', 'label': 'Preparer Status'}, {'key': 'Checker Status', 'label': 'Checker Status'}, {'key': 'Reviewer Status', 'label': 'Reviewer Status'}, {'key': 'Acceptance Status', 'label': 'Acceptance Status'}]
                     # Convert data to rows format
                     data_rows = []
                     for i, item in enumerate(data, 1):
@@ -204,9 +219,23 @@ class ExcelService:
                         ])
                 else:
                     # Default columns for other table types
-                    columns = ['Data']
+                    columns = [{'key': 'data', 'label': 'Data'}]
                     data_rows = [['No data available']]
                 
+                return generate_excel_report(columns, data_rows, header_config)
+            
+            elif onlyCard and cardType:
+                # Generic card-only rendering: table from list of dicts
+                data = controls_data.get(cardType, [])
+                if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
+                    columns = ['#'] + list(data[0].keys())
+                    data_rows = []
+                    for i, item in enumerate(data, 1):
+                        row = [str(i)] + [str(item.get(col, '')) for col in columns[1:]]
+                        data_rows.append(row)
+                else:
+                    columns = ['Data']
+                    data_rows = [['No data available']]
                 return generate_excel_report(columns, data_rows, header_config)
             
             else:
@@ -222,7 +251,6 @@ class ExcelService:
                 output = BytesIO()
                 wb.save(output)
                 return output.getvalue()
-                
         except Exception as e:
             print(f"Error generating controls Excel: {e}")
             raise e

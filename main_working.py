@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 # Import API routes
 from utils.api_routes import router as api_router
 from dynamic_report_endpoints import router as dynamic_router
+from excel_to_word_endpoints import router as excel_word_router
 
 
 def create_app() -> FastAPI:
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
     # Routers
     app.include_router(api_router)
     app.include_router(dynamic_router)
+    app.include_router(excel_word_router)
 
     # Serve exported files statically under /exports
     app.mount("/exports", StaticFiles(directory="exports"), name="exports")

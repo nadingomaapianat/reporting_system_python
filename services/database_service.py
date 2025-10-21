@@ -162,7 +162,7 @@ class DatabaseService:
             c.{field} as status
         FROM dbo.[Controls] c
         WHERE c.isDeleted = 0 {date_filter}
-          AND (c.{field} IS NULL OR c.{field} <> 'approved')
+          AND c.{field} = 'pending'
         ORDER BY c.createdAt DESC, c.name
         """
         return await self.execute_query(query)
@@ -594,3 +594,97 @@ class DatabaseService:
         ORDER BY k.createdAt DESC
         """
         return await self.execute_query(query)
+    
+    async def get_tests_pending_controls(self, status_type: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get controls with pending test status (using ControlDesignTests table like Node.js frontend)"""
+        date_filter = ""
+        if start_date and end_date:
+            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND c.createdAt >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND c.createdAt <= '{end_date}'"
+        
+        # Map status types to database columns
+        status_column_map = {
+            'preparer': 'preparerStatus',
+            'checker': 'checkerStatus', 
+            'reviewer': 'reviewerStatus',
+            'acceptance': 'acceptanceStatus'
+        }
+        
+        status_column = status_column_map.get(status_type, 'preparerStatus')
+        
+        # Use the exact same SQL query as Node.js frontend but return data instead of count
+        query = f"""
+        SELECT 
+            t.id,
+            c.code,
+            c.name as control_name,
+            t.{status_column} as status,
+            f.name as function_name
+        FROM {self.get_fully_qualified_table_name('ControlDesignTests')} t
+        INNER JOIN {self.get_fully_qualified_table_name('Controls')} c ON c.id = t.control_id
+        LEFT JOIN {self.get_fully_qualified_table_name('Functions')} f ON t.function_id = f.id
+        WHERE t.{status_column} <> 'approved' 
+        AND t.function_id IS NOT NULL 
+        AND c.isDeleted = 0
+        AND t.id IN (
+            SELECT DISTINCT t2.id
+            FROM {self.get_fully_qualified_table_name('ControlDesignTests')} t2
+            INNER JOIN {self.get_fully_qualified_table_name('Controls')} c2 ON c2.id = t2.control_id
+            WHERE t2.{status_column} <> 'approved' 
+            AND t2.function_id IS NOT NULL 
+            AND c2.isDeleted = 0
+            {date_filter}
+        )
+        {date_filter}
+        ORDER BY c.code
+        """
+        return await self.execute_query(query)
+    
+    async def get_pending_controls(self, status_type: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get controls with pending status (for card counts)"""
+        date_filter = ""
+        if start_date and end_date:
+            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND c.createdAt >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND c.createdAt <= '{end_date}'"
+        
+        # Map status types to database columns
+        status_column_map = {
+            'preparer': 'preparerStatus',
+            'checker': 'checkerStatus', 
+            'reviewer': 'reviewerStatus',
+            'acceptance': 'acceptanceStatus'
+        }
+        
+        status_column = status_column_map.get(status_type, 'preparerStatus')
+        
+        query = f"""
+        SELECT 
+            c.id,
+            c.code,
+            c.name as control_name,
+            c.{status_column} as status,
+            f.name as function_name,
+            c.createdAt as created_at
+        FROM {self.get_fully_qualified_table_name('Controls')} c
+        LEFT JOIN {self.get_fully_qualified_table_name('Functions')} f ON c.function_id = f.id
+        WHERE c.isDeleted = 0 
+        AND c.{status_column} != 'approved'
+        {date_filter}
+        ORDER BY c.createdAt DESC
+        """
+        return await self.execute_query(query)
+    
+    async def get_controls_dashboard_data(self, start_date=None, end_date=None):
+        """Get controls dashboard data for fallback when API fails"""
+        try:
+            # Return empty dict as fallback - the individual chart data will be fetched separately
+            return {}
+        except Exception as e:
+            print(f"Error in get_controls_dashboard_data: {e}")
+            return {}

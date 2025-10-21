@@ -12,6 +12,7 @@ import io
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')
+from datetime import datetime
 
 # Import shared utilities
 from shared_pdf_utils import (
@@ -399,17 +400,20 @@ class PDFService:
                     columns = ['#', 'Code', 'Control Name', 'Business Unit', 'Preparer Status', 'Checker Status', 'Reviewer Status', 'Acceptance Status']
                     # Convert data to rows format
                     data_rows = []
-                    for i, item in enumerate(data, 1):
-                        data_rows.append([
-                            str(i),
-                            item.get('Code', 'N/A'),
-                            item.get('Control Name', 'N/A'),
-                            item.get('Business Unit', 'N/A'),
-                            item.get('Preparer Status', 'N/A'),
-                            item.get('Checker Status', 'N/A'),
-                            item.get('Reviewer Status', 'N/A'),
-                            item.get('Acceptance Status', 'N/A')
-                        ])
+                    if data:  # Only process if data exists
+                        for i, item in enumerate(data, 1):
+                            data_rows.append([
+                                str(i),
+                                item.get('Code', 'N/A'),
+                                item.get('Control Name', 'N/A'),
+                                item.get('Business Unit', 'N/A'),
+                                item.get('Preparer Status', 'N/A'),
+                                item.get('Checker Status', 'N/A'),
+                                item.get('Reviewer Status', 'N/A'),
+                                item.get('Acceptance Status', 'N/A')
+                            ])
+                    else:
+                        data_rows.append(['1', 'No data available', 'No data available', 'No data available', 'No data available', 'No data available', 'No data available', 'No data available'])
                 else:
                     # Default columns for other table types
                     columns = ['Data']
@@ -431,6 +435,10 @@ class PDFService:
         """Generate risks PDF report using the same reusable function as Controls dashboard"""
         try:
             from pdf_report_utils import generate_pdf_report
+            # Ensure a proper risks header if none was provided
+            if not header_config:
+                from export_utils import get_default_header_config
+                header_config = get_default_header_config("risks")
             
             if only_card and card_type:
                 # Generate card-specific report

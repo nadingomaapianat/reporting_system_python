@@ -295,24 +295,70 @@ async def export_risks_pdf(
         default_config = get_default_header_config("risks")
         header_config = {**default_config, **header_config}
         
+        # Normalize short card names to canonical keys
+        if cardType in ['low', 'medium', 'high']:
+            cardType = {'low': 'lowRisk', 'medium': 'mediumRisk', 'high': 'highRisk'}[cardType]
+        
         # Get risks data
         risks_data = await api_service.get_risks_data(startDate, endDate)
         
-        # For card-specific exports, filter data from main risks data
+        # Resolve a usable "all risks" list from multiple possible keys
+        all_risks: list = []
+        for key in ['allRisks', 'risks', 'list', 'items', 'data']:
+            value = risks_data.get(key)
+            if isinstance(value, list) and (len(value) == 0 or isinstance(value[0], dict)):
+                all_risks = value
+                break
+        
+        # DB fallback if Node data missing
+        if not all_risks and db_service:
+            db_rows = await db_service.get_risks_data(startDate, endDate)
+            all_risks = [r.to_dict() for r in db_rows]
+            risks_data['allRisks'] = all_risks
+        
+        # For card-specific exports, filter data from resolved list
         if onlyCard and cardType:
             if cardType in ['highRisk', 'mediumRisk', 'lowRisk']:
-                # Filter risks by inherent_value (case-insensitive)
-                all_risks = risks_data.get('allRisks', [])
-                if cardType == 'highRisk':
-                    filtered_risks = [risk for risk in all_risks if risk.get('inherent_value', '').lower() == 'high']
-                elif cardType == 'mediumRisk':
-                    filtered_risks = [risk for risk in all_risks if risk.get('inherent_value', '').lower() == 'medium']
-                elif cardType == 'lowRisk':
-                    filtered_risks = [risk for risk in all_risks if risk.get('inherent_value', '').lower() == 'low']
-                else:
-                    filtered_risks = []
+                def normalize_level(val):
+                    if val is None:
+                        return None
+                    s = str(val).strip().lower()
+                    # numeric mapping: 1–3=low, 4=medium, 5+=high
+                    if s.isdigit():
+                        n = int(s)
+                        if n >= 5:
+                            return 'high'
+                        if n >= 4:
+                            return 'medium'
+                        return 'low'
+                    if 'high' in s:
+                        return 'high'
+                    if 'medium' in s:
+                        return 'medium'
+                    if 'low' in s:
+                        return 'low'
+                    return None
+
+                filtered_risks = []
+                for risk in all_risks:
+                    level = normalize_level(
+                        risk.get('inherent_value')
+                        or risk.get('inherent')
+                        or risk.get('inherentLevel')
+                        or risk.get('inherent_rating')
+                    )
+                    if (cardType == 'highRisk' and level == 'high') or \
+                       (cardType == 'mediumRisk' and level == 'medium') or \
+                       (cardType == 'lowRisk' and level == 'low'):
+                        filtered_risks.append(risk)
                 
-                risks_data[f'{cardType}'] = filtered_risks
+                # If still empty, try Node card endpoint
+                if not filtered_risks:
+                    fetched = await api_service.get_risks_card_data(cardType, startDate, endDate)
+                    if isinstance(fetched, list) and fetched:
+                        filtered_risks = fetched
+                
+                risks_data[cardType] = filtered_risks
         
         # Generate PDF
         pdf_content = await pdf_service.generate_risks_pdf(
@@ -359,25 +405,70 @@ async def export_risks_excel(
         # Get default header config for risks
         default_config = get_default_header_config("risks")
         header_config = {**default_config, **header_config}
+
+        # Normalize short card names to canonical keys
+        if cardType in ['low', 'medium', 'high']:
+            cardType = {'low': 'lowRisk', 'medium': 'mediumRisk', 'high': 'highRisk'}[cardType]
         
         # Get risks data
         risks_data = await api_service.get_risks_data(startDate, endDate)
         
-        # For card-specific exports, filter data from main risks data
+        # Resolve a usable "all risks" list from multiple possible keys
+        all_risks: list = []
+        for key in ['allRisks', 'risks', 'list', 'items', 'data']:
+            value = risks_data.get(key)
+            if isinstance(value, list) and (len(value) == 0 or isinstance(value[0], dict)):
+                all_risks = value
+                break
+        
+        # DB fallback if Node data missing
+        if not all_risks and db_service:
+            db_rows = await db_service.get_risks_data(startDate, endDate)
+            all_risks = [r.to_dict() for r in db_rows]
+            risks_data['allRisks'] = all_risks
+        
+        # For card-specific exports, filter data from resolved list
         if onlyCard and cardType:
             if cardType in ['highRisk', 'mediumRisk', 'lowRisk']:
-                # Filter risks by inherent_value (case-insensitive)
-                all_risks = risks_data.get('allRisks', [])
-                if cardType == 'highRisk':
-                    filtered_risks = [risk for risk in all_risks if risk.get('inherent_value', '').lower() == 'high']
-                elif cardType == 'mediumRisk':
-                    filtered_risks = [risk for risk in all_risks if risk.get('inherent_value', '').lower() == 'medium']
-                elif cardType == 'lowRisk':
-                    filtered_risks = [risk for risk in all_risks if risk.get('inherent_value', '').lower() == 'low']
-                else:
-                    filtered_risks = []
-                
-                risks_data[f'{cardType}'] = filtered_risks
+                def normalize_level(val):
+                    if val is None:
+                        return None
+                    s = str(val).strip().lower()
+                    if s.isdigit():
+                        n = int(s)
+                        if n >= 5:
+                            return 'high'
+                        if n >= 4:
+                            return 'medium'
+                        return 'low'
+                    if 'high' in s:
+                        return 'high'
+                    if 'medium' in s:
+                        return 'medium'
+                    if 'low' in s:
+                        return 'low'
+                    return None
+
+                filtered_risks = []
+                for risk in all_risks:
+                    level = normalize_level(
+                        risk.get('inherent_value')
+                        or risk.get('inherent')
+                        or risk.get('inherentLevel')
+                        or risk.get('inherent_rating')
+                    )
+                    if (cardType == 'highRisk' and level == 'high') or \
+                       (cardType == 'mediumRisk' and level == 'medium') or \
+                       (cardType == 'lowRisk' and level == 'low'):
+                        filtered_risks.append(risk)
+
+                # If still empty, try Node card endpoint
+                if not filtered_risks:
+                    fetched = await api_service.get_risks_card_data(cardType, startDate, endDate)
+                    if isinstance(fetched, list) and fetched:
+                        filtered_risks = fetched
+
+                risks_data[cardType] = filtered_risks
         
         # Generate Excel
         excel_content = await excel_service.generate_risks_excel(
@@ -437,15 +528,13 @@ async def export_controls_pdf(
         onlyChart = onlyChart.lower() in ['true', '1', 'yes']
         onlyOverallTable = onlyOverallTable.lower() in ['true', '1', 'yes']
         
-        # Normalize table/chart params → card params to support onlyChart/onlyOverallTable
+        # Respect explicit cardType from client; only derive when not provided
+        if not cardType:
         if onlyChart and chartType in ['department', 'risk', 'quarterlyControlCreationTrend', 'controlsByType', 'antiFraudDistribution', 'controlsPerLevel', 'controlExecutionFrequency', 'numberOfControlsByIcofrStatus', 'numberOfFocusPointsPerPrinciple', 'numberOfFocusPointsPerComponent', 'numberOfControlsPerComponent', 'actionPlansStatus']:
             cardType = chartType
             onlyCard = True
-            # Keep onlyChart as True for PDF service
             onlyChart = True
-            print(f"DEBUG: Chart export - onlyChart={onlyChart}, chartType={chartType}, cardType={cardType}, onlyCard={onlyCard}")
         elif onlyOverallTable:
-            # Check if specific table type is requested
             if table_type == 'controlsTestingApprovalCycle':
                 cardType = 'controlsTestingApprovalCycle'
             elif table_type == 'keyNonKeyControlsPerDepartment':
@@ -489,30 +578,32 @@ async def export_controls_pdf(
             cardType = 'overallStatuses'
             onlyCard = True
 
-        # Get controls data with timeout handling
-        try:
-            print("DEBUG: About to call get_controls_data")
-            controls_data = await asyncio.wait_for(
-                api_service.get_controls_data(startDate, endDate), 
-                timeout=45.0
-            )
-            print(f"DEBUG: Controls data keys from API: {list(controls_data.keys())}")
-            print(f"DEBUG: Controls data type: {type(controls_data)}")
-            # Check if any values are Response objects
-            for key, value in controls_data.items():
-                if hasattr(value, 'status'):
-                    print(f"DEBUG: WARNING - {key} is a Response object: {type(value)}")
-                elif isinstance(value, list) and len(value) > 0:
-                    print(f"DEBUG: {key} is a list with {len(value)} items")
-                    if hasattr(value[0], 'status'):
-                        print(f"DEBUG: WARNING - {key}[0] is a Response object: {type(value[0])}")
-        except asyncio.TimeoutError:
-            print("DEBUG: Controls data API timeout - using empty data")
+        # Short-circuit: skip heavy dashboard fetch for card-only exports
+        if onlyCard and cardType:
             controls_data = {}
-        except Exception as e:
-            print(f"DEBUG: Controls data API error: {e}")
-            controls_data = {}
-        
+        else:
+            try:
+                print("DEBUG: About to call get_controls_data")
+                controls_data = await asyncio.wait_for(
+                    api_service.get_controls_data(startDate, endDate), 
+                    timeout=45.0
+                )
+                print(f"DEBUG: Controls data keys from API: {list(controls_data.keys())}")
+                print(f"DEBUG: Controls data type: {type(controls_data)}")
+                # Check if any values are Response objects
+                for key, value in controls_data.items():
+                    if hasattr(value, 'status'):
+                        print(f"DEBUG: WARNING - {key} is a Response object: {type(value)}")
+                    elif isinstance(value, list) and len(value) > 0:
+                        print(f"DEBUG: {key} is a list with {len(value)} items")
+                        if hasattr(value[0], 'status'):
+                            print(f"DEBUG: WARNING - {key}[0] is a Response object: {type(value[0])}")
+            except asyncio.TimeoutError:
+                print("DEBUG: Controls data API timeout - using empty data")
+                controls_data = {}
+            except Exception as e:
+                print(f"DEBUG: Controls data API error: {e}")
+                controls_data = {}
         # Ensure specific data exists for card-only routes (and add SQL fallbacks)
         if onlyCard and cardType:
             if cardType in ['totalControls', 'unmappedControls', 'pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance', 'testsPendingPreparer', 'testsPendingChecker', 'testsPendingReviewer', 'testsPendingAcceptance', 'unmappedIcofrControls', 'unmappedNonIcofrControls']:
@@ -528,17 +619,32 @@ async def export_controls_pdf(
                         card_data = await db_service.get_pending_controls('reviewer', startDate, endDate)
                     elif cardType == 'pendingAcceptance':
                         card_data = await db_service.get_pending_controls('acceptance', startDate, endDate)
+                    elif cardType == 'testsPendingPreparer':
+                        card_data = await db_service.get_tests_pending_controls('preparer', startDate, endDate)
+                    elif cardType == 'testsPendingChecker':
+                        card_data = await db_service.get_tests_pending_controls('checker', startDate, endDate)
+                    elif cardType == 'testsPendingReviewer':
+                        card_data = await db_service.get_tests_pending_controls('reviewer', startDate, endDate)
+                    elif cardType == 'testsPendingAcceptance':
+                        card_data = await db_service.get_tests_pending_controls('acceptance', startDate, endDate)
                     elif cardType == 'unmappedIcofrControls':
                         card_data = await db_service.get_unmapped_icofr_controls(startDate, endDate)
                     elif cardType == 'unmappedNonIcofrControls':
                         card_data = await db_service.get_unmapped_non_icofr_controls(startDate, endDate)
+                    elif cardType == 'testsPendingPreparer':
+                        card_data = await db_service.get_tests_pending_controls('preparer', startDate, endDate)
+                    elif cardType == 'testsPendingChecker':
+                        card_data = await db_service.get_tests_pending_controls('checker', startDate, endDate)
+                    elif cardType == 'testsPendingReviewer':
+                        card_data = await db_service.get_tests_pending_controls('reviewer', startDate, endDate)
+                    elif cardType == 'testsPendingAcceptance':
+                        card_data = await db_service.get_tests_pending_controls('acceptance', startDate, endDate)
                     else:
                         card_data = []
                 controls_data[f'{cardType}'] = card_data
             elif cardType == 'overallStatuses':
-                # Prefer API aggregate if present
-                if not controls_data.get('statusOverview'):
-                    # Fallback to DB
+                # Prefer API aggregate; else DB fallback
+                if not controls_data.get('overallStatuses'):
                     rows = await db_service.execute_query(
                         """
                         SELECT 
@@ -553,7 +659,7 @@ async def export_controls_pdf(
                         ORDER BY c.createdAt DESC
                         """
                     )
-                    controls_data['statusOverview'] = rows
+                    controls_data['overallStatuses'] = rows
 
     # Generate PDF
         try:
@@ -594,6 +700,39 @@ async def export_controls_pdf(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
 
+@router.get("/api/grc/controls/tests/pending-acceptance")
+async def get_tests_pending_acceptance(
+    startDate: str = Query(None, description="Start date for filtering"),
+    endDate: str = Query(None, description="End date for filtering")
+):
+    """Get tests pending acceptance data for modal display"""
+    try:
+        if not db_service:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Get the data using the same method as the card
+        data = await db_service.get_tests_pending_controls('acceptance', startDate, endDate)
+        
+        # Transform the data to match frontend expectations
+        transformed_data = []
+        for item in data:
+            transformed_data.append({
+                "id": item.get("id"),
+                "control_code": item.get("code"),
+                "control_name": item.get("control_name"),
+                "preparerStatus": item.get("status"),
+                "function_name": item.get("function_name")
+            })
+        
+        return {
+            "success": True,
+            "data": transformed_data,
+            "count": len(transformed_data)
+        }
+    except Exception as e:
+        print(f"Error in get_tests_pending_acceptance: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/api/grc/controls/export-excel")
 async def export_controls_excel(
     request: Request,
@@ -630,7 +769,12 @@ async def export_controls_excel(
         
         # Normalize table/chart params → card params for backend handling
         # This lets URLs with onlyChart=true&chartType=... or onlyOverallTable work
-        if onlyChart and chartType in ['department', 'risk', 'quarterlyControlCreationTrend', 'controlsByType', 'antiFraudDistribution', 'controlsPerLevel', 'controlExecutionFrequency', 'numberOfControlsByIcofrStatus', 'numberOfFocusPointsPerPrinciple', 'numberOfFocusPointsPerComponent', 'numberOfControlsPerComponent', 'actionPlansStatus']:
+        
+        # First check if we have a specific cardType from the URL parameter
+        if onlyCard and cardType:
+            # Keep the cardType as provided, don't override it
+            pass
+        elif onlyChart and chartType in ['department', 'risk', 'quarterlyControlCreationTrend', 'controlsByType', 'antiFraudDistribution', 'controlsPerLevel', 'controlExecutionFrequency', 'numberOfControlsByIcofrStatus', 'numberOfFocusPointsPerPrinciple', 'numberOfFocusPointsPerComponent', 'numberOfControlsPerComponent', 'actionPlansStatus']:
             cardType = chartType
             onlyCard = True
         elif onlyOverallTable:
@@ -674,7 +818,11 @@ async def export_controls_excel(
             cardType = 'functionsWithFullyTestedControlTests'
         elif table_type == 'functionsWithFullySubmittedControlTests':
             cardType = 'functionsWithFullySubmittedControlTests'
+        elif table_type == 'controlsByFunction':
+            cardType = 'controlsByFunction'
         else:
+            # Only set default if no cardType was provided
+            if not cardType:
             cardType = 'overallStatuses'
             onlyCard = True
 
@@ -682,18 +830,294 @@ async def export_controls_excel(
         try:
             controls_data = await asyncio.wait_for(
                 api_service.get_controls_data(startDate, endDate), 
-                timeout=45.0
+                timeout=10.0  # Reduced timeout
             )
         except asyncio.TimeoutError:
-            print("DEBUG: Controls data API timeout - using empty data")
+            print("DEBUG: Controls data API timeout - using database fallback")
+            # Use database fallback instead of empty data
+            try:
+                controls_data = await db_service.get_controls_dashboard_data(startDate, endDate)
+            except Exception as db_error:
+                print(f"DEBUG: Database fallback error: {db_error}")
             controls_data = {}
         except Exception as e:
-            print(f"DEBUG: Controls data API error: {e}")
+            print(f"DEBUG: Controls data API error: {e} - using database fallback")
+            try:
+                controls_data = await db_service.get_controls_dashboard_data(startDate, endDate)
+            except Exception as db_error:
+                print(f"DEBUG: Database fallback error: {db_error}")
             controls_data = {}
+        
+        # Construct date filter for SQL queries
+        date_filter = ""
+        if startDate and endDate:
+            try:
+                # Parse dates and create SQL date filter
+                start_date = datetime.strptime(startDate, '%Y-%m-%d').strftime('%Y-%m-%d')
+                end_date = datetime.strptime(endDate, '%Y-%m-%d').strftime('%Y-%m-%d')
+                date_filter = f"AND c.createdAt >= '{start_date}' AND c.createdAt <= '{end_date}'"
+            except ValueError:
+                print(f"DEBUG: Invalid date format - startDate: {startDate}, endDate: {endDate}")
+                date_filter = ""
         
         # For card-specific exports, fetch specific card data (large page size)
         if onlyCard and cardType:
-            if cardType in ['totalControls', 'unmappedControls', 'pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance', 'testsPendingPreparer', 'testsPendingChecker', 'testsPendingReviewer', 'testsPendingAcceptance', 'unmappedIcofrControls', 'unmappedNonIcofrControls']:
+            # Handle chart types first
+            if cardType in ['quarterlyControlCreationTrend', 'controlsByType', 'numberOfControlsPerComponent', 'department', 'risk', 'antiFraudDistribution', 'controlsPerLevel', 'controlExecutionFrequency', 'numberOfControlsByIcofrStatus', 'numberOfFocusPointsPerPrinciple', 'numberOfFocusPointsPerComponent', 'actionPlansStatus']:
+                # Fetch chart data directly from database
+                try:
+                    if cardType == 'quarterlyControlCreationTrend':
+                        chart_data = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                CONCAT('Q', DATEPART(QUARTER, c.createdAt), ' ', YEAR(c.createdAt)) AS name,
+                                COUNT(c.id) AS value
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            WHERE c.isDeleted = 0 {date_filter}
+                            GROUP BY YEAR(c.createdAt), DATEPART(QUARTER, c.createdAt)
+                            ORDER BY YEAR(c.createdAt), DATEPART(QUARTER, c.createdAt)
+                            """
+                        )
+                    elif cardType == 'controlsByType':
+                        chart_data = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                CASE 
+                                    WHEN c.type IS NULL OR c.type = '' THEN 'Not Specified'
+                                    ELSE c.type
+                                END AS name,
+                                COUNT(c.id) AS value
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            WHERE c.isDeleted = 0 {date_filter}
+                            GROUP BY c.type
+                            ORDER BY COUNT(c.id) DESC
+                            """
+                        )
+                    elif cardType == 'numberOfControlsPerComponent':
+                        print("DEBUG: Fetching numberOfControlsPerComponent data from database")
+                        # Use the exact SQL query from Node.js frontend
+                        chart_data = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                cc.name AS name,
+                                COUNT(DISTINCT c.id) AS value
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            JOIN {db_service.get_fully_qualified_table_name('ControlCosos')} ccx ON c.id = ccx.control_id
+                            JOIN {db_service.get_fully_qualified_table_name('CosoPoints')} cp ON ccx.coso_id = cp.id
+                            JOIN {db_service.get_fully_qualified_table_name('CosoPrinciples')} pr ON cp.principle_id = pr.id
+                            JOIN {db_service.get_fully_qualified_table_name('CosoComponents')} cc ON pr.component_id = cc.id
+                            WHERE c.isDeleted = 0 
+                                AND ccx.deletedAt IS NULL 
+                                AND cp.deletedAt IS NULL 
+                                AND pr.deletedAt IS NULL 
+                                AND cc.deletedAt IS NULL {date_filter}
+                            GROUP BY cc.name
+                            ORDER BY COUNT(DISTINCT c.id) DESC
+                            """
+                        )
+                        print(f"DEBUG: numberOfControlsPerComponent query returned {len(chart_data) if chart_data else 0} rows")
+                        if chart_data and len(chart_data) > 0:
+                            print(f"DEBUG: Sample data: {chart_data[0]}")
+                    elif cardType == 'department':
+                        chart_data = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                f.name as name,
+                                COUNT(c.id) as value
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            JOIN {db_service.get_fully_qualified_table_name('ControlFunctions')} cf ON c.id = cf.control_id
+                            JOIN {db_service.get_fully_qualified_table_name('Functions')} f ON cf.function_id = f.id
+                            WHERE c.isDeleted = 0 {date_filter}
+                            GROUP BY f.name
+                            ORDER BY COUNT(c.id) DESC, f.name
+                            """
+                        )
+                    elif cardType == 'risk':
+                        chart_data = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                c.risk_response as name,
+                                COUNT(c.id) as value
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            WHERE c.isDeleted = 0 {date_filter}
+                            GROUP BY c.risk_response
+                            """
+                        )
+                    elif cardType == 'antiFraudDistribution':
+                        chart_data = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                CASE 
+                                    WHEN c.AntiFraud = 1 THEN 'Anti-Fraud'
+                                    WHEN c.AntiFraud = 0 THEN 'Non-Anti-Fraud'
+                                    ELSE 'Unknown'
+                                END AS name,
+                                COUNT(c.id) AS value
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            WHERE c.isDeleted = 0 {date_filter}
+                            GROUP BY c.AntiFraud
+                            ORDER BY COUNT(c.id) DESC
+                            """
+                        )
+                    elif cardType == 'controlsPerLevel':
+                        chart_data = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                CASE 
+                                    WHEN c.entityLevel IS NULL OR c.entityLevel = '' THEN 'Not Specified'
+                                    ELSE c.entityLevel
+                                END AS name,
+                                COUNT(c.id) AS value
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            WHERE c.isDeleted = 0 {date_filter}
+                            GROUP BY c.entityLevel
+                            ORDER BY COUNT(c.id) DESC
+                            """
+                        )
+                    elif cardType == 'controlExecutionFrequency':
+                        chart_data = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                CASE 
+                                    WHEN c.frequency = 'Daily' THEN 'Daily'
+                                    WHEN c.frequency = 'Event Base' THEN 'Event Base'
+                                    WHEN c.frequency = 'Weekly' THEN 'Weekly'
+                                    WHEN c.frequency = 'Monthly' THEN 'Monthly'
+                                    WHEN c.frequency = 'Quarterly' THEN 'Quarterly'
+                                    WHEN c.frequency = 'Semi Annually' THEN 'Semi Annually'
+                                    WHEN c.frequency = 'Annually' THEN 'Annually'
+                                    WHEN c.frequency IS NULL OR c.frequency = '' THEN 'Not Specified'
+                                    ELSE c.frequency
+                                END AS name,
+                                COUNT(c.id) AS value
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            WHERE c.isDeleted = 0 {date_filter}
+                            GROUP BY c.frequency
+                            ORDER BY COUNT(c.id) DESC
+                            """
+                        )
+                    elif cardType == 'numberOfControlsByIcofrStatus':
+                        chart_data = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                CASE 
+                                    WHEN a.id IS NULL THEN 'Non-ICOFR'
+                                    WHEN (a.C = 1 OR a.E = 1 OR a.A = 1 OR a.V = 1 OR a.O = 1 OR a.P = 1)
+                                         AND (a.account_type IN ('Balance Sheet', 'Income Statement')) 
+                                      THEN 'ICOFR' 
+                                    ELSE 'Non-ICOFR' 
+                                END AS name,
+                                COUNT(c.id) AS value
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            LEFT JOIN {db_service.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id AND a.isDeleted = 0
+                            WHERE c.isDeleted = 0 {date_filter}
+                            GROUP BY 
+                                CASE 
+                                    WHEN a.id IS NULL THEN 'Non-ICOFR'
+                                    WHEN (a.C = 1 OR a.E = 1 OR a.A = 1 OR a.V = 1 OR a.O = 1 OR a.P = 1)
+                                         AND (a.account_type IN ('Balance Sheet', 'Income Statement')) 
+                                      THEN 'ICOFR' 
+                                    ELSE 'Non-ICOFR' 
+                                END
+                            ORDER BY COUNT(c.id) DESC
+                            """
+                        )
+                    elif cardType == 'numberOfFocusPointsPerPrinciple':
+                        chart_data = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                prin.name AS name,
+                                COUNT(point.id) AS value
+                            FROM {db_service.get_fully_qualified_table_name('CosoPrinciples')} prin
+                            LEFT JOIN {db_service.get_fully_qualified_table_name('CosoPoints')} point ON prin.id = point.principle_id
+                            WHERE prin.deletedAt IS NULL {date_filter}
+                            GROUP BY prin.name
+                            ORDER BY COUNT(point.id) DESC, prin.name
+                            """
+                        )
+                    elif cardType == 'numberOfFocusPointsPerComponent':
+                        # Use the exact same SQL query as Node.js backend
+                        chart_data = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                comp.name AS name,
+                                COUNT(point.id) AS value
+                            FROM {db_service.get_fully_qualified_table_name('CosoComponents')} comp
+                            JOIN {db_service.get_fully_qualified_table_name('CosoPrinciples')} prin ON prin.component_id = comp.id
+                            LEFT JOIN {db_service.get_fully_qualified_table_name('CosoPoints')} point ON point.principle_id = prin.id
+                            WHERE comp.deletedAt IS NULL AND prin.deletedAt IS NULL {date_filter}
+                            GROUP BY comp.name
+                            ORDER BY COUNT(point.id) DESC
+                            """
+                        )
+                        # Store the data in controls_data for Excel service
+                        controls_data[cardType] = chart_data if chart_data else []
+                    elif cardType == 'numberOfControlsPerComponent':
+                        # Use the exact SQL query provided by user
+                        chart_data = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                cc.name AS name,
+                                COUNT(DISTINCT c.id) AS value
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            JOIN {db_service.get_fully_qualified_table_name('ControlCosos')} ccx ON c.id = ccx.control_id
+                            JOIN {db_service.get_fully_qualified_table_name('CosoPoints')} cp ON ccx.coso_id = cp.id
+                            JOIN {db_service.get_fully_qualified_table_name('CosoPrinciples')} pr ON cp.principle_id = pr.id
+                            JOIN {db_service.get_fully_qualified_table_name('CosoComponents')} cc ON pr.component_id = cc.id
+                            WHERE c.isDeleted = 0 
+                                AND ccx.deletedAt IS NULL 
+                                AND cp.deletedAt IS NULL 
+                                AND pr.deletedAt IS NULL 
+                                AND cc.deletedAt IS NULL
+                            GROUP BY cc.name
+                            ORDER BY COUNT(DISTINCT c.id) DESC
+                            """
+                        )
+                        print(f"DEBUG: numberOfControlsPerComponent query returned {len(chart_data) if chart_data else 0} rows")
+                        if chart_data and len(chart_data) > 0:
+                            print(f"DEBUG: Sample data: {chart_data[0]}")
+                            # Store the data in controls_data for Excel service
+                            controls_data[cardType] = chart_data
+                        else:
+                            print("DEBUG: No data returned from numberOfControlsPerComponent query")
+                            controls_data[cardType] = []
+                    elif cardType == 'actionPlansStatus':
+                        chart_data = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                CASE 
+                                    WHEN a.done = 0 AND a.implementation_date < GETDATE() THEN 'Overdue'
+                                    ELSE 'Not Overdue'
+                                END AS name,
+                                COUNT(a.id) AS value
+                            FROM {db_service.get_fully_qualified_table_name('Actionplans')} a
+                            WHERE a.deletedAt IS NULL {date_filter}
+                            GROUP BY 
+                                CASE 
+                                    WHEN a.done = 0 AND a.implementation_date < GETDATE() THEN 'Overdue'
+                                    ELSE 'Not Overdue'
+                                END
+                            ORDER BY COUNT(a.id) DESC
+                            """
+                        )
+                    else:
+                        # Fallback: create a simple chart with basic data
+                        chart_data = [
+                            {'name': 'Sample Data', 'value': 1},
+                            {'name': 'Another Sample', 'value': 2}
+                        ]
+                    
+                    controls_data[cardType] = chart_data
+                    print(f"DEBUG: Fetched {len(chart_data)} rows for chart type {cardType}")
+                    if chart_data:
+                        print(f"DEBUG: Sample data: {chart_data[0] if chart_data else 'Empty'}")
+                except Exception as e:
+                    print(f"DEBUG: Error fetching chart data for {cardType}: {e}")
+                    # Fallback data on error
+                    controls_data[cardType] = [
+                        {'name': 'Error - No Data', 'value': 0}
+                    ]
+            elif cardType in ['totalControls', 'unmappedControls', 'pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance', 'testsPendingPreparer', 'testsPendingChecker', 'testsPendingReviewer', 'testsPendingAcceptance', 'unmappedIcofrControls', 'unmappedNonIcofrControls']:
                 # Try Node API first
                 card_data = await api_service.get_controls_card_data(cardType, startDate, endDate)
                 # If empty, fallback to direct SQL for reliability
@@ -712,11 +1136,20 @@ async def export_controls_excel(
                         card_data = await db_service.get_unmapped_icofr_controls(startDate, endDate)
                     elif cardType == 'unmappedNonIcofrControls':
                         card_data = await db_service.get_unmapped_non_icofr_controls(startDate, endDate)
+                    elif cardType == 'testsPendingPreparer':
+                        card_data = await db_service.get_tests_pending_controls('preparer', startDate, endDate)
+                    elif cardType == 'testsPendingChecker':
+                        card_data = await db_service.get_tests_pending_controls('checker', startDate, endDate)
+                    elif cardType == 'testsPendingReviewer':
+                        card_data = await db_service.get_tests_pending_controls('reviewer', startDate, endDate)
+                    elif cardType == 'testsPendingAcceptance':
+                        card_data = await db_service.get_tests_pending_controls('acceptance', startDate, endDate)
                     else:
                         card_data = []
                 controls_data[f'{cardType}'] = card_data
             elif cardType == 'overallStatuses':
-                if not controls_data.get('statusOverview'):
+                # Fix: populate the expected 'overallStatuses' key (not 'statusOverview')
+                if not controls_data.get('overallStatuses'):
                     rows = await db_service.execute_query(
                         """
                         SELECT 
@@ -731,7 +1164,7 @@ async def export_controls_excel(
                         ORDER BY c.createdAt DESC
                         """
                     )
-                    controls_data['statusOverview'] = rows
+                    controls_data['overallStatuses'] = rows
             elif cardType == 'controlsTestingApprovalCycle':
                 if not controls_data.get('controlsTestingApprovalCycle'):
                     print("DEBUG: Fetching controlsTestingApprovalCycle data from database")
@@ -837,18 +1270,29 @@ async def export_controls_excel(
                     print("DEBUG: Fetching keyNonKeyControlsPerProcess data from database")
                     try:
                         rows = await db_service.execute_query(
-                            """
+                            f"""
                             SELECT 
-                                p.name AS [Process],
+                                CASE 
+                                    WHEN p.name IS NULL THEN 'Unassigned Process'
+                                    ELSE p.name
+                                END AS [Process],
                                 SUM(CASE WHEN c.keyControl = 1 THEN 1 ELSE 0 END) AS [Key Controls],
                                 SUM(CASE WHEN c.keyControl = 0 THEN 1 ELSE 0 END) AS [Non-Key Controls],
                                 COUNT(c.id) AS [Total Controls]
                             FROM {db_service.get_fully_qualified_table_name('Controls')} c
                             LEFT JOIN {db_service.get_fully_qualified_table_name('ControlProcesses')} cp ON c.id = cp.control_id
                             LEFT JOIN {db_service.get_fully_qualified_table_name('Processes')} p ON cp.process_id = p.id
-                            WHERE c.isDeleted = 0
-                            GROUP BY p.name
-                            ORDER BY COUNT(c.id) DESC, p.name
+                            WHERE c.isDeleted = 0 {date_filter}
+                            GROUP BY 
+                                CASE 
+                                    WHEN p.name IS NULL THEN 'Unassigned Process'
+                                    ELSE p.name
+                                END
+                            ORDER BY COUNT(c.id) DESC, 
+                                CASE 
+                                    WHEN p.name IS NULL THEN 'Unassigned Process'
+                                    ELSE p.name
+                                END
                             """
                         )
                         print(f"DEBUG: Fetched {len(rows)} rows for keyNonKeyControlsPerProcess")
@@ -861,7 +1305,7 @@ async def export_controls_excel(
                     print("DEBUG: Fetching keyNonKeyControlsPerBusinessUnit data from database")
                     try:
                         rows = await db_service.execute_query(
-                            """
+                            f"""
                             SELECT 
                                 f.name AS [Business Unit],
                                 SUM(CASE WHEN c.keyControl = 1 THEN 1 ELSE 0 END) AS [Key Controls],
@@ -870,7 +1314,7 @@ async def export_controls_excel(
                             FROM {db_service.get_fully_qualified_table_name('ControlFunctions')} cf
                             JOIN {db_service.get_fully_qualified_table_name('Functions')} f ON cf.function_id = f.id
                             JOIN {db_service.get_fully_qualified_table_name('Controls')} c ON cf.control_id = c.id
-                            WHERE c.isDeleted = 0
+                            WHERE c.isDeleted = 0 {date_filter}
                             GROUP BY f.name
                             ORDER BY COUNT(c.id) DESC, f.name
                             """
@@ -885,14 +1329,14 @@ async def export_controls_excel(
                     print("DEBUG: Fetching controlCountByAssertionName data from database")
                     try:
                         rows = await db_service.execute_query(
-                            """
+                            f"""
                             SELECT 
                                 COALESCE(a.name, 'Unassigned Assertion') AS [Assertion Name],
                                 COALESCE(a.account_type, 'Not Specified') AS [Type],
                                 COUNT(c.id) AS [Control Count]
                             FROM {db_service.get_fully_qualified_table_name('Controls')} c
                             LEFT JOIN {db_service.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id AND a.isDeleted = 0
-                            WHERE c.isDeleted = 0
+                            WHERE c.isDeleted = 0 {date_filter}
                             GROUP BY a.name, a.account_type
                             ORDER BY COUNT(c.id) DESC, a.name
                             """
@@ -1083,6 +1527,36 @@ async def export_controls_excel(
                     except Exception as e:
                         print(f"DEBUG: Error fetching functionsWithFullyTestedControlTests data: {e}")
                         controls_data['functionsWithFullyTestedControlTests'] = []
+            elif cardType == 'functionsWithFullySubmittedControlTests':
+                if not controls_data.get('functionsWithFullySubmittedControlTests'):
+                    print("DEBUG: Fetching functionsWithFullySubmittedControlTests data from database")
+                    try:
+                        rows = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                f.name AS [Function Name],
+                                CASE WHEN cdt.quarter = 'quarterOne' THEN 1 
+                                     WHEN cdt.quarter = 'quarterTwo' THEN 2 
+                                     WHEN cdt.quarter = 'quarterThree' THEN 3 
+                                     WHEN cdt.quarter = 'quarterFour' THEN 4 
+                                     ELSE NULL END AS [Quarter],
+                                cdt.year AS [Year],
+                                COUNT(DISTINCT c.id) AS [Total Controls],
+                                COUNT(DISTINCT CASE WHEN (c.preparerStatus = 'sent' AND c.acceptanceStatus = 'approved') THEN c.id END) AS [Controls Submitted],
+                                COUNT(DISTINCT CASE WHEN (cdt.preparerStatus = 'sent' AND cdt.acceptanceStatus = 'approved') THEN c.id END) AS [Tests Approved]
+                            FROM {db_service.get_fully_qualified_table_name('Functions')} AS f 
+                            JOIN {db_service.get_fully_qualified_table_name('ControlFunctions')} AS cf ON f.id = cf.function_id 
+                            JOIN {db_service.get_fully_qualified_table_name('Controls')} AS c ON cf.control_id = c.id AND c.isDeleted = 0 
+                            LEFT JOIN {db_service.get_fully_qualified_table_name('ControlDesignTests')} AS cdt ON cdt.control_id = c.id AND cdt.deletedAt IS NULL 
+                            GROUP BY f.name, cdt.quarter, cdt.year
+                            ORDER BY f.name, cdt.year, cdt.quarter
+                            """
+                        )
+                        print(f"DEBUG: Fetched {len(rows)} rows for functionsWithFullySubmittedControlTests")
+                        controls_data['functionsWithFullySubmittedControlTests'] = rows
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching functionsWithFullySubmittedControlTests data: {e}")
+                        controls_data['functionsWithFullySubmittedControlTests'] = []
             elif cardType == 'controlsNotMappedToAssertions':
                 if not controls_data.get('controlsNotMappedToAssertions'):
                     print("DEBUG: Fetching controlsNotMappedToAssertions data from database")
@@ -1125,6 +1599,29 @@ async def export_controls_excel(
                     except Exception as e:
                         print(f"DEBUG: Error fetching controlsNotMappedToPrinciples data: {e}")
                         controls_data['controlsNotMappedToPrinciples'] = []
+            elif cardType == 'controlsByFunction':
+                if not controls_data.get('controlsByFunction'):
+                    print("DEBUG: Fetching controlsByFunction data from database")
+                    try:
+                        rows = await db_service.execute_query(
+                            f"""
+                            SELECT 
+                                f.name as function_name,
+                                c.id as control_id,
+                                c.name as control_name,
+                                c.code as control_code
+                            FROM {db_service.get_fully_qualified_table_name('Controls')} c
+                            JOIN {db_service.get_fully_qualified_table_name('ControlFunctions')} cf ON c.id = cf.control_id
+                            JOIN {db_service.get_fully_qualified_table_name('Functions')} f ON cf.function_id = f.id
+                            WHERE c.isDeleted = 0 {date_filter}
+                            ORDER BY c.createdAt DESC, f.name, c.name
+                            """
+                        )
+                        print(f"DEBUG: Fetched {len(rows)} rows for controlsByFunction")
+                        controls_data['controlsByFunction'] = rows
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching controlsByFunction data: {e}")
+                        controls_data['controlsByFunction'] = []
         
         # Ensure chart data is present for chart-only exports
         if onlyCard and cardType in ['department', 'risk', 'quarterlyControlCreationTrend', 'controlsByType', 'antiFraudDistribution', 'controlsPerLevel', 'controlExecutionFrequency']:
@@ -3183,6 +3680,128 @@ def generate_pdf_report(columns, data_rows, header_config=None):
         content = f.read()
     
     return content
+
+def generate_excel_report(columns, data_rows, header_config=None):
+    """Generate Excel report from dynamic data with chart support"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    from openpyxl.drawing.image import Image
+    import io
+    import matplotlib.pyplot as plt
+    import matplotlib
+    matplotlib.use('Agg')
+    import os
+    from datetime import datetime
+    
+    # Get default header config if none provided
+    if not header_config:
+        from export_utils import get_default_header_config
+        header_config = get_default_header_config("dynamic")
+    
+    # Create workbook and worksheet
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Report"
+    
+    # Add header information
+    row = 1
+    if header_config.get("includeHeader", True):
+        title = header_config.get("title", "Report")
+        ws[f'A{row}'] = title
+        ws[f'A{row}'].font = Font(size=16, bold=True)
+        row += 1
+        
+        if header_config.get("subtitle"):
+            ws[f'A{row}'] = header_config.get("subtitle")
+            ws[f'A{row}'].font = Font(size=12)
+            row += 1
+    
+    # Add date if requested
+    if header_config.get("showDate", True):
+        ws[f'A{row}'] = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        ws[f'A{row}'].font = Font(size=10, italic=True)
+        row += 2
+    
+    # Add data table on the left side
+    table_start_row = row
+    if data_rows and len(data_rows) > 0:
+        # Add table headers
+        if isinstance(columns[0], dict):
+            headers = [col['label'] for col in columns]
+        else:
+            headers = columns
+        
+        for i, header in enumerate(headers, 1):
+            cell = ws.cell(row=row, column=i, value=header)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="E3F2FD", end_color="E3F2FD", fill_type="solid")
+        
+        row += 1
+        
+        # Add data rows
+        for data_row in data_rows:
+            for i, value in enumerate(data_row, 1):
+                ws.cell(row=row, column=i, value=value)
+            row += 1
+    
+    # Add chart on the right side if chart_data is provided
+    if header_config.get("chart_data") and header_config.get("chart_type"):
+        chart_data = header_config["chart_data"]
+        chart_type = header_config["chart_type"]
+        
+        if chart_data and len(chart_data) > 0 and isinstance(chart_data, list):
+            # Create chart
+            plt.figure(figsize=(10, 6))
+            
+            if chart_type == 'pie':
+                labels = [item.get('name', 'Unknown') for item in chart_data if isinstance(item, dict)]
+                values = [item.get('value', 0) for item in chart_data if isinstance(item, dict)]
+                if labels and values:
+                    plt.pie(values, labels=labels, autopct='%1.1f%%', startangle=90)
+                    plt.title(header_config.get("title", "Chart"))
+            elif chart_type == 'bar':
+                labels = [item.get('name', 'Unknown') for item in chart_data if isinstance(item, dict)]
+                values = [item.get('value', 0) for item in chart_data if isinstance(item, dict)]
+                if labels and values:
+                    plt.bar(labels, values)
+                    plt.title(header_config.get("title", "Chart"))
+                    plt.xticks(rotation=45)
+            elif chart_type == 'line':
+                labels = [item.get('name', 'Unknown') for item in chart_data if isinstance(item, dict)]
+                values = [item.get('value', 0) for item in chart_data if isinstance(item, dict)]
+                if labels and values:
+                    plt.plot(labels, values, marker='o')
+                    plt.title(header_config.get("title", "Chart"))
+                    plt.xticks(rotation=45)
+            
+            plt.tight_layout()
+            
+            # Save chart to BytesIO
+            chart_buffer = io.BytesIO()
+            plt.savefig(chart_buffer, format='png', dpi=300, bbox_inches='tight')
+            chart_buffer.seek(0)
+            plt.close()
+            
+            # Add chart to Excel on the right side (column H)
+            img = Image(chart_buffer)
+            img.width = 600
+            img.height = 400
+            ws.add_image(img, f'H{table_start_row}')
+            
+            # Adjust row to be the maximum of table and chart
+            row = max(row, table_start_row + 25)
+    
+    # Set column widths
+    for i in range(1, len(headers) + 1):
+        ws.column_dimensions[get_column_letter(i)].width = 20
+    
+    # Save to BytesIO
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    return output.getvalue()
 
 @router.post("/api/reports/schedule")
 async def save_report_schedule(request: Request):

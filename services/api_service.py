@@ -24,14 +24,24 @@ class APIService:
             if end_date:
                 params['endDate'] = end_date
             
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+            # Add reasonable connect/read timeouts to avoid long hangs
+            timeout = aiohttp.ClientTimeout(total=self.timeout, connect=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
                         return data
                     else:
+                        print(f"DEBUG: Node API returned status {response.status}")
                         return {}
+        except asyncio.TimeoutError:
+            print("DEBUG: Node API timeout - returning empty risks data")
+            return {}
+        except aiohttp.ClientError as e:
+            print(f"DEBUG: Node API client error: {e}")
+            return {}
         except Exception as e:
+            print(f"DEBUG: Node API error: {e}")
             return {}
     
     async def get_controls_data(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
@@ -88,6 +98,47 @@ class APIService:
                     else:
                         return []
         except Exception as e:
+            return []
+    
+    async def get_controls_chart_data(self, chart_type: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]] | Dict[str, Any]:
+        """Get specific controls chart data from Node.js API; returns list or dict depending on endpoint."""
+        try:
+            # Convert camelCase to kebab-case and map to charts endpoint
+            charts_map = {
+                'department': 'charts/department',
+                'risk': 'charts/risk',
+                'quarterlyControlCreationTrend': 'charts/quarterly-control-creation-trend',
+                'controlsByType': 'charts/controls-by-type',
+                'antiFraudDistribution': 'charts/anti-fraud-distribution',
+                'controlsPerLevel': 'charts/controls-per-level',
+                'controlExecutionFrequency': 'charts/control-execution-frequency',
+                'numberOfControlsByIcofrStatus': 'charts/number-of-controls-by-icofr-status',
+                'numberOfFocusPointsPerPrinciple': 'charts/number-of-focus-points-per-principle',
+                'numberOfFocusPointsPerComponent': 'charts/number-of-focus-points-per-component',
+                'numberOfControlsPerComponent': 'charts/number-of-controls-per-component',
+                'actionPlansStatus': 'charts/action-plans-status',
+            }
+            endpoint = charts_map.get(chart_type, f"charts/{chart_type}")
+            url = f"{self.node_api_url}/api/grc/controls/{endpoint}"
+            params = {}
+            if start_date:
+                params['startDate'] = start_date
+            if end_date:
+                params['endDate'] = end_date
+
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout, connect=10)) as session:
+                async with session.get(url, params=params) as response:
+                    if response.status != 200:
+                        return []
+                    data = await response.json()
+                    if isinstance(data, dict):
+                        # common wrappers
+                        for key in ['data', 'items', 'results']:
+                            if key in data and isinstance(data[key], list):
+                                return data[key]
+                        return data
+                    return data if isinstance(data, list) else []
+        except Exception:
             return []
     
     async def get_controls_card_data(self, card_type: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:

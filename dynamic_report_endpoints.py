@@ -278,7 +278,18 @@ def generate_word_report(columns, data_rows, header_config=None):
         
         # Add table
         table = doc.add_table(rows=1, cols=len(columns))
-        table.style = 'Table Grid'
+        
+        # Apply table style safely
+        try:
+            table.style = 'Table Grid'
+        except (ValueError, KeyError):
+            try:
+                table.style = 'Light Grid'
+            except (ValueError, KeyError):
+                try:
+                    table.style = 'Table Normal'
+                except (ValueError, KeyError):
+                    pass  # Use default style
         
         # Add headers
         header_cells = table.rows[0].cells
