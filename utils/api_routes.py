@@ -530,19 +530,38 @@ async def export_controls_pdf(
         
         # Respect explicit cardType from client; only derive when not provided
         if not cardType:
-        if onlyChart and chartType in ['department', 'risk', 'quarterlyControlCreationTrend', 'controlsByType', 'antiFraudDistribution', 'controlsPerLevel', 'controlExecutionFrequency', 'numberOfControlsByIcofrStatus', 'numberOfFocusPointsPerPrinciple', 'numberOfFocusPointsPerComponent', 'numberOfControlsPerComponent', 'actionPlansStatus']:
-            cardType = chartType
-            onlyCard = True
-            onlyChart = True
-        elif onlyOverallTable:
-            if table_type == 'controlsTestingApprovalCycle':
-                cardType = 'controlsTestingApprovalCycle'
-            elif table_type == 'keyNonKeyControlsPerDepartment':
-                cardType = 'keyNonKeyControlsPerDepartment'
-            elif table_type == 'keyNonKeyControlsPerProcess':
-                cardType = 'keyNonKeyControlsPerProcess'
-            elif table_type == 'keyNonKeyControlsPerBusinessUnit':
-                cardType = 'keyNonKeyControlsPerBusinessUnit'
+            if onlyChart and chartType in ['department', 'risk', 'quarterlyControlCreationTrend', 'controlsByType', 'antiFraudDistribution', 'controlsPerLevel', 'controlExecutionFrequency', 'numberOfControlsByIcofrStatus', 'numberOfFocusPointsPerPrinciple', 'numberOfFocusPointsPerComponent', 'numberOfControlsPerComponent', 'actionPlansStatus']:
+                cardType = chartType
+                onlyCard = True
+                onlyChart = True
+            elif onlyOverallTable:
+                if table_type == 'controlsTestingApprovalCycle':
+                    cardType = 'controlsTestingApprovalCycle'
+                elif table_type == 'keyNonKeyControlsPerDepartment':
+                    cardType = 'keyNonKeyControlsPerDepartment'
+                elif table_type == 'keyNonKeyControlsPerProcess':
+                    cardType = 'keyNonKeyControlsPerProcess'
+                elif table_type == 'keyNonKeyControlsPerBusinessUnit':
+                    cardType = 'keyNonKeyControlsPerBusinessUnit'
+                elif table_type == 'controlCountByAssertionName':
+                    cardType = 'controlCountByAssertionName'
+                elif table_type == 'icofrControlCoverageByCoso':
+                    cardType = 'icofrControlCoverageByCoso'
+                elif table_type == 'actionPlanForAdequacy':
+                    cardType = 'actionPlanForAdequacy'
+                elif table_type == 'actionPlanForEffectiveness':
+                    cardType = 'actionPlanForEffectiveness'
+                elif table_type == 'controlSubmissionStatusByQuarterFunction':
+                    cardType = 'controlSubmissionStatusByQuarterFunction'
+                elif table_type == 'functionsWithFullyTestedControlTests':
+                    cardType = 'functionsWithFullyTestedControlTests'
+                elif table_type == 'controlsNotMappedToAssertions':
+                    cardType = 'controlsNotMappedToAssertions'
+                elif table_type == 'controlsNotMappedToPrinciples':
+                    cardType = 'controlsNotMappedToPrinciples'
+                else:
+                    cardType = 'overallStatuses'
+                    onlyCard = True
             elif table_type == 'controlCountByAssertionName':
                 cardType = 'controlCountByAssertionName'
             elif table_type == 'icofrControlCoverageByCoso':
@@ -551,32 +570,13 @@ async def export_controls_pdf(
                 cardType = 'actionPlanForAdequacy'
             elif table_type == 'actionPlanForEffectiveness':
                 cardType = 'actionPlanForEffectiveness'
-            elif table_type == 'controlSubmissionStatusByQuarterFunction':
-                cardType = 'controlSubmissionStatusByQuarterFunction'
             elif table_type == 'functionsWithFullyTestedControlTests':
                 cardType = 'functionsWithFullyTestedControlTests'
-            elif table_type == 'controlsNotMappedToAssertions':
-                cardType = 'controlsNotMappedToAssertions'
-            elif table_type == 'controlsNotMappedToPrinciples':
-                cardType = 'controlsNotMappedToPrinciples'
+            elif table_type == 'functionsWithFullySubmittedControlTests':
+                cardType = 'functionsWithFullySubmittedControlTests'
             else:
                 cardType = 'overallStatuses'
                 onlyCard = True
-        elif table_type == 'controlCountByAssertionName':
-            cardType = 'controlCountByAssertionName'
-        elif table_type == 'icofrControlCoverageByCoso':
-            cardType = 'icofrControlCoverageByCoso'
-        elif table_type == 'actionPlanForAdequacy':
-            cardType = 'actionPlanForAdequacy'
-        elif table_type == 'actionPlanForEffectiveness':
-            cardType = 'actionPlanForEffectiveness'
-        elif table_type == 'functionsWithFullyTestedControlTests':
-            cardType = 'functionsWithFullyTestedControlTests'
-        elif table_type == 'functionsWithFullySubmittedControlTests':
-            cardType = 'functionsWithFullySubmittedControlTests'
-        else:
-            cardType = 'overallStatuses'
-            onlyCard = True
 
         # Short-circuit: skip heavy dashboard fetch for card-only exports
         if onlyCard and cardType:
@@ -823,8 +823,8 @@ async def export_controls_excel(
         else:
             # Only set default if no cardType was provided
             if not cardType:
-            cardType = 'overallStatuses'
-            onlyCard = True
+                cardType = 'overallStatuses'
+                onlyCard = True
 
         # Get controls data with timeout handling
         try:
