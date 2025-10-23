@@ -18,6 +18,7 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 import re  # Add this import at the top with other imports
+import urllib.parse
 
 router = APIRouter()
 
@@ -2108,9 +2109,11 @@ def _insert_table_with_smart_merging(doc, ws, start_row, end_row, start_col_idx,
 async def download_template_file(filename: str):
     """Download a template file."""
     try:
+        # URL decode the filename to handle spaces and special characters
+        decoded_filename = urllib.parse.unquote(filename)
         base_dir = os.path.dirname(__file__)
         templates_dir = os.path.join(base_dir, "template")
-        file_path = os.path.join(templates_dir, filename)
+        file_path = os.path.join(templates_dir, decoded_filename)
         
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="File not found")
@@ -2124,9 +2127,11 @@ async def download_template_file(filename: str):
 async def download_disclosure_file(filename: str):
     """Download a disclosure file."""
     try:
+        # URL decode the filename to handle spaces and special characters
+        decoded_filename = urllib.parse.unquote(filename)
         base_dir = os.path.dirname(__file__)
         disclosures_dir = os.path.join(base_dir, "Disclosures")
-        file_path = os.path.join(disclosures_dir, filename)
+        file_path = os.path.join(disclosures_dir, decoded_filename)
         
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="File not found")
@@ -2140,9 +2145,11 @@ async def download_disclosure_file(filename: str):
 async def delete_template_file(filename: str):
     """Delete a template file."""
     try:
+        # URL decode the filename to handle spaces and special characters
+        decoded_filename = urllib.parse.unquote(filename)
         base_dir = os.path.dirname(__file__)
         templates_dir = os.path.join(base_dir, "template")
-        file_path = os.path.join(templates_dir, filename)
+        file_path = os.path.join(templates_dir, decoded_filename)
         
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="File not found")
@@ -2161,9 +2168,11 @@ async def delete_template_file(filename: str):
 async def delete_disclosure_file(filename: str):
     """Delete a disclosure file."""
     try:
+        # URL decode the filename to handle spaces and special characters
+        decoded_filename = urllib.parse.unquote(filename)
         base_dir = os.path.dirname(__file__)
         disclosures_dir = os.path.join(base_dir, "Disclosures")
-        file_path = os.path.join(disclosures_dir, filename)
+        file_path = os.path.join(disclosures_dir, decoded_filename)
         
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="File not found")
