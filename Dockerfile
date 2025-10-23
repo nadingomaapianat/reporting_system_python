@@ -25,6 +25,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Ensure all necessary directories exist
+RUN mkdir -p Disclosures template reports_export exports
+
+
 EXPOSE 8000
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
