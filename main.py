@@ -20,7 +20,7 @@ def create_app() -> FastAPI:
 
     # CORS
     allowed_origins = [
-        "http://localhost:3000",
+        "https://reporting-system-frontend.pianat.ai",
         "http://127.0.0.1:3000",
         os.getenv("FRONTEND_ORIGIN", "*")
     ]
@@ -54,6 +54,6 @@ if __name__ == "__main__":
     import uvicorn
 
     port = int(os.getenv("PORT", "8000"))
-    uvicorn.run("main_working:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
 
 

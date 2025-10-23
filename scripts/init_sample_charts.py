@@ -152,7 +152,7 @@ def main():
     print("""
 🚀 Next steps:
 1. Start your backend: python main.py
-2. Visit: http://localhost:3002/api/charts/dashboard
+2. Visit: https://reporting-system-backend.pianat.ai/api/charts/dashboard
 3. Or use the frontend: http://localhost:3001/auto-dashboard
     """)
 
