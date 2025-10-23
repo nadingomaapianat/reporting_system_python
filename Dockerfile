@@ -28,6 +28,22 @@ COPY . .
 # Ensure all necessary directories exist
 RUN mkdir -p Disclosures template reports_export exports
 
+# Create demo files for testing
+RUN echo "This is a demo file for testing purposes." > Disclosures/Sample_Disclosure_Report_2025.pdf && \
+    echo "This is a demo file for testing purposes." > Disclosures/Financial_Disclosure_Demo.pdf && \
+    echo "This is a demo file for testing purposes." > Disclosures/Risk_Assessment_Sample.pdf && \
+    echo "This is a demo file for testing purposes." > Disclosures/Compliance_Report_Demo.pdf && \
+    echo "This is a demo template file for testing purposes." > template/Monthly_Report_Template.docx && \
+    echo "This is a demo template file for testing purposes." > template/Risk_Assessment_Template.docx && \
+    echo "This is a demo template file for testing purposes." > template/Financial_Analysis_Template.docx && \
+    echo "This is a demo template file for testing purposes." > template/Compliance_Checklist_Template.docx && \
+    echo "This is a demo template file for testing purposes." > template/Dashboard_Report_Template.docx && \
+    mkdir -p reports_export/$(date +%Y-%m-%d) && \
+    echo "This is a demo export file for testing purposes." > reports_export/sample_export.xlsx && \
+    echo "This is a demo export file for testing purposes." > reports_export/demo_report.docx && \
+    echo "This is a demo export file for testing purposes." > reports_export/$(date +%Y-%m-%d)/dynamic_report_$(date +%Y%m%d_%H%M%S).xlsx && \
+    echo "This is a demo export file for testing purposes." > reports_export/$(date +%Y-%m-%d)/monthly_report_$(date +%Y%m%d_%H%M%S).docx
+
 
 EXPOSE 8000
 
