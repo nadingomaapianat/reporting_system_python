@@ -11,7 +11,7 @@ DATABASE_CONFIG = {
     'database': 'NEWDCC-V4-UAT',
     'username': 'SA',
     'password': 'Nothing_159',
-    'driver': 'ODBC Driver 17 for SQL Server',
+    'driver': 'ODBC Driver 18 for SQL Server',
     'trusted_connection': 'no',
     'encrypt': 'yes',
     'trust_server_certificate': 'yes'
