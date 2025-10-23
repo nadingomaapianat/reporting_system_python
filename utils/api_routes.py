@@ -2712,11 +2712,13 @@ def generate_excel_report(columns, data_rows, header_config=None):
             ws.HeaderFooter.oddFooter.right.text = " | ".join(footer_text)
     
     # Save to file
+    base_dir = os.path.dirname(os.path.dirname(__file__))
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     date_folder = datetime.now().strftime('%Y-%m-%d')
-    os.makedirs(f"reports_export/{date_folder}", exist_ok=True)
+    reports_export_dir = os.path.join(base_dir, "reports_export", date_folder)
+    os.makedirs(reports_export_dir, exist_ok=True)
     filename = f"dynamic_report_{ts}.xlsx"
-    file_path = f"reports_export/{date_folder}/{filename}"
+    file_path = os.path.join(reports_export_dir, filename)
     
     wb.save(file_path)
     
@@ -3140,11 +3142,13 @@ def generate_word_report(columns, data_rows, header_config=None):
             pass
     
     # Save to file
+    base_dir = os.path.dirname(os.path.dirname(__file__))
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     date_folder = datetime.now().strftime('%Y-%m-%d')
-    os.makedirs(f"reports_export/{date_folder}", exist_ok=True)
+    reports_export_dir = os.path.join(base_dir, "reports_export", date_folder)
+    os.makedirs(reports_export_dir, exist_ok=True)
     filename = f"dynamic_report_{ts}.docx"
-    file_path = f"reports_export/{date_folder}/{filename}"
+    file_path = os.path.join(reports_export_dir, filename)
     
     doc.save(file_path)
     
@@ -3228,11 +3232,13 @@ def generate_pdf_report(columns, data_rows, header_config=None):
         from export_utils import get_default_header_config
         header_config = get_default_header_config("dynamic")
     
+    base_dir = os.path.dirname(os.path.dirname(__file__))
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     date_folder = datetime.now().strftime('%Y-%m-%d')
-    os.makedirs(f"reports_export/{date_folder}", exist_ok=True)
+    reports_export_dir = os.path.join(base_dir, "reports_export", date_folder)
+    os.makedirs(reports_export_dir, exist_ok=True)
     filename = f"dynamic_report_{ts}.pdf"
-    file_path = f"reports_export/{date_folder}/{filename}"
+    file_path = os.path.join(reports_export_dir, filename)
     
     # Extract ALL configuration values from header modal configuration
     # Basic report settings

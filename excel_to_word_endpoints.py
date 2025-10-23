@@ -510,8 +510,11 @@ async def excel_to_word(
                 else:
                     logger.warning(f"Unknown insert type '{insert_type}' for tag {tag}")
 
+        # Get base directory for consistent path resolution
+        base_dir = os.path.dirname(__file__)
+        
         # Save output (exports) using original name + date (YYYYMMDD)
-        export_dir = "exports"
+        export_dir = os.path.join(base_dir, "exports")
         os.makedirs(export_dir, exist_ok=True)
         date_stamp = datetime.now().strftime("%Y%m%d")
         orig_name = os.path.basename(template.filename) if getattr(template, 'filename', None) else "document.docx"
@@ -524,7 +527,7 @@ async def excel_to_word(
 
         # Also save in 'Disclosures' with date as YYYY_MM_DD (e.g., 2025_10_23)
         try:
-            disclosures_dir = "Disclosures"
+            disclosures_dir = os.path.join(base_dir, "Disclosures")
             os.makedirs(disclosures_dir, exist_ok=True)
             date_stamp_disclosures = datetime.now().strftime("%Y_%m_%d")
             disclosures_filename = f"{stem}_{date_stamp_disclosures}{ext}"
@@ -2185,4 +2188,86 @@ async def delete_disclosure_file(filename: str):
         raise
     except Exception as e:
         logger.error(f"Error deleting disclosure file {filename}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
+
+@router.get("/api/reports/files/reports-export")
+async def list_reports_export_files():
+    """List all files in the reports_export directory and its subdirectories."""
+    base_dir = os.path.dirname(__file__)
+    reports_export_dir = os.path.join(base_dir, "reports_export")
+    if not os.path.isdir(reports_export_dir):
+        raise HTTPException(status_code=404, detail="Reports export directory not found")
+    
+    files = []
+    for root, dirs, filenames in os.walk(reports_export_dir):
+        for name in filenames:
+            path = os.path.join(root, name)
+            if os.path.isfile(path):
+                ext = os.path.splitext(name)[1].lower()
+                if ext in [".docx", ".doc", ".dotx", ".xlsx", ".xls", ".pdf"]:
+                    stat = os.stat(path)
+                    # Get relative path from reports_export directory
+                    rel_path = os.path.relpath(path, reports_export_dir)
+                    files.append({
+                        "name": name,
+                        "path": rel_path,  # Include subdirectory path
+                        "size": stat.st_size,
+                        "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
+                    })
+    
+    # Sort by modification time (newest first)
+    files.sort(key=lambda x: x["modified"], reverse=True)
+    return {"files": files}
+
+@router.get("/api/reports/files/reports-export/download/{filename}")
+async def download_reports_export_file(filename: str):
+    """Download a reports export file."""
+    try:
+        # URL decode the filename to handle spaces and special characters
+        decoded_filename = urllib.parse.unquote(filename)
+        base_dir = os.path.dirname(__file__)
+        reports_export_dir = os.path.join(base_dir, "reports_export")
+        
+        # Search for the file in all subdirectories
+        file_path = None
+        for root, dirs, files in os.walk(reports_export_dir):
+            if decoded_filename in files:
+                file_path = os.path.join(root, decoded_filename)
+                break
+        
+        if not file_path or not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        return FileResponse(file_path, filename=filename)
+    except Exception as e:
+        logger.error(f"Error downloading reports export file {filename}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to download file")
+
+@router.delete("/api/reports/files/reports-export/delete/{filename}")
+async def delete_reports_export_file(filename: str):
+    """Delete a reports export file."""
+    try:
+        # URL decode the filename to handle spaces and special characters
+        decoded_filename = urllib.parse.unquote(filename)
+        base_dir = os.path.dirname(__file__)
+        reports_export_dir = os.path.join(base_dir, "reports_export")
+        
+        # Search for the file in all subdirectories
+        file_path = None
+        for root, dirs, files in os.walk(reports_export_dir):
+            if decoded_filename in files:
+                file_path = os.path.join(root, decoded_filename)
+                break
+        
+        if not file_path or not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        os.remove(file_path)
+        logger.info(f"Deleted reports export file: {filename}")
+        return {"message": "File deleted successfully"}
+    except HTTPException:
+        # Re-raise HTTP exceptions (like 404) as-is
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting reports export file {filename}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
