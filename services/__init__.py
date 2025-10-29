@@ -5,14 +5,32 @@ from .api_service import APIService
 from .pdf_service import PDFService
 from .excel_service import ExcelService
 
-# Optional import: DatabaseService may require pyodbc / drivers
+# Optional imports: Services may require pyodbc / drivers
 try:
-    from .database_service import DatabaseService
+    from .control_service import ControlService
 except Exception:
-    DatabaseService = None  # type: ignore
+    ControlService = None  # type: ignore
+
+try:
+    from .incident_service import IncidentService
+except Exception:
+    IncidentService = None  # type: ignore
+
+try:
+    from .kri_service import KRIService
+except Exception:
+    KRIService = None  # type: ignore
+
+try:
+    from .risk_service import RiskService
+except Exception:
+    RiskService = None  # type: ignore
 
 __all__ = [
-    'DatabaseService',
+    'ControlService',
+    'IncidentService',
+    'KRIService',
+    'RiskService',
     'APIService',
     'PDFService',
     'ExcelService'

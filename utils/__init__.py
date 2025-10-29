@@ -1,6 +1,11 @@
 """
 Utilities package for the reporting system
 """
-from .api_routes import router
+# Lazy import to avoid circular dependencies
+def get_router():
+    """Get the API router (lazy import)"""
+    from .api_routes import router
+    return router
 
-__all__ = ['router']
+# Export the lazy import function instead of the router directly
+__all__ = ['get_router']

@@ -19,8 +19,8 @@ DATABASE_CONFIG = {
 
 # API Configuration
 API_CONFIG = {
-    'node_api_url': 'https://reporting-system-backend.pianat.ai',
-    'python_api_url': 'https://reporting-system-python.pianat.ai',
+    'node_api_url': 'http://localhost:3002',
+    'python_api_url': 'http://localhost:8000',
     'timeout': 60
 }
 

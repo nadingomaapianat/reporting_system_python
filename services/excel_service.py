@@ -22,11 +22,11 @@ class ExcelService:
     async def generate_excel_report(self, report_data: Dict[str, Any], report_config: Dict[str, Any]) -> bytes:
         """Generate Excel report from data and configuration using reusable functions"""
         try:
-            from utils.api_routes import generate_excel_report
+            from routes.route_utils import generate_excel_report
             
             # For now, generate a basic report
             data_rows = [['Controls Dashboard Report', 'Generated Successfully']]
-            columns = [{'key': 'title', 'label': 'Title'}, {'key': 'status', 'label': 'Status'}]
+            columns = ['Title', 'Status']
             
             return generate_excel_report(columns, data_rows, report_config)
             
@@ -56,8 +56,13 @@ class ExcelService:
         
         # Add data rows
         for i, item in enumerate(data, 6):
-            ws.cell(row=i, column=1, value=item.get('name', 'N/A'))
-            ws.cell(row=i, column=2, value=item.get('value', 0))
+            if isinstance(item, dict):
+                ws.cell(row=i, column=1, value=item.get('name', 'N/A'))
+                ws.cell(row=i, column=2, value=item.get('value', 0))
+            else:
+                # Handle list/tuple format
+                ws.cell(row=i, column=1, value=str(item[0]) if isinstance(item, (list, tuple)) and len(item) > 0 else 'N/A')
+                ws.cell(row=i, column=2, value=str(item[1]) if isinstance(item, (list, tuple)) and len(item) > 1 else 0)
         
         # Set column widths
         column_widths = [30, 15]
@@ -65,177 +70,176 @@ class ExcelService:
             ws.column_dimensions[get_column_letter(i)].width = width
 
     async def generate_controls_excel(self, controls_data: Dict[str, Any], startDate: str, endDate: str, header_config: Dict[str, Any], cardType: str = None, onlyCard: bool = False, onlyOverallTable: bool = False, onlyChart: bool = False) -> bytes:
-        """Generate Excel report for controls dashboard using normal export pattern"""
+        """Generate Excel report for controls dashboard - matches PDF format exactly"""
         try:
-            from utils.api_routes import generate_excel_report
+            from routes.route_utils import generate_excel_report
+            import re
             
-            # For chart exports, generate chart image + data table
+            # Get the data from controls_data
+            data = controls_data.get(cardType, []) if controls_data else []
+            from routes.route_utils import write_debug
+            write_debug(f"Excel export - cardType={cardType}, data type={type(data)}, len={len(data) if isinstance(data, list) else 'N/A'}")
+            
+            columns = []
+            data_rows = []
+            
+            # Define column name formatter (same as PDF)
+            def format_column_name(key):
+                """Convert snake_case or camelCase to Title Case"""
+                formatted = re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(key))
+                return formatted.title()
+            
+            # CHART EXPORT - same logic as PDF
             if onlyChart and cardType:
-                # Get the data from controls_data
-                data = controls_data.get(cardType, [])
-                
-                # Define columns and process data based on cardType
-                if cardType in ['numberOfControlsPerComponent', 'quarterlyControlCreationTrend', 'controlsByType', 'department', 'risk', 'antiFraudDistribution', 'controlsPerLevel', 'controlExecutionFrequency', 'numberOfControlsByIcofrStatus', 'numberOfFocusPointsPerPrinciple', 'numberOfFocusPointsPerComponent', 'actionPlansStatus']:
-                    # All chart types use the same format: name/value pairs
-                    columns = [{'key': 'name', 'label': 'Name'}, {'key': 'value', 'label': 'Value'}]
-                    data_rows = []
-                    chart_data = []
-                    
-                    if data and len(data) > 0:  # Only process if data exists
-                        for item in data:
-                            data_rows.append([
-                                item.get('name', 'N/A'),
-                                str(item.get('value', 0))
-                            ])
-                            chart_data.append({
-                                'name': item.get('name', 'N/A'),
-                                'value': item.get('value', 0)
-                            })
-                    else:
-                        data_rows.append(['No data available', 'No data available'])
-                        chart_data = [{'name': 'No data available', 'value': 0}]
-                    
-                    # Add chart_data to header_config for chart generation
-                    header_config['chart_data'] = chart_data
-                    
-                    # Set chart type based on cardType
-                    if cardType == 'risk':
-                        header_config['chart_type'] = 'pie'
-                    elif cardType == 'quarterlyControlCreationTrend':
-                        header_config['chart_type'] = 'line'
-                    elif cardType in ['department', 'controlsPerLevel', 'controlExecutionFrequency', 'numberOfFocusPointsPerPrinciple', 'numberOfFocusPointsPerComponent']:
-                        header_config['chart_type'] = 'bar'
-                    elif cardType in ['controlsByType', 'antiFraudDistribution', 'numberOfControlsByIcofrStatus', 'actionPlansStatus']:
-                        header_config['chart_type'] = 'pie'
-                    else:
-                        header_config['chart_type'] = 'bar'
+                if isinstance(data, list) and data:
+                    first_item = data[0] if data else {}
+                    if isinstance(first_item, dict):
+                        keys = list(first_item.keys())
+                        if len(keys) >= 2:
+                            key1 = keys[0]
+                            key2 = keys[-1]
+                            label1 = format_column_name(key1)
+                            label2 = format_column_name(key2)
+                            columns = [label1, label2]
+                            
+                            for item in data:
+                                name = item.get(key1, "N/A")
+                                value = item.get(key2, 0)
+                                data_rows.append([name, str(value)])
+                        else:
+                            key1 = keys[0]
+                            columns = [format_column_name(key1), "Value"]
+                            for item in data:
+                                name = item.get(key1, "N/A")
+                                data_rows.append([name, 0])
                 else:
-                    # Default columns for other chart types
-                    columns = [{'key': 'data', 'label': 'Data'}]
-                    data_rows = [['No data available']]
+                    data_rows = [["No data available", "0"]]
+                    columns = ["Label", "Value"]
+                
+                # Add chart type configuration (same as PDF)
+                default_type_by_card = {
+                    "quarterlyControlCreationTrend": "line",
+                    "controlsByType": "pie",
+                    "antiFraudDistribution": "pie",
+                    "controlsPerLevel": "bar",
+                    "controlExecutionFrequency": "bar",
+                    "numberOfControlsPerComponent": "bar",
+                    "departmentDistribution": "bar",
+                    "numberOfControlsByIcofrStatus": "pie",
+                }
+                
+                # Priority: renderType/chartType from query > cardType default > "bar"
+                chart_type = header_config.get("chartType") or header_config.get("chart_type")
+                if chart_type and chart_type in {"bar", "line", "pie"}:
+                    write_debug(f"Using provided chart type: {chart_type}")
+                else:
+                    chart_type = default_type_by_card.get(cardType, "bar")
+                    write_debug(f"Using default chart type for {cardType}: {chart_type}")
+                
+                header_config['chart_type'] = chart_type
+                
+                # Extract chart data for visualization (labels and values from data_rows)
+                chart_labels = []
+                chart_values = []
+                for row in data_rows:
+                    if len(row) >= 2:
+                        chart_labels.append(str(row[0]))  # First column (label)
+                        try:
+                            chart_values.append(float(row[1]))  # Second column (value)
+                        except:
+                            chart_values.append(0)
+                
+                # Add chart data to header_config
+                if len(chart_labels) > 0 and len(chart_values) > 0:
+                    header_config['chart_data'] = {
+                        'labels': chart_labels,
+                        'values': chart_values
+                    }
+                    write_debug(f"Chart export: Prepared chart_data with {len(chart_labels)} items, type={chart_type}")
                 
                 return generate_excel_report(columns, data_rows, header_config)
             
-            # For table exports, use the normal pattern like other tables
+            # TABLE EXPORT - same logic as PDF (dynamic column extraction)
             elif onlyOverallTable and cardType:
-                # Get the data from controls_data
-                data = controls_data.get(cardType, [])
-                
-                # Define columns based on cardType (as strings for Excel/PDF generation)
-                if cardType == 'controlsNotMappedToAssertions':
-                    columns = ['#', 'Control Name', 'Function Name']
-                    # Convert data to rows format
-                    data_rows = []
-                    if data:  # Only process if data exists
-                        for i, item in enumerate(data, 1):
-                            data_rows.append([
-                                str(i),
-                                item.get('Control Name', 'N/A'),
-                                item.get('Function Name', 'N/A')
-                            ])
-                    else:
-                        # If no data from API, try to fetch directly from database
-                        try:
-                            from services.database_service import DatabaseService
-                            db_service = DatabaseService()
-                            query = '''
-                            SELECT 
-                                c.name AS [Control Name], 
-                                f.name AS [Function Name]
-                            FROM [NEWDCC-V4-UAT].dbo.Controls c
-                            LEFT JOIN [NEWDCC-V4-UAT].dbo.ControlFunctions cf ON cf.control_id = c.id 
-                            LEFT JOIN [NEWDCC-V4-UAT].dbo.Functions f ON f.id = cf.function_id 
-                            WHERE c.icof_id IS NULL AND c.isDeleted = 0
-                            ORDER BY c.createdAt DESC
-                            '''
-                            db_data = await db_service.execute_query(query)
-                            if db_data:
-                                for i, item in enumerate(db_data, 1):
-                                    data_rows.append([
-                                        str(i),
-                                        item.get('Control Name', 'N/A'),
-                                        item.get('Function Name', 'N/A')
-                                    ])
+                # Generic table builder: derive columns from keys of first row and add index column
+                if isinstance(data, list) and len(data) > 0:
+                    first_item = data[0]
+                    if isinstance(first_item, dict):
+                        raw_keys = list(first_item.keys())
+                        columns = ['#'] + [format_column_name(k) for k in raw_keys]
+                        data_rows = []
+                        for i, row in enumerate(data, 1):
+                            if isinstance(row, dict):
+                                values = [str(row.get(k, '')) for k in raw_keys]
+                                data_rows.append([str(i)] + values)
+                            elif isinstance(row, (list, tuple)):
+                                vals = [str(v) for v in row]
+                                data_rows.append([str(i)] + vals)
                             else:
-                                data_rows.append(['1', 'No data available', 'No data available'])
-                        except Exception as e:
-                            print(f"DEBUG: Error fetching from database: {e}")
-                            data_rows.append(['1', 'No data available', 'No data available'])
-                        
-                elif cardType == 'controlsNotMappedToPrinciples':
-                    columns = ['#', 'Control Name', 'Function Name']
-                    # Convert data to rows format
-                    data_rows = []
-                    if data:  # Only process if data exists
-                        for i, item in enumerate(data, 1):
-                            data_rows.append([
-                                str(i),
-                                item.get('Control Name', 'N/A'),
-                                item.get('Function Name', 'N/A')
-                            ])
+                                data_rows.append([str(i), str(row)])
+                    elif isinstance(first_item, (list, tuple)):
+                        num_cols = len(first_item)
+                        columns = ['#'] + [f'C{idx+1}' for idx in range(num_cols)]
+                        data_rows = []
+                        for i, row in enumerate(data, 1):
+                            vals = [str(v) for v in (row if isinstance(row, (list, tuple)) else [row])]
+                            data_rows.append([str(i)] + vals)
                     else:
-                        # If no data from API, try to fetch directly from database
-                        try:
-                            from services.database_service import DatabaseService
-                            db_service = DatabaseService()
-                            query = '''
-                            SELECT 
-                                c.name AS [Control Name], 
-                                f.name AS [Function Name]
-                            FROM [NEWDCC-V4-UAT].dbo.Controls c
-                            LEFT JOIN [NEWDCC-V4-UAT].dbo.ControlFunctions cf ON cf.control_id = c.id 
-                            LEFT JOIN [NEWDCC-V4-UAT].dbo.Functions f ON f.id = cf.function_id 
-                            LEFT JOIN [NEWDCC-V4-UAT].dbo.ControlCosos ccx ON ccx.control_id = c.id AND ccx.deletedAt IS NULL 
-                            WHERE ccx.control_id IS NULL AND c.isDeleted = 0
-                            ORDER BY c.createdAt DESC
-                            '''
-                            db_data = await db_service.execute_query(query)
-                            if db_data:
-                                for i, item in enumerate(db_data, 1):
-                                    data_rows.append([
-                                        str(i),
-                                        item.get('Control Name', 'N/A'),
-                                        item.get('Function Name', 'N/A')
-                                    ])
-                            else:
-                                data_rows.append(['1', 'No data available', 'No data available'])
-                        except Exception as e:
-                            print(f"DEBUG: Error fetching from database: {e}")
-                            data_rows.append(['1', 'No data available', 'No data available'])
-                elif cardType == 'controlsTestingApprovalCycle':
-                    columns = [{'key': 'index', 'label': '#'}, {'key': 'Code', 'label': 'Code'}, {'key': 'Control Name', 'label': 'Control Name'}, {'key': 'Business Unit', 'label': 'Business Unit'}, {'key': 'Preparer Status', 'label': 'Preparer Status'}, {'key': 'Checker Status', 'label': 'Checker Status'}, {'key': 'Reviewer Status', 'label': 'Reviewer Status'}, {'key': 'Acceptance Status', 'label': 'Acceptance Status'}]
-                    # Convert data to rows format
-                    data_rows = []
-                    for i, item in enumerate(data, 1):
-                        data_rows.append([
-                            str(i),
-                            item.get('Code', 'N/A'),
-                            item.get('Control Name', 'N/A'),
-                            item.get('Business Unit', 'N/A'),
-                            item.get('Preparer Status', 'N/A'),
-                            item.get('Checker Status', 'N/A'),
-                            item.get('Reviewer Status', 'N/A'),
-                            item.get('Acceptance Status', 'N/A')
-                        ])
+                        columns = ['#', 'Value']
+                        data_rows = [[str(i+1), str(v)] for i, v in enumerate(data)]
                 else:
-                    # Default columns for other table types
-                    columns = [{'key': 'data', 'label': 'Data'}]
-                    data_rows = [['No data available']]
+                    columns = ['#', 'Value']
+                    data_rows = [['1', 'No data available']]
                 
-                return generate_excel_report(columns, data_rows, header_config)
+                write_debug(f"About to call generate_excel_report with chart_data={header_config.get('chart_data') is not None}")
+                write_debug(f"header_config keys: {list(header_config.keys())}")
+                result = generate_excel_report(columns, data_rows, header_config)
+                write_debug(f"Excel report generated, returning {len(result) if result else 0} bytes")
+                return result
             
+            # CARD SUMMARY EXPORT - same logic as PDF
             elif onlyCard and cardType:
-                # Generic card-only rendering: table from list of dicts
-                data = controls_data.get(cardType, [])
-                if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
-                    columns = ['#'] + list(data[0].keys())
-                    data_rows = []
-                    for i, item in enumerate(data, 1):
-                        row = [str(i)] + [str(item.get(col, '')) for col in columns[1:]]
-                        data_rows.append(row)
+                # Handle both dict and list data
+                if isinstance(data, list) and data:
+                    first_item = data[0] if data else {}
+                    
+                    if isinstance(first_item, str):
+                        columns = ["#", "Control Name"]
+                        data_rows = []
+                        for i, item in enumerate(data, 1):
+                            data_rows.append([str(i), str(item)])
+                    elif isinstance(first_item, dict):
+                        if cardType in ['pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance', 'testsPendingPreparer', 'testsPendingChecker', 'testsPendingReviewer', 'testsPendingAcceptance','unmappedControls','unmappedIcofrControls','unmappedNonIcofrControls','totalControls']:
+                            columns = ["#", "Control Code", "Control Name"]
+                            data_rows = []
+                            for i, item in enumerate(data, 1):
+                                if isinstance(item, dict):
+                                    data_rows.append([
+                                        str(i),
+                                        item.get('control_code', item.get('code', 'N/A')),
+                                        item.get('control_name', item.get('name', 'N/A'))
+                                    ])
+                                else:
+                                    data_rows.append([str(i), 'N/A', 'N/A'])
+                        else:
+                            columns = ["#", "Code", "Name"]
+                            data_rows = []
+                            for i, item in enumerate(data, 1):
+                                if isinstance(item, dict):
+                                    data_rows.append([
+                                        str(i),
+                                        item.get('code', 'N/A'),
+                                        item.get('name', 'N/A')
+                                    ])
+                                else:
+                                    data_rows.append([str(i), 'N/A', 'N/A'])
+                elif isinstance(data, dict):
+                    columns = ["Metric", "Value"]
+                    data_rows = [[key, str(value)] for key, value in data.items()]
                 else:
-                    columns = ['Data']
-                    data_rows = [['No data available']]
+                    columns = ["Metric", "Value"]
+                    data_rows = [["No data available", "N/A"]]
+                
                 return generate_excel_report(columns, data_rows, header_config)
             
             else:
@@ -288,8 +292,13 @@ class ExcelService:
         
         # Add data rows
         for i, item in enumerate(data, 6):
-            ws.cell(row=i, column=1, value=item.get('status', 'N/A'))
-            ws.cell(row=i, column=2, value=item.get('value', 0))
+            if isinstance(item, dict):
+                ws.cell(row=i, column=1, value=item.get('status', 'N/A'))
+                ws.cell(row=i, column=2, value=item.get('value', 0))
+            else:
+                # Handle list/tuple format
+                ws.cell(row=i, column=1, value=str(item[0]) if isinstance(item, (list, tuple)) and len(item) > 0 else 'N/A')
+                ws.cell(row=i, column=2, value=str(item[1]) if isinstance(item, (list, tuple)) and len(item) > 1 else 0)
         
         # Set column widths
         column_widths = [30, 20]
@@ -319,8 +328,15 @@ class ExcelService:
         # Add data rows
         for i, item in enumerate(data, 6):
             ws.cell(row=i, column=1, value=i-5)  # Index
-            ws.cell(row=i, column=2, value=item.get('Control Name', 'N/A'))
-            ws.cell(row=i, column=3, value=item.get('Department', 'N/A'))
+            if isinstance(item, dict):
+                ws.cell(row=i, column=2, value=item.get('Control Name', 'N/A'))
+                ws.cell(row=i, column=3, value=item.get('Department', 'N/A'))
+            elif isinstance(item, (list, tuple)):
+                ws.cell(row=i, column=2, value=str(item[0]) if len(item) > 0 else 'N/A')
+                ws.cell(row=i, column=3, value=str(item[1]) if len(item) > 1 else 'N/A')
+            else:
+                ws.cell(row=i, column=2, value='N/A')
+                ws.cell(row=i, column=3, value='N/A')
         
         # Set column widths
         column_widths = [5, 50, 20]
@@ -350,8 +366,15 @@ class ExcelService:
         # Add data rows
         for i, item in enumerate(data, 6):
             ws.cell(row=i, column=1, value=i-5)  # Index
-            ws.cell(row=i, column=2, value=item.get('Control Name', 'N/A'))
-            ws.cell(row=i, column=3, value=item.get('Function Name', 'N/A'))
+            if isinstance(item, dict):
+                ws.cell(row=i, column=2, value=item.get('Control Name', 'N/A'))
+                ws.cell(row=i, column=3, value=item.get('Function Name', 'N/A'))
+            elif isinstance(item, (list, tuple)):
+                ws.cell(row=i, column=2, value=str(item[0]) if len(item) > 0 else 'N/A')
+                ws.cell(row=i, column=3, value=str(item[1]) if len(item) > 1 else 'N/A')
+            else:
+                ws.cell(row=i, column=2, value='N/A')
+                ws.cell(row=i, column=3, value='N/A')
         
         # Set column widths
         column_widths = [5, 50, 20]
@@ -361,7 +384,7 @@ class ExcelService:
     async def generate_risks_excel(self, risks_data: Dict[str, Any], start_date: str, end_date: str, header_config: Dict[str, Any], card_type: str = None, only_card: bool = False) -> bytes:
         """Generate risks Excel report"""
         try:
-            from utils.api_routes import generate_excel_report
+            from routes.route_utils import generate_excel_report
             
             if only_card and card_type:
                 # Generate card-specific report
@@ -369,11 +392,18 @@ class ExcelService:
                     data = risks_data[card_type]
                     if isinstance(data, list) and len(data) > 0:
                         # Get column names from first item
-                        columns = list(data[0].keys()) if data else ['No Data']
-                        data_rows = []
-                        for i, item in enumerate(data, 1):
-                            data_rows.append([str(i)] + [str(item.get(col, 'N/A')) for col in columns])
-                        columns = ['#'] + columns
+                        if isinstance(data[0], dict):
+                            columns = list(data[0].keys()) if data else ['No Data']
+                            data_rows = []
+                            for i, item in enumerate(data, 1):
+                                if isinstance(item, dict):
+                                    data_rows.append([str(i)] + [str(item.get(col, 'N/A')) for col in columns])
+                                elif isinstance(item, (list, tuple)):
+                                    data_rows.append([str(i)] + [str(val) for val in item])
+                        else:
+                            columns = ['Data']
+                            data_rows = [['No data available']]
+                        columns = ['#'] + columns if len(columns) > 0 else columns
                     else:
                         columns = ['Data']
                         data_rows = [['No data available']]
@@ -383,7 +413,7 @@ class ExcelService:
             else:
                 # Generate basic report for other cases
                 data_rows = [['Risks Dashboard Report', 'Generated Successfully']]
-                columns = [{'key': 'title', 'label': 'Title'}, {'key': 'status', 'label': 'Status'}]
+                columns = ['Title', 'Status']
             
             return generate_excel_report(columns, data_rows, header_config)
                 

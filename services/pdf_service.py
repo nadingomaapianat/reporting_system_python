@@ -14,15 +14,20 @@ import matplotlib
 matplotlib.use('Agg')
 from datetime import datetime
 
-# Import shared utilities
-from shared_pdf_utils import (
-    create_standard_document, 
-    add_standard_logo_and_bank_info, 
-    add_standard_title_and_subtitle,
-    create_standard_table_style,
-    shape_text_for_arabic,
-    generate_standard_pdf_report
-)
+# Import PDF utilities
+from utils.pdf_utils import shape_text_for_arabic, generate_pdf_report
+
+def write_debug(msg):
+    """Write debug message to file and stderr with timestamp"""
+    from datetime import datetime
+    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+    msg_with_time = f"[{timestamp}] {msg}"
+    with open('debug_log.txt', 'a', encoding='utf-8') as f:
+        f.write(f"{msg_with_time}\n")
+        f.flush()
+    import sys
+    sys.stderr.write(f"{msg_with_time}\n")
+    sys.stderr.flush()
 
 class PDFService:
     def __init__(self):
@@ -65,371 +70,237 @@ class PDFService:
             print(f"Error generating PDF report: {e}")
             raise e
 
-    async def _generate_controls_card_content(self, content, card_type: str, controls_data: Dict[str, Any], header_config: Optional[Dict[str, Any]]):
-        """Add content for different control card types"""
-        if card_type == 'actionPlansStatus':
-            await self._generate_action_plans_status_content(content, controls_data)
-        elif card_type == 'numberOfControlsPerComponent':
-            await self._generate_number_of_controls_per_component_content(content, controls_data)
-        elif card_type == 'controlsNotMappedToAssertions':
-            await self._generate_controls_not_mapped_to_assertions_content(content, controls_data)
-        elif card_type == 'controlsNotMappedToPrinciples':
-            await self._generate_controls_not_mapped_to_principles_content(content, controls_data)
-
-    async def _generate_action_plans_status_content(self, content, controls_data: Dict[str, Any]):
-        """Generate PDF content for action plans status"""
-        from reportlab.platypus import Table, TableStyle, Paragraph, Spacer
-        from reportlab.lib import colors
-        from reportlab.lib.styles import getSampleStyleSheet
-        
-        styles = getSampleStyleSheet()
-        
-        # Get the data
-        data = controls_data.get('actionPlansStatus', [])
-        if not data:
-            content.append(Paragraph("No data available.", styles['Normal']))
-            return
-        
-        # Create table data
-        table_data = [['Status', 'Count']]
-        
-        for item in data:
-                    table_data.append([
-                item.get('status', 'N/A'),
-                str(item.get('value', 0))
-            ])
-        
-        # Create table
-        table = Table(table_data, colWidths=[200, 100])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-        ]))
-        
-        content.append(table)
-        content.append(Spacer(1, 12))
-        
-        return content
-        
-    async def _generate_controls_not_mapped_to_assertions_content(self, content, controls_data: Dict[str, Any]):
-        """Generate PDF content for controls not mapped to assertions"""
-        from reportlab.platypus import Table, TableStyle, Paragraph, Spacer
-        from reportlab.lib import colors
-        from reportlab.lib.styles import getSampleStyleSheet
-        
-        styles = getSampleStyleSheet()
-        
-        # Get the data
-        data = controls_data.get('controlsNotMappedToAssertions', [])
-        if not data:
-            content.append(Paragraph("No data available.", styles['Normal']))
-            return
-        
-        # Create table data
-        table_data = [['#', 'Control Name', 'Department']]
-        
-        for i, item in enumerate(data, 1):
-            control_name = item.get('Control Name', 'N/A')
-            department = item.get('Department', 'N/A')
-            
-            # Handle multi-line text
-            control_name = shape_text_for_arabic(control_name)
-            department = shape_text_for_arabic(department)
-            
-            table_data.append([
-                str(i),
-                control_name,
-                department
-            ])
-        
-        # Create table
-        table = Table(table_data, colWidths=[30, 200, 150])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('FONTSIZE', (0, 1), (-1, -1), 10),
-        ]))
-        
-        content.append(table)
-        content.append(Spacer(1, 12))
-        
-        return content
-    
-    async def _generate_controls_not_mapped_to_principles_content(self, content, controls_data: Dict[str, Any]):
-        """Generate PDF content for controls not mapped to principles"""
-        from reportlab.platypus import Table, TableStyle, Paragraph, Spacer
-        from reportlab.lib import colors
-        from reportlab.lib.styles import getSampleStyleSheet
-        
-        styles = getSampleStyleSheet()
-        
-        # Get the data
-        data = controls_data.get('controlsNotMappedToPrinciples', [])
-        if not data:
-            content.append(Paragraph("No data available.", styles['Normal']))
-            return
-        
-        # Create table data
-        table_data = [['#', 'Control Name', 'Function Name']]
-        
-        for i, item in enumerate(data, 1):
-            control_name = item.get('Control Name', 'N/A')
-            function_name = item.get('Function Name', 'N/A')
-            
-            # Handle multi-line text
-            control_name = shape_text_for_arabic(control_name)
-            function_name = shape_text_for_arabic(function_name)
-            
-            table_data.append([
-                str(i),
-                control_name,
-                function_name
-            ])
-        
-        # Create table
-        table = Table(table_data, colWidths=[30, 200, 150])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('FONTSIZE', (0, 1), (-1, -1), 10),
-        ]))
-        
-        content.append(table)
-        content.append(Spacer(1, 12))
-        
-        return content
-        
-    async def _generate_number_of_controls_per_component_content(self, content, controls_data: Dict[str, Any]):
-        """Generate PDF content for number of controls per component"""
-        from reportlab.platypus import Table, TableStyle, Paragraph, Spacer
-        from reportlab.lib import colors
-        from reportlab.lib.styles import getSampleStyleSheet
-        
-        styles = getSampleStyleSheet()
-        
-        # Get the data
-        data = controls_data.get('numberOfControlsPerComponent', [])
-        if not data:
-            content.append(Paragraph("No data available.", styles['Normal']))
-            return
-        
-        # Create table data
-        table_data = [['Component', 'Controls Count']]
-        for item in data:
-            table_data.append([
-                item.get('name', 'N/A'),
-                str(item.get('value', 0))
-            ])
-        
-        # Create table
-        table = Table(table_data, repeatRows=1)
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ]))
-        
-        content.append(Paragraph("Number of Controls per Component", styles['Heading2']))
-        content.append(Spacer(1, 12))
-        content.append(table)
 
     async def generate_controls_pdf(self, controls_data: Dict[str, Any], startDate: str, endDate: str, header_config: Dict[str, Any], cardType: str = None, onlyCard: bool = False, onlyOverallTable: bool = False, onlyChart: bool = False) -> bytes:
-        """Generate PDF report for controls dashboard using normal export pattern"""
+        
+        """
+        Generate PDF report for controls dashboard.
+        Simplified to use provided data instead of fetching or reconstructing.
+        Each cardType data is passed directly from caller.
+        """
+        # generate_pdf_report is already imported at top of file from pdf_utils
+        import re
+        write_debug(f"DEBUG: ===== generate_controls_pdf START =====")
+
         try:
-            from pdf_report_utils import generate_pdf_report
+            # Basic info logs
+            write_debug(f"  - cardType: {cardType}")
+            write_debug(f"  - onlyCard: {onlyCard}")
+            write_debug(f"  - onlyChart: {onlyChart}")
+            write_debug(f"  - onlyOverallTable: {onlyOverallTable}")
+
+
+            if not controls_data:
+                raise ValueError("No controls_data provided")
+
+            data = controls_data.get(cardType, [])
             
-            # Debug: Check what we're receiving
-            print(f"DEBUG: generate_controls_pdf called with:")
-            print(f"  - controls_data type: {type(controls_data)}")
-            print(f"  - controls_data keys: {list(controls_data.keys()) if isinstance(controls_data, dict) else 'Not a dict'}")
-            print(f"  - cardType: {cardType}")
-            print(f"  - onlyOverallTable: {onlyOverallTable}")
-            
-            # For chart exports, generate chart image + data table
+            # Safety defaults
+            columns = []
+            data_rows = []
+
+            # CHART EXPORT
             if onlyChart and cardType:
-                # Get the data from controls_data
-                data = controls_data.get(cardType, [])
-                
-                # Define columns based on cardType (as strings for PDF generation)
-                if cardType == 'numberOfControlsPerComponent':
-                    columns = ['Component', 'Controls Count']
-                    # Convert data to rows format
-                    data_rows = []
-                    chart_data = {'labels': [], 'values': []}
-                    if data:  # Only process if data exists
-                        for item in data:
-                            data_rows.append([
-                                item.get('name', 'N/A'),
-                                str(item.get('value', 0))
-                            ])
-                            chart_data['labels'].append(item.get('name', 'N/A'))
-                            chart_data['values'].append(item.get('value', 0))
-                    else:
-                        data_rows.append(['No data available', 'No data available'])
-                    
-                    # Add chart_data to header_config for chart generation
-                    header_config['chart_data'] = chart_data
-                    header_config['chart_type'] = 'bar'
-                else:
-                    # Default columns for other chart types
-                    columns = ['Data']
-                    data_rows = [['No data available']]
-                
-                return generate_pdf_report(columns, data_rows, header_config)
-            
-            # For table exports, use the normal pattern like other tables
-            elif onlyOverallTable and cardType:
-                # Get the data from controls_data
-                data = controls_data.get(cardType, [])
-                print(f"DEBUG: Data for {cardType}: {type(data)}")
-                if isinstance(data, list) and len(data) > 0:
-                    print(f"DEBUG: First item type: {type(data[0])}")
-                    print(f"DEBUG: First item: {data[0] if len(data) > 0 else 'Empty'}")
-                
-                # Define columns based on cardType (as strings for Excel/PDF generation)
-                if cardType == 'controlsNotMappedToAssertions':
-                    columns = ['#', 'Control Name', 'Function Name']
-                    # Convert data to rows format
-                    data_rows = []
-                    if data:  # Only process if data exists
-                        for i, item in enumerate(data, 1):
-                            data_rows.append([
-                                str(i),
-                                item.get('Control Name', 'N/A'),
-                                item.get('Function Name', 'N/A')
-                            ])
-                    else:
-                        # If no data from API, try to fetch directly from database
-                        try:
-                            from services.database_service import DatabaseService
-                            db_service = DatabaseService()
-                            query = '''
-                            SELECT 
-                                c.name AS [Control Name], 
-                                f.name AS [Function Name]
-                            FROM [NEWDCC-V4-UAT].dbo.Controls c
-                            LEFT JOIN [NEWDCC-V4-UAT].dbo.ControlFunctions cf ON cf.control_id = c.id 
-                            LEFT JOIN [NEWDCC-V4-UAT].dbo.Functions f ON f.id = cf.function_id 
-                            WHERE c.icof_id IS NULL AND c.isDeleted = 0
-                            ORDER BY c.createdAt DESC
-                            '''
-                            db_data = await db_service.execute_query(query)
-                            if db_data:
-                                for i, item in enumerate(db_data, 1):
-                                    data_rows.append([
-                                        str(i),
-                                        item.get('Control Name', 'N/A'),
-                                        item.get('Function Name', 'N/A')
-                                    ])
-                            else:
-                                data_rows.append(['1', 'No data available', 'No data available'])
-                        except Exception as e:
-                            print(f"DEBUG: Error fetching from database: {e}")
-                            data_rows.append(['1', 'No data available', 'No data available'])
+                chart_data = {"labels": [], "values": []}
+
+                if isinstance(data, list) and data:
+                    # Dynamically extract keys from the first item
+                    first_item = data[0] if data else {}
+                    if isinstance(first_item, dict):
+                        keys = list(first_item.keys())
                         
-                elif cardType == 'controlsNotMappedToPrinciples':
-                    columns = ['#', 'Control Name', 'Function Name']
-                    # Convert data to rows format
-                    data_rows = []
-                    if data:  # Only process if data exists
-                        for i, item in enumerate(data, 1):
-                            data_rows.append([
-                                str(i),
-                                item.get('Control Name', 'N/A'),
-                                item.get('Function Name', 'N/A')
-                            ])
+                        # For most queries, we expect 2 columns: a label/key and a count/value
+                        if len(keys) >= 2:
+                            # First key is usually the label/name column
+                            # Last key is usually the count/value column
+                            key1 = keys[0]
+                            key2 = keys[-1]
+                            
+                            # Create human-readable column headers
+                            def format_column_name(key):
+                                # Convert snake_case or camelCase to Title Case
+                                # Replace underscores/camelCase with spaces
+                                formatted = re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', key)
+                                return formatted.title()
+                            
+                            label1 = format_column_name(key1)
+                            label2 = format_column_name(key2)
+                            columns = [label1, label2]
+                            
+                            
+                            
+                            for item in data:
+                                name = item.get(key1, "N/A")
+                                value = item.get(key2, 0)
+                                chart_data["labels"].append(name)
+                                chart_data["values"].append(value)
+                                data_rows.append([name, str(value)])
+                        else:
+                            # Fallback if unexpected structure: build single-column names safely
+                            write_debug(f"  - Unexpected key count: {len(keys)}, using first key only")
+                            key1 = keys[0]
+                            columns = [format_column_name(key1), "Value"]
+                            # Do NOT append duplicate rows; leave values unknown
+                            for item in data:
+                                name = item.get(key1, "N/A")
+                                chart_data["labels"].append(name)
+                                # Keep value as 0 to avoid N/A duplicates in table
+                                chart_data["values"].append(0)
+                                data_rows.append([name, 0])
                     else:
-                        # If no data from API, try to fetch directly from database
-                        try:
-                            from services.database_service import DatabaseService
-                            db_service = DatabaseService()
-                            query = '''
-                            SELECT 
-                                c.name AS [Control Name], 
-                                f.name AS [Function Name]
-                            FROM [NEWDCC-V4-UAT].dbo.Controls c
-                            LEFT JOIN [NEWDCC-V4-UAT].dbo.ControlFunctions cf ON cf.control_id = c.id 
-                            LEFT JOIN [NEWDCC-V4-UAT].dbo.Functions f ON f.id = cf.function_id 
-                            LEFT JOIN [NEWDCC-V4-UAT].dbo.ControlCosos ccx ON ccx.control_id = c.id AND ccx.deletedAt IS NULL 
-                            WHERE ccx.control_id IS NULL AND c.isDeleted = 0
-                            ORDER BY c.createdAt DESC
-                            '''
-                            db_data = await db_service.execute_query(query)
-                            if db_data:
-                                for i, item in enumerate(db_data, 1):
-                                    data_rows.append([
-                                        str(i),
-                                        item.get('Control Name', 'N/A'),
-                                        item.get('Function Name', 'N/A')
-                                    ])
-                            else:
-                                data_rows.append(['1', 'No data available', 'No data available'])
-                        except Exception as e:
-                            print(f"DEBUG: Error fetching from database: {e}")
-                            data_rows.append(['1', 'No data available', 'No data available'])
-                    print(f"DEBUG: controlsNotMappedToPrinciples - columns: {columns}")
-                    print(f"DEBUG: controlsNotMappedToPrinciples - data_rows count: {len(data_rows)}")
-                    if data_rows:
-                        print(f"DEBUG: controlsNotMappedToPrinciples - first row: {data_rows[0]}")
-                elif cardType == 'controlsTestingApprovalCycle':
-                    columns = ['#', 'Code', 'Control Name', 'Business Unit', 'Preparer Status', 'Checker Status', 'Reviewer Status', 'Acceptance Status']
-                    # Convert data to rows format
-                    data_rows = []
-                    if data:  # Only process if data exists
-                        for i, item in enumerate(data, 1):
-                            data_rows.append([
-                                str(i),
-                                item.get('Code', 'N/A'),
-                                item.get('Control Name', 'N/A'),
-                                item.get('Business Unit', 'N/A'),
-                                item.get('Preparer Status', 'N/A'),
-                                item.get('Checker Status', 'N/A'),
-                                item.get('Reviewer Status', 'N/A'),
-                                item.get('Acceptance Status', 'N/A')
-                            ])
-                    else:
-                        data_rows.append(['1', 'No data available', 'No data available', 'No data available', 'No data available', 'No data available', 'No data available', 'No data available'])
+                        
+                        data_rows.append(["No data available", "0"])
+                        columns = ["Label", "Value"]
                 else:
-                    # Default columns for other table types
-                    columns = ['Data']
-                    data_rows = [['No data available']]
+                    data_rows.append(["No data available", "0"])
+                    columns = ["Label", "Value"]
                 
-                return generate_pdf_report(columns, data_rows, header_config)
+                # Decide chart type: header_config overrides mapping
+                chart_type_override = None
+                try:
+                    chart_type_override = header_config.get("chartType") or header_config.get("chart_type")
+                except Exception:
+                    chart_type_override = None
+
+                # Map cardType to default chart types (matching frontend config)
+                default_type_by_card = {
+                    "quarterlyControlCreationTrend": "line",
+                    "controlsByType": "pie",
+                    "antiFraudDistribution": "pie",
+                    "controlsPerLevel": "bar",
+                    "controlExecutionFrequency": "bar",
+                    "numberOfControlsPerComponent": "bar",
+                    "departmentDistribution": "bar",
+                    "numberOfControlsByIcofrStatus": "pie",
+                }
+
+                # If override is not a known matplotlib type, fall back to mapping
+                valid_types = {"bar", "line", "pie"}
+                if chart_type_override and chart_type_override in valid_types:
+                    resolved_chart_type = chart_type_override
+                else:
+                    # Also handle when chartType was sent as a card key (e.g., 'quarterlyControlCreationTrend')
+                    resolved_chart_type = default_type_by_card.get(cardType or chart_type_override, "bar")
+
+                header_config["chart_data"] = chart_data
+                header_config["chart_type"] = resolved_chart_type
             
-            else:
-                # Generate basic report for other cases
-                data_rows = [['Controls Dashboard Report', 'Generated Successfully']]
-                columns = [{'key': 'title', 'label': 'Title'}, {'key': 'status', 'label': 'Status'}]
-                return generate_pdf_report(columns, data_rows, header_config)
+            # TABLE EXPORT
+            elif onlyOverallTable:
+                write_debug(f"DEBUG: ===== onlyOverallTable START =====")
+                write_debug(f"  - data type: {type(data)}")
+                
+                # Generic table builder: derive columns from keys of first row and add index column
+                if isinstance(data, list) and len(data) > 0:
+                    first_item = data[0]
+                    if isinstance(first_item, dict):
+                        raw_keys = list(first_item.keys())
+                        # Human-readable column labels
+                        def nice(k: str) -> str:
+                            return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
+                        columns = ['#'] + [nice(k) for k in raw_keys]
+                        data_rows = []
+                        for i, row in enumerate(data, 1):
+                            values = [str(row.get(k, '')) for k in raw_keys]
+                            data_rows.append([str(i)] + values)
+                    elif isinstance(first_item, (list, tuple)):
+                        # If rows are arrays, label columns generically C1..Cn
+                        num_cols = len(first_item)
+                        columns = ['#'] + [f'C{idx+1}' for idx in range(num_cols)]
+                        data_rows = []
+                        for i, row in enumerate(data, 1):
+                            vals = [str(v) for v in (row if isinstance(row, (list, tuple)) else [row])]
+                            data_rows.append([str(i)] + vals)
+                    else:
+                        columns = ['#', 'Value']
+                        data_rows = [[str(i+1), str(v)] for i, v in enumerate(data)]
+                else:
+                    columns = ['#', 'Value']
+                    data_rows = [['1', 'No data available']]
+
+            # CARD SUMMARY EXPORT
+            elif onlyCard and cardType:
+                write_debug(f"DEBUG: ===== onlyCard START =====")
+                write_debug(f"  - data: {data}")
+                write_debug(f"  - data type: {type(data)}")
+                
+                # Handle both dict and list data
+                if isinstance(data, list) and data:
+                    first_item = data[0] if data else {}
+                    
+                    # Check if data is list of strings (for totalControls)
+                    if isinstance(first_item, str):
+                        write_debug(f"  - Data is list of strings")
+                        write_debug(f"  - Creating columns: ['#', 'Control Name']")
+                        columns = ["#", "Control Name"]
+                        data_rows = []
+                        for i, item in enumerate(data, 1):
+                            data_rows.append([
+                                str(i),
+                                str(item)  # Just the control name
+                            ])
+                        write_debug(f"  - Created {len(data_rows)} rows")
+                    elif isinstance(first_item, dict):
+                        # Data is list of dicts
+                        write_debug(f"  - Data is list of dicts")
+                        write_debug(f"  - first_item keys: {list(first_item.keys())}")
+                        # Determine columns based on cardType
+                        if cardType in ['pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance', 'testsPendingPreparer', 'testsPendingChecker', 'testsPendingReviewer', 'testsPendingAcceptance','unmappedControls','unmappedIcofrControls','unmappedNonIcofrControls','totalControls']:
+                            write_debug(f"  - Creating columns: ['#', 'Control Code', 'Control Name']")
+                            columns = ["#", "Control Code", "Control Name"]
+                            data_rows = []
+                            for i, item in enumerate(data, 1):
+                                data_rows.append([
+                                    str(i),
+                                    item.get('control_code', item.get('code', 'N/A')),
+                                    item.get('control_name', item.get('name', 'N/A'))
+                                ])
+                            write_debug(f"  - Created {len(data_rows)} rows with columns: {columns}")
+                        else:
+                            # Generic handling for other card types
+                            write_debug(f"  - Generic handling")
+                            columns = ["#", "Code", "Name"]
+                            data_rows = []
+                            for i, item in enumerate(data, 1):
+                                data_rows.append([
+                                    str(i),
+                                    item.get('code', 'N/A'),
+                                    item.get('name', 'N/A')
+                                ])
+                            write_debug(f"  - Created {len(data_rows)} rows with columns: {columns}")
+                elif isinstance(data, dict):
+                    columns = ["Metric", "Value"]
+                    data_rows = [[key, str(value)] for key, value in data.items()]
+                else:
+                    columns = ["Metric", "Value"]
+                    data_rows = [["No data available", "N/A"]]
+
+            # Apply default PDF design settings before generation
+            # Uses centralized configuration system from utils/export_utils.py
+            # All defaults are defined in ONE place - modify them there!
+            
+            from utils.export_utils import merge_header_config
+            
+            # Merge user config with centralized defaults
+            final_config = merge_header_config(header_config, "controls")
+            
+            write_debug(f"DEBUG: Using PDF config: {final_config}")
+            
+            # Generate PDF with merged config
+            result = generate_pdf_report(columns, data_rows, final_config)
+            if not result:
+                raise ValueError("PDF generation returned None")
+
+            write_debug(f"DEBUG: PDF generated successfully for {cardType}")
+            return result
                 
         except Exception as e:
-            print(f"Error generating controls PDF: {e}")
+            write_debug(f"ERROR: Failed to generate PDF for {cardType} - {str(e)}")
+            import traceback
+            traceback.print_exc()
             raise e
+
+        
 
     async def generate_risks_pdf(self, risks_data: Dict[str, Any], start_date: str, end_date: str, header_config: Dict[str, Any], card_type: str = None, only_card: bool = False) -> bytes:
         """Generate risks PDF report using the same reusable function as Controls dashboard"""
