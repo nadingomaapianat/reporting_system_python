@@ -180,6 +180,12 @@ def generate_excel_report(columns, data_rows, header_config=None):
     wb = Workbook()
     ws = wb.active
     ws.title = header_config.get('title', 'Dynamic Report')
+    # Use smaller page margins so tables use more space
+    try:
+        from openpyxl.worksheet.page import PageMargins
+        ws.page_margins = PageMargins(left=0.25, right=0.25, top=0.4, bottom=0.4)
+    except Exception:
+        pass
     
     # Extract ALL configuration values from header modal configuration
     # Basic report settings
@@ -374,13 +380,13 @@ def generate_excel_report(columns, data_rows, header_config=None):
         cell = ws.cell(row=header_row, column=idx, value=col)
         cell.font = Font(bold=True, color='FFFFFF')
         cell.fill = PatternFill(start_color=header_bg_rgb, end_color=header_bg_rgb, fill_type='solid')
-        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrapText=True)
     
     # Data rows
     for row_idx, row_data in enumerate(data_rows, start=header_row + 1):
         for col_idx, value in enumerate(row_data, start=1):
             cell = ws.cell(row=row_idx, column=col_idx, value=value)
-            cell.alignment = Alignment(vertical='top')
+            cell.alignment = Alignment(vertical='top', wrapText=True)
             
             # Apply zebra stripes if enabled
             if excel_zebra_stripes and (row_idx - header_row) % 2 == 0:

@@ -34,41 +34,6 @@ class ExcelService:
             print(f"Error generating Excel report: {e}")
             raise e
 
-    async def _add_number_of_controls_per_component_content(self, ws, controls_data: Dict[str, Any], header_config: Optional[Dict[str, Any]]):
-        """Add number of controls per component content to Excel worksheet"""
-        ws['A4'] = "Number of Controls per Component"
-        
-        # Get the data
-        data = controls_data.get('numberOfControlsPerComponent', [])
-        if not data:
-            ws['A5'] = "No data available."
-            return
-        
-        # Add headers
-        headers = ['Component', 'Controls Count']
-        for i, header in enumerate(headers, 1):
-            cell = ws.cell(row=5, column=i, value=header)
-            cell.font = Font(bold=True)
-            header_bg_color = header_config.get('tableHeaderBgColor', '#E3F2FD') if header_config else '#E3F2FD'
-            if header_bg_color.startswith('#'):
-                header_bg_color = header_bg_color[1:]
-            cell.fill = PatternFill(start_color=header_bg_color, end_color=header_bg_color, fill_type='solid')
-        
-        # Add data rows
-        for i, item in enumerate(data, 6):
-            if isinstance(item, dict):
-                ws.cell(row=i, column=1, value=item.get('name', 'N/A'))
-                ws.cell(row=i, column=2, value=item.get('value', 0))
-            else:
-                # Handle list/tuple format
-                ws.cell(row=i, column=1, value=str(item[0]) if isinstance(item, (list, tuple)) and len(item) > 0 else 'N/A')
-                ws.cell(row=i, column=2, value=str(item[1]) if isinstance(item, (list, tuple)) and len(item) > 1 else 0)
-        
-        # Set column widths
-        column_widths = [30, 15]
-        for i, width in enumerate(column_widths, 1):
-            ws.column_dimensions[get_column_letter(i)].width = width
-
     async def generate_controls_excel(self, controls_data: Dict[str, Any], startDate: str, endDate: str, header_config: Dict[str, Any], cardType: str = None, onlyCard: bool = False, onlyOverallTable: bool = False, onlyChart: bool = False) -> bytes:
         """Generate Excel report for controls dashboard - matches PDF format exactly"""
         try:
@@ -88,6 +53,8 @@ class ExcelService:
                 """Convert snake_case or camelCase to Title Case"""
                 formatted = re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(key))
                 return formatted.title()
+            
+            write_debug(f"Generating controls Excel report for ,,,,,,,,, {startDate} to {endDate}")
             
             # CHART EXPORT - same logic as PDF
             if onlyChart and cardType:
@@ -199,6 +166,9 @@ class ExcelService:
             
             # CARD SUMMARY EXPORT - same logic as PDF
             elif onlyCard and cardType:
+                write_debug(f"Generating risks Excel report for mmmmm {start_date} to {end_date}")
+                write_debug(f"card_type={card_type}, only_card={only_card}, only_overall_table={only_overall_table}, only_chart={only_chart}")
+               
                 # Handle both dict and list data
                 if isinstance(data, list) and data:
                     first_item = data[0] if data else {}
@@ -259,163 +229,493 @@ class ExcelService:
             print(f"Error generating controls Excel: {e}")
             raise e
     
-    async def _add_controls_card_content(self, ws, card_type: str, controls_data: Dict[str, Any], header_config: Optional[Dict[str, Any]]):
-        """Add content for different control card types"""
-        if card_type == 'actionPlansStatus':
-            await self._add_action_plans_status_content(ws, controls_data, header_config)
-        elif card_type == 'numberOfControlsPerComponent':
-            await self._add_number_of_controls_per_component_content(ws, controls_data, header_config)
-        elif card_type == 'controlsNotMappedToAssertions':
-            await self._add_controls_not_mapped_to_assertions_content(ws, controls_data, header_config)
-        elif card_type == 'controlsNotMappedToPrinciples':
-            await self._add_controls_not_mapped_to_principles_content(ws, controls_data, header_config)
-
-    async def _add_action_plans_status_content(self, ws, controls_data: Dict[str, Any], header_config: Optional[Dict[str, Any]]):
-        """Add action plans status content to Excel worksheet"""
-        ws['A4'] = "Action Plans Status"
-        
-        # Get the data
-        data = controls_data.get('actionPlansStatus', [])
-        if not data:
-            ws['A5'] = "No data available."
-            return
-        
-        # Add headers
-        headers = ['Status', 'Count']
-        for i, header in enumerate(headers, 1):
-            cell = ws.cell(row=5, column=i, value=header)
-            cell.font = Font(bold=True)
-            header_bg_color = header_config.get('tableHeaderBgColor', '#E3F2FD')
-            if header_bg_color.startswith('#'):
-                header_bg_color = header_bg_color[1:]
-            cell.fill = PatternFill(start_color=header_bg_color, end_color=header_bg_color, fill_type='solid')
-        
-        # Add data rows
-        for i, item in enumerate(data, 6):
-            if isinstance(item, dict):
-                ws.cell(row=i, column=1, value=item.get('status', 'N/A'))
-                ws.cell(row=i, column=2, value=item.get('value', 0))
-            else:
-                # Handle list/tuple format
-                ws.cell(row=i, column=1, value=str(item[0]) if isinstance(item, (list, tuple)) and len(item) > 0 else 'N/A')
-                ws.cell(row=i, column=2, value=str(item[1]) if isinstance(item, (list, tuple)) and len(item) > 1 else 0)
-        
-        # Set column widths
-        column_widths = [30, 20]
-        for i, width in enumerate(column_widths, 1):
-            ws.column_dimensions[get_column_letter(i)].width = width
-
-    async def _add_controls_not_mapped_to_assertions_content(self, ws, controls_data: Dict[str, Any], header_config: Optional[Dict[str, Any]]):
-        """Add controls not mapped to assertions content to Excel worksheet"""
-        ws['A4'] = "Controls not mapped to any Assertions"
-        
-        # Get the data
-        data = controls_data.get('controlsNotMappedToAssertions', [])
-        if not data:
-            ws['A5'] = "No data available."
-            return
-        
-        # Add headers
-        headers = ['#', 'Control Name', 'Department']
-        for i, header in enumerate(headers, 1):
-            cell = ws.cell(row=5, column=i, value=header)
-            cell.font = Font(bold=True)
-            header_bg_color = header_config.get('tableHeaderBgColor', '#E3F2FD')
-            if header_bg_color.startswith('#'):
-                header_bg_color = header_bg_color[1:]
-            cell.fill = PatternFill(start_color=header_bg_color, end_color=header_bg_color, fill_type='solid')
-        
-        # Add data rows
-        for i, item in enumerate(data, 6):
-            ws.cell(row=i, column=1, value=i-5)  # Index
-            if isinstance(item, dict):
-                ws.cell(row=i, column=2, value=item.get('Control Name', 'N/A'))
-                ws.cell(row=i, column=3, value=item.get('Department', 'N/A'))
-            elif isinstance(item, (list, tuple)):
-                ws.cell(row=i, column=2, value=str(item[0]) if len(item) > 0 else 'N/A')
-                ws.cell(row=i, column=3, value=str(item[1]) if len(item) > 1 else 'N/A')
-            else:
-                ws.cell(row=i, column=2, value='N/A')
-                ws.cell(row=i, column=3, value='N/A')
-        
-        # Set column widths
-        column_widths = [5, 50, 20]
-        for i, width in enumerate(column_widths, 1):
-            ws.column_dimensions[get_column_letter(i)].width = width
-
-    async def _add_controls_not_mapped_to_principles_content(self, ws, controls_data: Dict[str, Any], header_config: Optional[Dict[str, Any]]):
-        """Add controls not mapped to principles content to Excel worksheet"""
-        ws['A4'] = "Controls not mapped to any Principles"
-        
-        # Get the data
-        data = controls_data.get('controlsNotMappedToPrinciples', [])
-        if not data:
-            ws['A5'] = "No data available."
-            return
-        
-        # Add headers
-        headers = ['#', 'Control Name', 'Function Name']
-        for i, header in enumerate(headers, 1):
-            cell = ws.cell(row=5, column=i, value=header)
-            cell.font = Font(bold=True)
-            header_bg_color = header_config.get('tableHeaderBgColor', '#E3F2FD')
-            if header_bg_color.startswith('#'):
-                header_bg_color = header_bg_color[1:]
-            cell.fill = PatternFill(start_color=header_bg_color, end_color=header_bg_color, fill_type='solid')
-        
-        # Add data rows
-        for i, item in enumerate(data, 6):
-            ws.cell(row=i, column=1, value=i-5)  # Index
-            if isinstance(item, dict):
-                ws.cell(row=i, column=2, value=item.get('Control Name', 'N/A'))
-                ws.cell(row=i, column=3, value=item.get('Function Name', 'N/A'))
-            elif isinstance(item, (list, tuple)):
-                ws.cell(row=i, column=2, value=str(item[0]) if len(item) > 0 else 'N/A')
-                ws.cell(row=i, column=3, value=str(item[1]) if len(item) > 1 else 'N/A')
-            else:
-                ws.cell(row=i, column=2, value='N/A')
-                ws.cell(row=i, column=3, value='N/A')
-        
-        # Set column widths
-        column_widths = [5, 50, 20]
-        for i, width in enumerate(column_widths, 1):
-            ws.column_dimensions[get_column_letter(i)].width = width
-
-    async def generate_risks_excel(self, risks_data: Dict[str, Any], start_date: str, end_date: str, header_config: Dict[str, Any], card_type: str = None, only_card: bool = False) -> bytes:
-        """Generate risks Excel report"""
+    async def generate_incidents_excel(self, incidents_data: Dict[str, Any], start_date: str, end_date: str, header_config: Dict[str, Any], card_type: str = None, only_card: bool = False, only_overall_table: bool = False, only_chart: bool = False) -> bytes:
+        """Generate incidents Excel report mirroring risks/controls behavior."""
         try:
-            from routes.route_utils import generate_excel_report
-            
-            if only_card and card_type:
-                # Generate card-specific report
-                if card_type in risks_data:
-                    data = risks_data[card_type]
-                    if isinstance(data, list) and len(data) > 0:
-                        # Get column names from first item
-                        if isinstance(data[0], dict):
-                            columns = list(data[0].keys()) if data else ['No Data']
-                            data_rows = []
-                            for i, item in enumerate(data, 1):
-                                if isinstance(item, dict):
-                                    data_rows.append([str(i)] + [str(item.get(col, 'N/A')) for col in columns])
-                                elif isinstance(item, (list, tuple)):
-                                    data_rows.append([str(i)] + [str(val) for val in item])
+            from routes.route_utils import generate_excel_report, write_debug
+            import re
+            write_debug(f"Generating incidents Excel report for {start_date} to {end_date}")
+            write_debug(f"card_type={card_type}, only_card={only_card}, only_overall_table={only_overall_table}, only_chart={only_chart}")
+
+            data = incidents_data.get(card_type) if card_type else incidents_data.get('list')
+            data = data or []
+            write_debug(f"Incidents Excel export - card_type={card_type}, data type={type(data)}, len={len(data) if isinstance(data, list) else 'N/A'}")
+
+            columns: List[str] = []
+            data_rows: List[List[str]] = []
+
+            def format_column_name(key: str) -> str:
+                return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(key)).title()
+
+            # CHART EXPORT
+            if only_chart and card_type:
+                if isinstance(data, list) and data:
+                    first_item = data[0]
+                    if isinstance(first_item, dict):
+                        keys = list(first_item.keys())
+                        if len(keys) >= 2:
+                            key1 = keys[0]
+                            key2 = keys[-1]
+                            columns = [format_column_name(key1), format_column_name(key2)]
+                            for item in data:
+                                name = item.get(key1, "N/A")
+                                value = item.get(key2, 0)
+                                data_rows.append([name, str(value)])
                         else:
-                            columns = ['Data']
-                            data_rows = [['No data available']]
-                        columns = ['#'] + columns if len(columns) > 0 else columns
+                            key1 = keys[0]
+                            columns = [format_column_name(key1), "Value"]
+                            for item in data:
+                                name = item.get(key1, "N/A")
+                                data_rows.append([name, 0])
                     else:
-                        columns = ['Data']
-                        data_rows = [['No data available']]
+                        data_rows = [[str(first_item), "0"]]
+                        columns = ["Label", "Value"]
                 else:
-                    columns = ['Data']
-                    data_rows = [['No data available']]
+                    data_rows = [["No data available", "0"]]
+                    columns = ["Label", "Value"]
+
+                default_type_by_card = {
+                    "byCategory": "bar",
+                    "byStatus": "pie",
+                    "monthlyTrend": "line",
+                    "netLossAndRecovery": "bar",
+                    "topFinancialImpacts": "bar",
+                    "incidentsByEventType": "pie",
+                    "incidentsByFinancialImpact": "pie",
+                }
+                chart_type = header_config.get("chartType") or header_config.get("chart_type")
+                if chart_type not in {"bar", "line", "pie"}:
+                    chart_type = default_type_by_card.get(card_type, "bar")
+                header_config["chart_type"] = chart_type
+
+                # Extract chart data from rows
+                chart_labels: List[str] = []
+                chart_values: List[float] = []
+                for row in data_rows:
+                    if len(row) >= 2:
+                        chart_labels.append(str(row[0]))
+                        try:
+                            chart_values.append(float(row[1]))
+                        except Exception:
+                            chart_values.append(0)
+                if chart_labels and chart_values:
+                    header_config["chart_data"] = {"labels": chart_labels, "values": chart_values}
+                return generate_excel_report(columns, data_rows, header_config)
+
+            # TABLE EXPORT
+            elif only_overall_table:
+                table_rows = []
+                if card_type == 'overallStatuses':
+                    table_rows = incidents_data.get('overallStatuses') or incidents_data.get('statusOverview') or []
+                else:
+                    table_rows = incidents_data.get(card_type) or []
+
+                if isinstance(table_rows, list) and len(table_rows) > 0:
+                    first_item = table_rows[0]
+                    if isinstance(first_item, dict):
+                        raw_keys = list(first_item.keys())
+                        columns = ['#'] + [format_column_name(k) for k in raw_keys]
+                        for i, row in enumerate(table_rows, 1):
+                            values = [str(row.get(k, '')) for k in raw_keys]
+                            data_rows.append([str(i)] + values)
+                    elif isinstance(first_item, (list, tuple)):
+                        num_cols = len(first_item)
+                        columns = ['#'] + [f'C{idx+1}' for idx in range(num_cols)]
+                        for i, row in enumerate(table_rows, 1):
+                            vals = [str(v) for v in (row if isinstance(row, (list, tuple)) else [row])]
+                            data_rows.append([str(i)] + vals)
+                    else:
+                        columns = ['#', 'Value']
+                        data_rows = [["1", str(first_item)]]
+                else:
+                    columns = ['#', 'Value']
+                    data_rows = [["1", 'No data available']]
+                return generate_excel_report(columns, data_rows, header_config)
+
+            # CARD SUMMARY EXPORT
+            elif only_card and card_type:
+                if isinstance(data, list) and data:
+                    first_item = data[0]
+                    if isinstance(first_item, dict):
+                        raw_keys = list(first_item.keys())
+                        columns = ['#'] + [format_column_name(k) for k in raw_keys]
+                        for i, item in enumerate(data, 1):
+                            values = [str(item.get(k, 'N/A')) for k in raw_keys]
+                            data_rows.append([str(i)] + values)
+                    else:
+                        columns = ['#', 'Value']
+                        data_rows = [["1", str(first_item)]]
+                elif isinstance(data, dict):
+                    columns = ["Metric", "Value"]
+                    data_rows = [[key, str(value)] for key, value in data.items()]
+                else:
+                    columns = ["Metric", "Value"]
+                    data_rows = [["No data available", "N/A"]]
+                return generate_excel_report(columns, data_rows, header_config)
+
+            # DEFAULT
             else:
-                # Generate basic report for other cases
-                data_rows = [['Risks Dashboard Report', 'Generated Successfully']]
-                columns = ['Title', 'Status']
-            
-            return generate_excel_report(columns, data_rows, header_config)
+                wb = Workbook()
+                ws = wb.active
+                ws.title = header_config.get('title', 'Incidents Report')
+                ws['A1'] = 'Incidents Dashboard Report'
+                ws['A2'] = 'Generated Successfully'
+                from io import BytesIO
+                output = BytesIO()
+                wb.save(output)
+                return output.getvalue()
+
+        except Exception as e:
+            print(f"Error generating incidents Excel: {e}")
+            raise e
+
+    async def generate_kris_excel(self, kris_data: Dict[str, Any], start_date: str, end_date: str, header_config: Dict[str, Any], card_type: str = None, only_card: bool = False, only_overall_table: bool = False, only_chart: bool = False) -> bytes:
+        """Generate KRI Excel report mirroring incidents behavior."""
+        try:
+            from routes.route_utils import generate_excel_report, write_debug
+            import re
+            write_debug(f"Generating KRIs Excel report for {start_date} to {end_date}")
+            write_debug(f"card_type={card_type}, only_card={only_card}, only_overall_table={only_overall_table}, only_chart={only_chart}")
+
+            data = kris_data.get(card_type) if card_type else kris_data.get('list')
+            data = data or []
+            write_debug(f"KRIs Excel export - card_type={card_type}, data type={type(data)}, len={len(data) if isinstance(data, list) else 'N/A'}")
+
+            columns: List[str] = []
+            data_rows: List[List[str]] = []
+
+            def format_column_name(key: str) -> str:
+                return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(key)).title()
+
+            # CHART EXPORT
+            if only_chart and card_type:
+                if isinstance(data, list) and data:
+                    first_item = data[0]
+                    if isinstance(first_item, dict):
+                        keys = list(first_item.keys())
+                        if len(keys) >= 2:
+                            key1 = keys[0]
+                            key2 = keys[-1]
+                            columns = [format_column_name(key1), format_column_name(key2)]
+                            for item in data:
+                                name = item.get(key1, "N/A")
+                                value = item.get(key2, 0)
+                                data_rows.append([name, str(value)])
+                        else:
+                            key1 = keys[0]
+                            columns = [format_column_name(key1), "Value"]
+                            for item in data:
+                                name = item.get(key1, "N/A")
+                                data_rows.append([name, 0])
+                    else:
+                        data_rows = [[str(first_item), "0"]]
+                        columns = ["Label", "Value"]
+                else:
+                    data_rows = [["No data available", "0"]]
+                    columns = ["Label", "Value"]
+
+                default_type_by_card = {
+                    "krisByStatus": "pie",
+                    "krisByLevel": "pie",
+                    "breachedKRIsByDepartment": "bar",
+                    "kriAssessmentCount": "bar",
+                }
+                chart_type = header_config.get("chartType") or header_config.get("chart_type")
+                if chart_type not in {"bar", "line", "pie"}:
+                    chart_type = default_type_by_card.get(card_type, "bar")
+                header_config["chart_type"] = chart_type
+
+                # Extract chart data from rows
+                chart_labels: List[str] = []
+                chart_values: List[float] = []
+                for row in data_rows:
+                    if len(row) >= 2:
+                        chart_labels.append(str(row[0]))
+                        try:
+                            chart_values.append(float(row[1]))
+                        except Exception:
+                            chart_values.append(0)
+                if chart_labels and chart_values:
+                    header_config["chart_data"] = {"labels": chart_labels, "values": chart_values}
+                return generate_excel_report(columns, data_rows, header_config)
+
+            # TABLE EXPORT
+            elif only_overall_table:
+                table_rows = kris_data.get(card_type) or []
+
+                if isinstance(table_rows, list) and len(table_rows) > 0:
+                    first_item = table_rows[0]
+                    if isinstance(first_item, dict):
+                        raw_keys = list(first_item.keys())
+                        columns = ['#'] + [format_column_name(k) for k in raw_keys]
+                        for i, row in enumerate(table_rows, 1):
+                            values = [str(row.get(k, '')) for k in raw_keys]
+                            data_rows.append([str(i)] + values)
+                    elif isinstance(first_item, (list, tuple)):
+                        num_cols = len(first_item)
+                        columns = ['#'] + [f'C{idx+1}' for idx in range(num_cols)]
+                        for i, row in enumerate(table_rows, 1):
+                            vals = [str(v) for v in (row if isinstance(row, (list, tuple)) else [row])]
+                            data_rows.append([str(i)] + vals)
+                    else:
+                        columns = ['#', 'Value']
+                        data_rows = [["1", str(first_item)]]
+                else:
+                    columns = ['#', 'Value']
+                    data_rows = [["1", 'No data available']]
+                
+                write_debug(f"About to call generate_excel_report for KRIs table")
+                result = generate_excel_report(columns, data_rows, header_config)
+                write_debug(f"KRIs Excel report generated, returning {len(result) if result else 0} bytes")
+                return result
+
+            # CARD SUMMARY EXPORT
+            elif only_card and card_type:
+                write_debug(f"Generating KRIs Excel report for card {card_type}")
+                # Handle both dict and list data
+                if isinstance(data, list) and data:
+                    first_item = data[0] if data else {}
+                    if isinstance(first_item, dict):
+                        raw_keys = list(first_item.keys())
+                        columns = ['#'] + [format_column_name(k) for k in raw_keys]
+                        for i, item in enumerate(data, 1):
+                            values = [str(item.get(k, 'N/A')) for k in raw_keys]
+                            data_rows.append([str(i)] + values)
+                    else:
+                        columns = ['#', 'Value']
+                        data_rows = [[str(i+1), str(v)] for i, v in enumerate(data)]
+                elif isinstance(data, dict):
+                    columns = ["Metric", "Value"]
+                    data_rows = [[key, str(value)] for key, value in data.items()]
+                else:
+                    columns = ["Metric", "Value"]
+                    data_rows = [["No data available", "N/A"]]
+                return generate_excel_report(columns, data_rows, header_config)
+
+            # DEFAULT simple workbook if no specific mode
+            else:
+                from openpyxl import Workbook
+                wb = Workbook()
+                ws = wb.active
+                ws.title = header_config.get('title', 'KRIs Report')
+                ws['A1'] = 'KRIs Dashboard Report'
+                ws['A2'] = 'Generated Successfully'
+                from io import BytesIO
+                output = BytesIO()
+                wb.save(output)
+                return output.getvalue()
+                
+        except Exception as e:
+            print(f"Error generating KRIs Excel: {e}")
+            raise e
+   
+    async def generate_risks_excel(self, risks_data: Dict[str, Any], start_date: str, end_date: str, header_config: Dict[str, Any], card_type: str = None, only_card: bool = False, only_overall_table: bool = False, only_chart: bool = False) -> bytes:
+        """Generate risks Excel report mirroring controls Excel behavior."""
+        try:
+            from routes.route_utils import generate_excel_report, write_debug
+            write_debug(f"Generating risks Excel report for {start_date} to {end_date}")
+            write_debug(f"card_type={card_type}, only_card={only_card}, only_overall_table={only_overall_table}, only_chart={only_chart}")
+            write_debug(f"risks_data: {risks_data}")
+            import re
+
+            data = risks_data.get(card_type, []) if risks_data else []
+            write_debug(f"Risks Excel export - card_type={card_type}, data type={type(data)}, len={len(data) if isinstance(data, list) else 'N/A'}, only_card={only_card}, only_overall_table={only_overall_table}, only_chart={only_chart}")
+
+            columns: List[str] = []
+            data_rows: List[List[str]] = []
+
+            def format_column_name(key: str) -> str:
+                write_debug(f"Formatting column name: {key}")
+                return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(key)).title()
+
+
+            write_debug(f"Formatting column name: {format_column_name('code')}")
+
+            # CHART EXPORT (same style as controls)
+            if only_chart and card_type:
+                if isinstance(data, list) and data:
+                    first_item = data[0]
+                    if isinstance(first_item, dict):
+                        keys = list(first_item.keys())
+                        # Special handling for charts with multiple value columns
+                        if card_type == "createdDeletedRisksPerQuarter" and len(keys) >= 3:
+                            # For created/deleted charts, include all numeric columns
+                            label_key = "name"
+                            value_keys = [k for k in keys if k != label_key]
+                            write_debug(f"[RISKS EXCEL] Multi-column chart: label_key={label_key}, value_keys={value_keys}")
+                            columns = [format_column_name(label_key)] + [format_column_name(k) for k in value_keys]
+                            for item in data:
+                                name = item.get(label_key, "N/A")
+                                row = [name]
+                                for vk in value_keys:
+                                    val = item.get(vk, 0)
+                                    row.append(str(val))
+                                data_rows.append(row)
+                            write_debug(f"[RISKS EXCEL] Generated {len(data_rows)} rows, columns={columns}")
+                        elif len(keys) >= 2:
+                            key1 = keys[0]
+                            key2 = keys[-1]
+                            columns = [format_column_name(key1), format_column_name(key2)]
+                            for item in data:
+                                name = item.get(key1, "N/A")
+                                value = item.get(key2, 0)
+                                data_rows.append([name, str(value)])
+                        else:
+                            key1 = keys[0]
+                            columns = [format_column_name(key1), "Value"]
+                            for item in data:
+                                name = item.get(key1, "N/A")
+                                data_rows.append([name, 0])
+                    else:
+                        data_rows = [[str(first_item), "0"]]
+                        columns = ["Label", "Value"]
+                else:
+                    data_rows = [["No data available", "0"]]
+                    columns = ["Label", "Value"]
+
+                # Default chart types for risks
+                default_type_by_card = {
+                    "risksByCategory": "bar",
+                    "risksByEventType": "pie",
+                    "createdDeletedRisksPerQuarter": "bar",
+                    "quarterlyRiskCreationTrends": "line",
+                    "riskApprovalStatusDistribution": "pie",
+                    "riskDistributionByFinancialImpact": "pie",
+                }
+                
+                # Priority: renderType/chartType from query > cardType default > "bar"
+                chart_type = header_config.get("chartType") or header_config.get("chart_type")
+                if chart_type and chart_type in {"bar", "line", "pie"}:
+                    write_debug(f"Using provided chart type: {chart_type}")
+                else:
+                    chart_type = default_type_by_card.get(card_type, "bar")
+                    write_debug(f"Using default chart type for {card_type}: {chart_type}")
+                
+                header_config["chart_type"] = chart_type
+
+                # Extract chart data from rows
+                chart_labels: List[str] = []
+                chart_values: List[float] = []
+                for row in data_rows:
+                    if len(row) >= 2:
+                        chart_labels.append(str(row[0]))
+                        try:
+                            chart_values.append(float(row[1]))
+                        except Exception:
+                            chart_values.append(0)
+                if chart_labels and chart_values:
+                    header_config["chart_data"] = {"labels": chart_labels, "values": chart_values}
+                return generate_excel_report(columns, data_rows, header_config)
+
+            # TABLE EXPORT (same dynamic building as controls)
+            elif only_overall_table and card_type:
+                if isinstance(data, list) and len(data) > 0:
+                    first_item = data[0]
+                    if isinstance(first_item, dict):
+                        # Special formatting for allRisks
+                        if card_type == 'allRisks':
+                            columns = ['#', 'Risk Name', 'Risk Description', 'Event', 'Inherent Value', 'Frequency', 'Financial Impact']
+                            def map_frequency(val):
+                                mapping = {1: 'Once in Three Years', 2: 'Annually', 3: 'Half Yearly', 4: 'Quarterly', 5: 'Monthly'}
+                                try:
+                                    num = int(val)
+                                except Exception:
+                                    return str(val)
+                                return mapping.get(num, str(val))
+                            def map_financial(val):
+                                mapping = {1: '0 - 10,000', 2: '10,000 - 100,000', 3: '100,000 - 1,000,000', 4: '1,000,000 - 10,000,000', 5: '> 10,000,000'}
+                                try:
+                                    num = int(val)
+                                except Exception:
+                                    return str(val)
+                                return mapping.get(num, str(val))
+                            data_rows = []
+                            for i, row in enumerate(data, 1):
+                                data_rows.append([
+                                    str(i),
+                                    str(row.get('RiskName', '')),
+                                    str(row.get('RiskDesc', '')),
+                                    str(row.get('RiskEventName', 'Unknown')),
+                                    str(row.get('InherentValue', '')),
+                                    map_frequency(row.get('InherentFrequency', '')),
+                                    map_financial(row.get('InherentFinancialValue', '')),
+                                ])
+                        else:
+                            raw_keys = list(first_item.keys())
+                            columns = ['#'] + [format_column_name(k) for k in raw_keys]
+                            data_rows = []
+                            for i, row in enumerate(data, 1):
+                                if isinstance(row, dict):
+                                    values = [str(row.get(k, '')) for k in raw_keys]
+                                    data_rows.append([str(i)] + values)
+                                elif isinstance(row, (list, tuple)):
+                                    vals = [str(v) for v in row]
+                                    data_rows.append([str(i)] + vals)
+                                else:
+                                    data_rows.append([str(i), str(row)])
+                    elif isinstance(first_item, (list, tuple)):
+                        num_cols = len(first_item)
+                        columns = ['#'] + [f'C{idx+1}' for idx in range(num_cols)]
+                        data_rows = []
+                        for i, row in enumerate(data, 1):
+                            vals = [str(v) for v in (row if isinstance(row, (list, tuple)) else [row])]
+                            data_rows.append([str(i)] + vals)
+                    else:
+                        columns = ['#', 'Value']
+                        data_rows = [[str(i+1), str(v)] for i, v in enumerate(data)]
+                else:
+                    columns = ['#', 'Value']
+                    data_rows = [['1', 'No data available']]
+                return generate_excel_report(columns, data_rows, header_config)
+
+            # CARD SUMMARY EXPORT
+            elif only_card and card_type:
+                write_debug(f"Generating risks Excel report for mmmmm {start_date} to {end_date}")
+                write_debug(f"card_type={card_type}, only_card={only_card}, only_overall_table={only_overall_table}, only_chart={only_chart}")
+                write_debug(f"data: {data}")
+               
+                if isinstance(data, list) and data:
+                    first_item = data[0]
+                    if isinstance(first_item, dict):
+                        raw_keys = list(first_item.keys())
+                        columns = ['#'] + [format_column_name(k) for k in raw_keys]
+                        data_rows = []
+                        for i, item in enumerate(data, 1):
+                            if isinstance(item, dict):
+                                values = [str(item.get(k, 'N/A')) for k in raw_keys]
+                                data_rows.append([str(i)] + values)
+                            elif isinstance(item, (list, tuple)):
+                                vals = [str(v) for v in item]
+                                data_rows.append([str(i)] + vals)
+                            else:
+                                data_rows.append([str(i), str(item)])
+                    elif isinstance(first_item, str):
+                        columns = ["#", "Risk Name"]
+                        for i, item in enumerate(data, 1):
+                            data_rows.append([str(i), str(item)])
+                    else:
+                        columns = ['#', 'Value']
+                        data_rows = [["1", str(first_item)]]
+                elif isinstance(data, dict):
+                    columns = ["Metric", "Value"]
+                    data_rows = [[key, str(value)] for key, value in data.items()]
+                else:
+                    columns = ["Metric", "Value"]
+                    data_rows = [["No data available", "N/A"]]
+                return generate_excel_report(columns, data_rows, header_config)
+
+            # DEFAULT simple workbook if no specific mode
+            else:
+                from openpyxl import Workbook
+                wb = Workbook()
+                ws = wb.active
+                ws.title = header_config.get('title', 'Risks Report')
+                ws['A1'] = 'Risks Dashboard Report'
+                ws['A2'] = 'Generated Successfully'
+                from io import BytesIO
+                output = BytesIO()
+                wb.save(output)
+                return output.getvalue()
                 
         except Exception as e:
             print(f"Error generating risks Excel: {e}")

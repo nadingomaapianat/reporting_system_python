@@ -72,16 +72,16 @@ def get_complete_default_config() -> Dict[str, Any]:
         
         # ========== BORDER & BORDERS ==========
         "borderStyle": "solid",            # Border style
-        "borderColor": "#000000",           # Border color
+        "borderColor": "#C9CED6",           # Border color (light gray to match risks look)
         "borderWidth": 1,                   # Border width in points
         
-        # ========== MARGINS & SPACING (PDF only) ==========
-        "leftMargin": 72,                   # Left margin in points (1 inch)
-        "rightMargin": 72,                   # Right margin in points (1 inch)
-        "topMargin": 72,                   # Top margin in points (1 inch)
-        "bottomMargin": 72,                # Bottom margin in points (1 inch)
-        "padding": 20,                     # Cell padding
-        "margin": 10,                      # General margin
+        # ========== MARGINS & SPACING (Defaults tuned for dense tables) ==========
+        "leftMargin": 24,                  # ~0.33 inch
+        "rightMargin": 24,                 # ~0.33 inch
+        "topMargin": 36,                   # ~0.5 inch
+        "bottomMargin": 36,                # ~0.5 inch
+        "padding": 12,                     # Slightly tighter cell padding
+        "margin": 8,                       # General spacing
         
         # ========== FONTS ==========
         "fontSize": "medium",              # Font size: small/medium/large
@@ -111,6 +111,10 @@ def get_complete_default_config() -> Dict[str, Any]:
         
         # ========== PDF SPECIFIC SETTINGS ==========
         "pdfPageOrientation": "portrait",  # Page orientation: portrait/landscape
+
+        # ========== TABLE BEHAVIOR DEFAULTS ==========
+        "maxCellChars": 300,               # Truncate overly long cell text with ellipsis
+        "maxRowsPerTable": 25,             # Split very large tables into batches
         
         # ========== LOCATION & LAYOUT ==========
         "location": "top",                 # Main content location
@@ -121,42 +125,19 @@ def get_dashboard_specific_overrides() -> Dict[str, Dict[str, Any]]:
     Dashboard-specific configuration overrides
     These override the base defaults for each dashboard type
     """
+    # Unify defaults across all dashboards to keep a consistent look like risks screenshot
+    generic = {
+        "title": "Dashboard Report",
+        "subtitle": "Comprehensive Analysis Report",
+        "icon": "chart-line",
+        "watermarkEnabled": True,
+    }
     return {
-        "risks": {
-            "title": "Risks Dashboard Report",
-            "subtitle": "Risk Management & Assessment Monitoring",
-            "icon": "shield-exclamation",
-            "tableHeaderBgColor": "#DC2626",  # Red for risks
-            "watermarkEnabled": True,
-        },
-        "controls": {
-            "title": "Controls Dashboard Report",
-            "subtitle": "Comprehensive Controls Analysis",
-            "icon": "building",
-            "tableHeaderBgColor": "#1F4E79",  # Dark blue
-            "watermarkEnabled": True,
-        },
-        "incidents": {
-            "title": "Incidents Dashboard Report",
-            "subtitle": "Comprehensive Incidents Analysis",
-            "icon": "exclamation-triangle",
-            "tableHeaderBgColor": "#DC2626",  # Red for alerts
-            "watermarkEnabled": True,
-        },
-        "kris": {
-            "title": "KRIs Dashboard Report",
-            "subtitle": "Key Risk Indicators Monitoring & Assessment",
-            "icon": "chart-bar",
-            "tableHeaderBgColor": "#1F4E79",  # Dark blue
-            "watermarkEnabled": True,
-        },
-        "dynamic": {
-            "title": "Dynamic Report",
-            "subtitle": "Custom Data Analysis Report",
-            "icon": "chart-line",
-            "tableHeaderBgColor": "#366092",  # Medium blue
-            "watermarkEnabled": True,
-        },
+        "risks": generic.copy(),
+        "controls": generic.copy(),
+        "incidents": generic.copy(),
+        "kris": generic.copy(),
+        "dynamic": generic.copy(),
     }
 
 def get_default_header_config(dashboard_type: str = "controls") -> Dict[str, Any]:

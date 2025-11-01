@@ -158,20 +158,26 @@ def generate_pdf_report(
     if not header_config:
         from utils.export_utils import get_default_header_config
         header_config = get_default_header_config("dynamic")
+    # Also handle case where header_config is empty dict (shouldn't happen but defensive)
+    elif isinstance(header_config, dict) and len(header_config) == 0:
+        from utils.export_utils import get_default_header_config
+        header_config = get_default_header_config("dynamic")
     
     # Extract configuration values
     include_header = header_config.get("includeHeader", True)
     title = header_config.get("title", "Report")
     subtitle = header_config.get("subtitle", "")
     
-    # Margins
-    right_margin = header_config.get('rightMargin', 0)  # No margin for maximum table width
-    left_margin = header_config.get('leftMargin', 0)  # No margin for maximum table width
-    top_margin = header_config.get('topMargin', 72)
-    bottom_margin = header_config.get('bottomMargin', 72)
+    # Margins (respect centralized defaults for tighter layout)
+    left_margin = header_config.get('leftMargin', 24)
+    right_margin = header_config.get('rightMargin', 24)
+    top_margin = header_config.get('topMargin', 36)
+    bottom_margin = header_config.get('bottomMargin', 36)
     
-    # Colors
+    # Colors - use value from header_config, fallback should only happen if truly missing
     font_color = header_config.get("fontColor", "#1F4E79")
+    # Debug: log the actual tableHeaderBgColor being used
+    write_debug(f"PDF generate_pdf_report: tableHeaderBgColor from header_config = {header_config.get('tableHeaderBgColor', 'NOT SET')}")
     table_header_bg_color = header_config.get("tableHeaderBgColor", "#1F4E79")
     table_body_bg_color = header_config.get("tableBodyBgColor", "#FFFFFF")
     border_color = header_config.get("borderColor", "#000000")
@@ -186,6 +192,7 @@ def generate_pdf_report(
     # Logo
     show_logo = header_config.get("showLogo", True)
     logo_base64 = header_config.get("logoBase64", "")
+    logo_file = header_config.get("logoFile")
     logo_position = header_config.get("logoPosition", "left")
     logo_height = header_config.get("logoHeight", 36)
     
@@ -214,34 +221,59 @@ def generate_pdf_report(
     # HEADER SECTION
     if include_header:
         # Logo
-        if show_logo and logo_base64:
+        if show_logo and (logo_base64 or logo_file):
             try:
-                img_bytes = base64.b64decode(logo_base64.split(',')[-1])
-                img_stream = BytesIO(img_bytes)
+                img_stream = None
+                if logo_base64:
+                    img_bytes = base64.b64decode(logo_base64.split(',')[-1])
+                    img_stream = BytesIO(img_bytes)
+                elif logo_file:
+                    try:
+                        with open(str(logo_file), 'rb') as lf:
+                            img_stream = BytesIO(lf.read())
+                    except Exception:
+                        img_stream = None
                 
-                try:
-                    from PIL import Image as PILImage
-                    pil_img = PILImage.open(img_stream)
-                    orig_w, orig_h = pil_img.size
-                    if orig_h > 0:
-                        scale = float(logo_height) / float(orig_h)
-                        width = orig_w * scale
+                if img_stream is not None:
+                    try:
+                        from PIL import Image as PILImage
+                        pil_img = PILImage.open(img_stream)
+                        orig_w, orig_h = pil_img.size
+                        if orig_h > 0:
+                            scale = float(logo_height) / float(orig_h)
+                            width = orig_w * scale
+                            height = logo_height
+                        img_stream.seek(0)
+                    except:
+                        width = None
                         height = logo_height
-                    img_stream.seek(0)
-                except:
-                    width = None
-                    height = logo_height
-                
-                logo_img = RLImage(img_stream, width=width, height=height)
-                if logo_position == 'left':
-                    logo_img.hAlign = 'LEFT'
-                elif logo_position == 'right':
-                    logo_img.hAlign = 'RIGHT'
-                else:
-                    logo_img.hAlign = 'CENTER'
-                story.append(logo_img)
-                story.append(Spacer(1, 12))
+                    
+                    logo_img = RLImage(img_stream, width=width, height=height)
+                    if logo_position == 'left':
+                        logo_img.hAlign = 'LEFT'
+                    elif logo_position == 'right':
+                        logo_img.hAlign = 'RIGHT'
+                    else:
+                        logo_img.hAlign = 'CENTER'
+                    story.append(logo_img)
+                    story.append(Spacer(1, 12))
             except:
+                pass
+        elif show_logo and not (logo_base64 or logo_file):
+            # Fallback: render a simple emoji logo so a logo appears consistently
+            try:
+                logo_style = ParagraphStyle(
+                    'LogoFallback',
+                    parent=styles['Title'],
+                    fontSize=max(12, int(logo_height) // 2),
+                    alignment=TA_CENTER,
+                    spaceAfter=6,
+                    textColor=font_color_rl,
+                    fontName=ARABIC_FONT_NAME or 'Helvetica-Bold'
+                )
+                story.append(Paragraph("🏦", logo_style))
+                story.append(Spacer(1, 6))
+            except Exception:
                 pass
         
         # Bank info
@@ -254,7 +286,8 @@ def generate_pdf_report(
                 alignment=TA_CENTER,
                 spaceAfter=3
             )
-            story.append(Paragraph(shape_text_for_arabic(bank_name), bank_style))
+            # Prepend a small bank icon for consistency across dashboards
+            story.append(Paragraph(shape_text_for_arabic(f"🏦 {bank_name}"), bank_style))
             if bank_address:
                 story.append(Paragraph(shape_text_for_arabic(bank_address), bank_style))
             if bank_phone or bank_website:
