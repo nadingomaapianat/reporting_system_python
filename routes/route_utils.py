@@ -433,32 +433,73 @@ def generate_excel_report(columns, data_rows, header_config=None):
     # Generate chart if chart_data is provided (right side)
     chart_data = header_config.get('chart_data')
     chart_type = header_config.get('chart_type', 'bar')
-    write_debug(f"Checking for chart - chart_data={'present' if chart_data else 'missing'}, chart_type={chart_type}")
-    if chart_data and chart_data.get('labels') and chart_data.get('values'):
+    is_stacked = chart_data and chart_data.get('series') and chart_data.get('labels')
+    is_simple = chart_data and chart_data.get('labels') and chart_data.get('values')
+    
+    write_debug(f"Checking for chart - chart_data={'present' if chart_data else 'missing'}, chart_type={chart_type}, is_stacked={is_stacked}")
+    if is_stacked or is_simple:
         try:
             import matplotlib
             matplotlib.use('Agg')
             import matplotlib.pyplot as plt
             from io import BytesIO
             from openpyxl.drawing.image import Image as XLImage
-            
-            write_debug(f"Generating Excel chart with {len(chart_data['labels'])} labels, type={chart_type}")
+            import numpy as np
             
             # Create chart
             fig, ax = plt.subplots(figsize=(8, 5))
             
-            if chart_type == 'bar':
-                ax.barh(chart_data['labels'], chart_data['values'], color='#4472C4')
-                ax.set_xlabel('Controls Count')
-                ax.set_ylabel('Component')
-            elif chart_type == 'pie':
-                ax.pie(chart_data['values'], labels=chart_data['labels'], autopct='%1.1f%%')
-            elif chart_type == 'line':
-                ax.plot(chart_data['labels'], chart_data['values'], marker='o')
-                ax.set_xlabel('Labels')
-                ax.set_ylabel('Values')
+            if is_stacked:
+                # Stacked bar chart
+                raw_labels = chart_data.get('labels') or []
+                labels = [str(x) for x in raw_labels]
+                series_list = chart_data.get('series') or []
+                
+                if series_list and labels:
+                    # Prepare data for stacking
+                    x = np.arange(len(labels))
+                    width = 0.6
+                    colors_list = ['#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5', '#70AD47']
+                    bottom = np.zeros(len(labels))
+                    
+                    for idx, series in enumerate(series_list):
+                        values = [float(v) for v in (series.get('values') or [])]
+                        series_name = series.get('name', f'Series {idx+1}')
+                        color = colors_list[idx % len(colors_list)]
+                        
+                        # Ensure values match labels length
+                        if len(values) < len(labels):
+                            values.extend([0] * (len(labels) - len(values)))
+                        values = values[:len(labels)]
+                        
+                        ax.bar(x, values, width, label=series_name, bottom=bottom, color=color)
+                        bottom += np.array(values)
+                    
+                    ax.set_xlabel('Month')
+                    ax.set_ylabel('Count')
+                    ax.set_title(title if title else 'Monthly KRI Assessments (Stacked)')
+                    ax.set_xticks(x)
+                    ax.set_xticklabels(labels, rotation=45, ha='right')
+                    ax.legend()
+                    ax.set_ylim(bottom=0)
+                write_debug(f"Generated stacked Excel chart with {len(series_list)} series, {len(labels)} labels")
+            else:
+                # Simple chart (original logic)
+                write_debug(f"Generating Excel chart with {len(chart_data['labels'])} labels, type={chart_type}")
+                
+                if chart_type == 'bar':
+                    ax.barh(chart_data['labels'], chart_data['values'], color='#4472C4')
+                    ax.set_xlabel('Controls Count')
+                    ax.set_ylabel('Component')
+                elif chart_type == 'pie':
+                    ax.pie(chart_data['values'], labels=chart_data['labels'], autopct='%1.1f%%')
+                elif chart_type == 'line':
+                    ax.plot(chart_data['labels'], chart_data['values'], marker='o')
+                    ax.set_xlabel('Labels')
+                    ax.set_ylabel('Values')
+                
+                ax.set_title(title if title else 'Chart')
             
-            ax.set_title(title if title else 'Chart')
             plt.tight_layout()
             
             # Save chart to buffer

@@ -17,7 +17,7 @@ except Exception:
     IncidentService = None  # type: ignore
 
 try:
-    from .kri_service import KRIService
+    from .kri_service import KriService as KRIService
 except Exception:
     KRIService = None  # type: ignore
 

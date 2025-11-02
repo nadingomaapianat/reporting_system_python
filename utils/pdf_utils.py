@@ -348,63 +348,102 @@ def generate_pdf_report(
             write_debug(f"PDF chart precheck lengths: labels={len(chart_data.get('labels', []) if chart_data else [])}, values={len(chart_data.get('values', []) if chart_data else [])}")
     except Exception:
         pass
-    if chart_data and chart_data.get('labels') and chart_data.get('values'):
+    # Check for stacked chart (series) or simple chart (values)
+    is_stacked = chart_data and chart_data.get('series') and chart_data.get('labels')
+    is_simple = chart_data and chart_data.get('labels') and chart_data.get('values')
+    
+    if is_stacked or is_simple:
         try:
             import matplotlib
             matplotlib.use('Agg')
             import matplotlib.pyplot as plt
+            import numpy as np
             
-            # Debug chart data
-            try:
-                write_debug(f"PDF chart: type={chart_type}, labels_count={len(chart_data.get('labels', []))}, values_count={len(chart_data.get('values', []))}")
-                if chart_data.get('labels'):
-                    write_debug(f"PDF chart sample label[0]: {str(chart_data['labels'][0])}")
-                if chart_data.get('values'):
-                    write_debug(f"PDF chart sample value[0]: {chart_data['values'][0]}")
-            except Exception:
-                pass
-
             fig, ax = plt.subplots(figsize=(8, 5))
             
-            # Sanitize labels/values
-            raw_labels = chart_data.get('labels') or []
-            raw_values = chart_data.get('values') or []
-            labels = [str(x) for x in raw_labels]
-            values: List[float] = []
-            for v in raw_values:
+            if is_stacked:
+                # Stacked bar chart
+                raw_labels = chart_data.get('labels') or []
+                labels = [str(x) for x in raw_labels]
+                series_list = chart_data.get('series') or []
+                
+                if series_list and labels:
+                    # Prepare data for stacking
+                    x = np.arange(len(labels))
+                    width = 0.6
+                    colors_list = ['#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5', '#70AD47']
+                    bottom = np.zeros(len(labels))
+                    
+                    for idx, series in enumerate(series_list):
+                        values = [float(v) for v in (series.get('values') or [])]
+                        series_name = series.get('name', f'Series {idx+1}')
+                        color = colors_list[idx % len(colors_list)]
+                        
+                        # Ensure values match labels length
+                        if len(values) < len(labels):
+                            values.extend([0] * (len(labels) - len(values)))
+                        values = values[:len(labels)]
+                        
+                        ax.bar(x, values, width, label=series_name, bottom=bottom, color=color)
+                        bottom += np.array(values)
+                    
+                    ax.set_xlabel('Month')
+                    ax.set_ylabel('Count')
+                    ax.set_title('Monthly KRI Assessments (Stacked)')
+                    ax.set_xticks(x)
+                    ax.set_xticklabels(labels, rotation=45, ha='right')
+                    ax.legend()
+                    ax.set_ylim(bottom=0)
+            else:
+                # Simple chart (original logic)
                 try:
-                    # Convert Decimals/strings to float
-                    values.append(float(v))
+                    write_debug(f"PDF chart: type={chart_type}, labels_count={len(chart_data.get('labels', []))}, values_count={len(chart_data.get('values', []))}")
+                    if chart_data.get('labels'):
+                        write_debug(f"PDF chart sample label[0]: {str(chart_data['labels'][0])}")
+                    if chart_data.get('values'):
+                        write_debug(f"PDF chart sample value[0]: {chart_data['values'][0]}")
                 except Exception:
-                    values.append(0.0)
+                    pass
+                
+                # Sanitize labels/values
+                raw_labels = chart_data.get('labels') or []
+                raw_values = chart_data.get('values') or []
+                labels = [str(x) for x in raw_labels]
+                values: List[float] = []
+                for v in raw_values:
+                    try:
+                        # Convert Decimals/strings to float
+                        values.append(float(v))
+                    except Exception:
+                        values.append(0.0)
 
-            # Ensure matching lengths
-            min_len = min(len(labels), len(values))
-            labels = labels[:min_len]
-            values = values[:min_len]
+                # Ensure matching lengths
+                min_len = min(len(labels), len(values))
+                labels = labels[:min_len]
+                values = values[:min_len]
 
-            # Guard: if all zeros, avoid pie errors and still render axes
-            has_positive = any(v > 0 for v in values)
+                # Guard: if all zeros, avoid pie errors and still render axes
+                has_positive = any(v > 0 for v in values)
 
-            if chart_type == 'bar':
-                ax.barh(labels, values, color='#4472C4')
-                ax.set_xlabel('Count')
-                ax.set_ylabel('Category')
-                ax.set_xlim(left=0)
-            elif chart_type == 'line':
-                # Line chart over categorical x-axis
-                x = list(range(len(labels)))
-                ax.plot(x, values, marker='o', color='#4472C4')
-                ax.set_xticks(x)
-                ax.set_xticklabels(labels, rotation=45, ha='right')
-                ax.set_ylabel('Count')
-                ax.grid(True, linestyle='--', alpha=0.3)
-            elif chart_type == 'pie':
-                if not has_positive:
-                    # Render a placeholder to avoid empty chart
-                    values = [1]
-                    labels = ['No Data']
-                ax.pie(values, labels=labels, autopct='%1.1f%%')
+                if chart_type == 'bar':
+                    ax.barh(labels, values, color='#4472C4')
+                    ax.set_xlabel('Count')
+                    ax.set_ylabel('Category')
+                    ax.set_xlim(left=0)
+                elif chart_type == 'line':
+                    # Line chart over categorical x-axis
+                    x = list(range(len(labels)))
+                    ax.plot(x, values, marker='o', color='#4472C4')
+                    ax.set_xticks(x)
+                    ax.set_xticklabels(labels, rotation=45, ha='right')
+                    ax.set_ylabel('Count')
+                    ax.grid(True, linestyle='--', alpha=0.3)
+                elif chart_type == 'pie':
+                    if not has_positive:
+                        # Render a placeholder to avoid empty chart
+                        values = [1]
+                        labels = ['No Data']
+                    ax.pie(values, labels=labels, autopct='%1.1f%%')
             
             plt.tight_layout()
             

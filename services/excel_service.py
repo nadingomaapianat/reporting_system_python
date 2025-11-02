@@ -389,54 +389,139 @@ class ExcelService:
 
             # CHART EXPORT
             if only_chart and card_type:
-                if isinstance(data, list) and data:
-                    first_item = data[0]
-                    if isinstance(first_item, dict):
-                        keys = list(first_item.keys())
-                        if len(keys) >= 2:
-                            key1 = keys[0]
-                            key2 = keys[-1]
-                            columns = [format_column_name(key1), format_column_name(key2)]
-                            for item in data:
-                                name = item.get(key1, "N/A")
-                                value = item.get(key2, 0)
-                                data_rows.append([name, str(value)])
-                        else:
-                            key1 = keys[0]
-                            columns = [format_column_name(key1), "Value"]
-                            for item in data:
-                                name = item.get(key1, "N/A")
-                                data_rows.append([name, 0])
-                    else:
-                        data_rows = [[str(first_item), "0"]]
-                        columns = ["Label", "Value"]
-                else:
-                    data_rows = [["No data available", "0"]]
-                    columns = ["Label", "Value"]
-
-                default_type_by_card = {
-                    "krisByStatus": "pie",
-                    "krisByLevel": "pie",
-                    "breachedKRIsByDepartment": "bar",
-                    "kriAssessmentCount": "bar",
-                }
-                chart_type = header_config.get("chartType") or header_config.get("chart_type")
-                if chart_type not in {"bar", "line", "pie"}:
-                    chart_type = default_type_by_card.get(card_type, "bar")
-                header_config["chart_type"] = chart_type
-
-                # Extract chart data from rows
-                chart_labels: List[str] = []
-                chart_values: List[float] = []
-                for row in data_rows:
-                    if len(row) >= 2:
-                        chart_labels.append(str(row[0]))
+                # Special handling for stacked monthly assessment chart
+                if card_type == "kriMonthlyAssessment" and isinstance(data, list) and data:
+                    # Transform from long format to wide format (pivot)
+                    grouped: dict = {}
+                    assessment_levels = set()
+                    
+                    def parse_month(month_val):
+                        """Parse month to datetime object and return formatted string"""
                         try:
-                            chart_values.append(float(row[1]))
-                        except Exception:
-                            chart_values.append(0)
-                if chart_labels and chart_values:
-                    header_config["chart_data"] = {"labels": chart_labels, "values": chart_values}
+                            from datetime import datetime
+                            dt = None
+                            if isinstance(month_val, str):
+                                # Try parsing various date formats
+                                for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d', '%Y-%m-%dT%H:%M:%S.%f']:
+                                    try:
+                                        dt = datetime.strptime(month_val.split('.')[0], fmt)
+                                        break
+                                    except:
+                                        continue
+                            elif hasattr(month_val, 'strftime'):
+                                # Already a datetime object
+                                dt = month_val
+                            
+                            if dt:
+                                return dt, dt.strftime('%b %Y')  # Format as "Jan 2025"
+                            return None, str(month_val)
+                        except:
+                            return None, str(month_val)
+                    
+                    # Use dict with date key for proper sorting
+                    month_dict = {}  # Maps formatted string to date object for sorting
+                    
+                    for item in data:
+                        # Get month from createdAt, month, or month_year
+                        month = item.get('month') or item.get('month_year') or item.get('createdAt')
+                        if month:
+                            dt, month_str = parse_month(month)
+                            
+                            assessment = item.get('assessment') or item.get('level') or 'Unknown'
+                            count = float(item.get('count', 0))
+                            
+                            assessment_levels.add(assessment)
+                            month_dict[month_str] = dt  # Store date for sorting
+                            
+                            if month_str not in grouped:
+                                grouped[month_str] = {}
+                            grouped[month_str][assessment] = (grouped[month_str].get(assessment, 0) + count)
+                    
+                    # Create columns: Month + each assessment level
+                    sorted_levels = sorted(list(assessment_levels))
+                    columns = ["Month"] + sorted_levels
+                    
+                    # Sort months by date value (not string)
+                    from datetime import datetime
+                    sorted_months = sorted(grouped.keys(), key=lambda m: month_dict.get(m) or datetime(1970, 1, 1))
+                    chart_labels: List[str] = []
+                    chart_series = []
+                    
+                    for month in sorted_months:
+                        row = [month]
+                        for level in sorted_levels:
+                            value = grouped[month].get(level, 0)
+                            row.append(str(value))
+                        data_rows.append(row)
+                        chart_labels.append(month)
+                    
+                    # For stacked charts, create series data
+                    for level in sorted_levels:
+                        series_values = []
+                        for month in sorted_months:
+                            value = grouped[month].get(level, 0)
+                            series_values.append(float(value))
+                        chart_series.append({"name": level, "values": series_values})
+                    
+                    header_config["chart_data"] = {
+                        "labels": chart_labels,
+                        "series": chart_series
+                    }
+                    header_config["chart_type"] = "bar"
+                    header_config["stacked"] = True
+                else:
+                    # Default handling for other charts
+                    if isinstance(data, list) and data:
+                        first_item = data[0]
+                        if isinstance(first_item, dict):
+                            keys = list(first_item.keys())
+                            if len(keys) >= 2:
+                                key1 = keys[0]
+                                key2 = keys[-1]
+                                columns = [format_column_name(key1), format_column_name(key2)]
+                                for item in data:
+                                    name = item.get(key1, "N/A")
+                                    value = item.get(key2, 0)
+                                    data_rows.append([name, str(value)])
+                            else:
+                                key1 = keys[0]
+                                columns = [format_column_name(key1), "Value"]
+                                for item in data:
+                                    name = item.get(key1, "N/A")
+                                    data_rows.append([name, 0])
+                        else:
+                            data_rows = [[str(first_item), "0"]]
+                            columns = ["Label", "Value"]
+                    else:
+                        data_rows = [["No data available", "0"]]
+                        columns = ["Label", "Value"]
+
+                    default_type_by_card = {
+                        "krisByStatus": "pie",
+                        "krisByLevel": "pie",
+                        "breachedKRIsByDepartment": "bar",
+                        "kriAssessmentCount": "bar",
+                        "kriOverdueStatusCounts": "pie",
+                        "kriMonthlyAssessment": "bar",
+                    }
+                    chart_type = header_config.get("chartType") or header_config.get("chart_type")
+                    if chart_type not in {"bar", "line", "pie"}:
+                        chart_type = default_type_by_card.get(card_type, "bar")
+                    header_config["chart_type"] = chart_type
+
+                    # Extract chart data from rows
+                    chart_labels = []
+                    chart_values = []
+                    for row in data_rows:
+                        if len(row) >= 2:
+                            chart_labels.append(str(row[0]))
+                            try:
+                                chart_values.append(float(row[1]))
+                            except Exception:
+                                chart_values.append(0)
+                    if chart_labels and chart_values:
+                        header_config["chart_data"] = {"labels": chart_labels, "values": chart_values}
+                
                 return generate_excel_report(columns, data_rows, header_config)
 
             # TABLE EXPORT

@@ -229,55 +229,139 @@ class PDFService:
 
             # CHART EXPORT
             if only_chart and card_type:
-                chart_data = {"labels": [], "values": []}
-                if isinstance(kris_data, list) and kris_data:
-                    first_item = kris_data[0]
-                    if isinstance(first_item, dict):
-                        keys = list(first_item.keys())
-                        if len(keys) >= 2:
-                            key1 = keys[0]
-                            key2 = keys[-1]
-                            def fmt(k: str) -> str:
-                                return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', k).title()
-                            columns = [fmt(key1), fmt(key2)]
-                            for item in kris_data:
-                                name = item.get(key1, "N/A")
-                                value = item.get(key2, 0)
-                                chart_data["labels"].append(name)
-                                chart_data["values"].append(value)
-                                data_rows.append([name, str(value)])
+                # Special handling for stacked monthly assessment chart
+                if card_type == "kriMonthlyAssessment" and isinstance(kris_data, list) and kris_data:
+                    # Transform from long format to wide format (pivot)
+                    grouped: dict = {}
+                    assessment_levels = set()
+                    
+                    def parse_month(month_val):
+                        """Parse month to datetime object and return formatted string"""
+                        try:
+                            from datetime import datetime
+                            dt = None
+                            if isinstance(month_val, str):
+                                # Try parsing various date formats
+                                for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d', '%Y-%m-%dT%H:%M:%S.%f']:
+                                    try:
+                                        dt = datetime.strptime(month_val.split('.')[0], fmt)
+                                        break
+                                    except:
+                                        continue
+                            elif hasattr(month_val, 'strftime'):
+                                # Already a datetime object
+                                dt = month_val
+                            
+                            if dt:
+                                return dt, dt.strftime('%b %Y')  # Format as "Jan 2025"
+                            return None, str(month_val)
+                        except:
+                            return None, str(month_val)
+                    
+                    # Use dict with date key for proper sorting
+                    month_dict = {}  # Maps formatted string to date object for sorting
+                    
+                    for item in kris_data:
+                        # Get month from createdAt, month, or month_year
+                        month = item.get('month') or item.get('month_year') or item.get('createdAt')
+                        if month:
+                            dt, month_str = parse_month(month)
+                            
+                            assessment = item.get('assessment') or item.get('level') or 'Unknown'
+                            count = float(item.get('count', 0))
+                            
+                            assessment_levels.add(assessment)
+                            month_dict[month_str] = dt  # Store date for sorting
+                            
+                            if month_str not in grouped:
+                                grouped[month_str] = {}
+                            grouped[month_str][assessment] = (grouped[month_str].get(assessment, 0) + count)
+                    
+                    # Create columns: Month + each assessment level
+                    sorted_levels = sorted(list(assessment_levels))
+                    columns = ["Month"] + sorted_levels
+                    
+                    # Sort months by date value (not string)
+                    from datetime import datetime
+                    sorted_months = sorted(grouped.keys(), key=lambda m: month_dict.get(m) or datetime(1970, 1, 1))
+                    chart_data = {"labels": [], "values": []}
+                    
+                    for month in sorted_months:
+                        row = [month]
+                        for level in sorted_levels:
+                            value = grouped[month].get(level, 0)
+                            row.append(str(value))
+                        data_rows.append(row)
+                        chart_data["labels"].append(month)
+                    
+                    # For stacked charts, we need multi-series data
+                    # Store all series in chart_data
+                    chart_series = []
+                    for level in sorted_levels:
+                        series_values = []
+                        for month in sorted_months:
+                            value = grouped[month].get(level, 0)
+                            series_values.append(float(value))
+                        chart_series.append({"name": level, "values": series_values})
+                    
+                    chart_data["series"] = chart_series
+                    chart_data["labels"] = sorted_months
+                    header_config["chart_data"] = chart_data
+                    header_config["chart_type"] = "bar"  # Stacked bar for stacked charts
+                    header_config["stacked"] = True
+                else:
+                    # Default handling for other charts
+                    chart_data = {"labels": [], "values": []}
+                    if isinstance(kris_data, list) and kris_data:
+                        first_item = kris_data[0]
+                        if isinstance(first_item, dict):
+                            keys = list(first_item.keys())
+                            if len(keys) >= 2:
+                                key1 = keys[0]
+                                key2 = keys[-1]
+                                def fmt(k: str) -> str:
+                                    return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', k).title()
+                                columns = [fmt(key1), fmt(key2)]
+                                for item in kris_data:
+                                    name = item.get(key1, "N/A")
+                                    value = item.get(key2, 0)
+                                    chart_data["labels"].append(name)
+                                    chart_data["values"].append(value)
+                                    data_rows.append([name, str(value)])
+                            else:
+                                columns = ["Label", "Value"]
+                                for item in kris_data:
+                                    name = str(item)
+                                    chart_data["labels"].append(name)
+                                    chart_data["values"].append(0)
+                                    data_rows.append([name, "0"])
                         else:
                             columns = ["Label", "Value"]
-                            for item in kris_data:
-                                name = str(item)
-                                chart_data["labels"].append(name)
-                                chart_data["values"].append(0)
-                                data_rows.append([name, "0"])
+                            data_rows.append([str(first_item), "0"])
                     else:
                         columns = ["Label", "Value"]
-                        data_rows.append([str(first_item), "0"])
-                else:
-                    columns = ["Label", "Value"]
-                    data_rows.append(["No data available", "0"])
+                        data_rows.append(["No data available", "0"])
 
-                default_type_by_card = {
-                    "krisByStatus": "pie",
-                    "krisByLevel": "pie",
-                    "breachedKRIsByDepartment": "bar",
-                    "kriAssessmentCount": "bar",
-                }
-                chart_type_override = None
-                try:
-                    chart_type_override = header_config.get("chartType") or header_config.get("chart_type")
-                except Exception:
+                    default_type_by_card = {
+                        "krisByStatus": "pie",
+                        "krisByLevel": "pie",
+                        "breachedKRIsByDepartment": "bar",
+                        "kriAssessmentCount": "bar",
+                        "kriOverdueStatusCounts": "pie",
+                        "kriMonthlyAssessment": "bar",
+                    }
                     chart_type_override = None
-                valid_types = {"bar", "line", "pie"}
-                if chart_type_override in valid_types:
-                    resolved_chart_type = chart_type_override
-                else:
-                    resolved_chart_type = default_type_by_card.get(card_type or chart_type_override, "bar")
-                header_config["chart_data"] = chart_data
-                header_config["chart_type"] = resolved_chart_type
+                    try:
+                        chart_type_override = header_config.get("chartType") or header_config.get("chart_type")
+                    except Exception:
+                        chart_type_override = None
+                    valid_types = {"bar", "line", "pie"}
+                    if chart_type_override in valid_types:
+                        resolved_chart_type = chart_type_override
+                    else:
+                        resolved_chart_type = default_type_by_card.get(card_type or chart_type_override, "bar")
+                    header_config["chart_data"] = chart_data
+                    header_config["chart_type"] = resolved_chart_type
 
             # TABLE EXPORT
             elif only_overall_table:
