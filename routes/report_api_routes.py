@@ -59,7 +59,7 @@ async def log_report_export(request: Request):
         conn = pyodbc.connect(connection_string)
         cursor = conn.cursor()
         try:
-            # Ensure table exists
+            # Ensure table exists and has created_by column
             cursor.execute(
                 """
                 IF NOT EXISTS (
@@ -73,6 +73,7 @@ async def log_report_export(request: Request):
                     src NVARCHAR(1024) NULL,
                     format NVARCHAR(20) NOT NULL,
                     dashboard NVARCHAR(100) NULL,
+                    created_by NVARCHAR(255) NULL,
                     created_at DATETIME2 DEFAULT GETDATE()
                   )
                 END
@@ -80,12 +81,35 @@ async def log_report_export(request: Request):
             )
             conn.commit()
 
+            # Add created_by column if it doesn't exist (for existing tables)
+            try:
+                cursor.execute(
+                    """
+                    IF NOT EXISTS (
+                      SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                      WHERE TABLE_NAME = 'report_exports' AND COLUMN_NAME = 'created_by'
+                    )
+                    BEGIN
+                      ALTER TABLE dbo.report_exports ADD created_by NVARCHAR(255) NULL
+                    END
+                    """
+                )
+                conn.commit()
+            except Exception:
+                pass  # Column might already exist
+
+            created_by = (body.get("created_by") or "").strip() or "System"
+            # Determine type based on dashboard
+            export_type = "transaction"  # Default
+            if dashboard and dashboard.lower() in ['incidents', 'kris', 'risks', 'controls']:
+                export_type = "dashboard"
+            
             cursor.execute(
                 """
-                INSERT INTO dbo.report_exports (title, src, format, dashboard)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO dbo.report_exports (title, src, format, dashboard, type, created_by)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (title, src, fmt, dashboard)
+                (title, src, fmt, dashboard, export_type, created_by)
             )
             conn.commit()
 
@@ -98,8 +122,8 @@ async def log_report_export(request: Request):
         return {"success": False, "error": str(e)}
 
 @router.get("/api/exports/recent")
-async def list_recent_exports(limit: int = Query(50), page: int = Query(1), search: str = Query("")):
-    """Return recent report exports (newest first) with simple pagination."""
+async def list_recent_exports(request: Request, limit: int = Query(50), page: int = Query(1), search: str = Query("")):
+    """Return recent report exports (newest first) with simple pagination and dashboard filtering."""
     try:
         import pyodbc
         from config import get_database_connection_string
@@ -121,21 +145,83 @@ async def list_recent_exports(limit: int = Query(50), page: int = Query(1), sear
                     src NVARCHAR(1024) NULL,
                     format NVARCHAR(20) NOT NULL,
                     dashboard NVARCHAR(100) NULL,
+                    type NVARCHAR(50) NULL,
+                    created_by NVARCHAR(255) NULL,
                     created_at DATETIME2 DEFAULT GETDATE()
                   )
                 END
                 """
             )
             conn.commit()
+            
+            # Add type column if it doesn't exist
+            try:
+                cursor.execute(
+                    """
+                    IF NOT EXISTS (
+                      SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                      WHERE TABLE_NAME = 'report_exports' AND COLUMN_NAME = 'type'
+                    )
+                    BEGIN
+                      ALTER TABLE dbo.report_exports ADD type NVARCHAR(50) NULL
+                    END
+                    """
+                )
+                conn.commit()
+            except Exception:
+                pass
+            
+            # Add created_by column if it doesn't exist
+            try:
+                cursor.execute(
+                    """
+                    IF NOT EXISTS (
+                      SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                      WHERE TABLE_NAME = 'report_exports' AND COLUMN_NAME = 'created_by'
+                    )
+                    BEGIN
+                      ALTER TABLE dbo.report_exports ADD created_by NVARCHAR(255) NULL
+                    END
+                    """
+                )
+                conn.commit()
+            except Exception:
+                pass
 
             # Build search condition
             search_condition = ""
             search_params = []
+            conditions = []
+            
+            # Handle title search
             if search and search.strip():
-                search_condition = "WHERE title LIKE ?"
+                conditions.append("title LIKE ?")
                 search_params.append(f"%{search.strip()}%")
+            
+            # Handle type filter (prefer type over dashboard filter)
+            type_filter = request.query_params.get('type', None)
+            if type_filter:
+                if type_filter.lower() == 'dashboard':
+                    conditions.append("type = 'dashboard'")
+                elif type_filter.lower() == 'transaction':
+                    conditions.append("(type = 'transaction' OR type IS NULL)")
+            
+            # Fallback to dashboard filter if type is not provided (for backward compatibility)
+            elif request.query_params.get('dashboard', None):
+                dashboard_filter = request.query_params.get('dashboard')
+                dashboard_list = [d.strip() for d in dashboard_filter.split(',')]
+                if len(dashboard_list) == 1 and dashboard_list[0] == 'transaction':
+                    # Transaction reports: exclude dashboard reports or explicitly transaction
+                    conditions.append("(type = 'transaction' OR type IS NULL OR type != 'dashboard')")
+                elif len(dashboard_list) > 0:
+                    # Dashboard reports: filter by specific dashboard types
+                    conditions.append("type = 'dashboard'")
+            
+            # Combine all conditions
+            if conditions:
+                search_condition = "WHERE " + " AND ".join(conditions)
 
-            # Total count with search
+            # Total count with search and filters
             count_query = f"SELECT COUNT(*) FROM dbo.report_exports {search_condition}"
             cursor.execute(count_query, search_params)
             total_count = int(cursor.fetchone()[0])
@@ -146,7 +232,7 @@ async def list_recent_exports(limit: int = Query(50), page: int = Query(1), sear
             offset = (safe_page - 1) * safe_limit
             
             select_query = f"""
-                SELECT id, title, src, format, dashboard, created_at
+                SELECT id, title, src, format, dashboard, type, created_by, created_at
                 FROM dbo.report_exports
                 {search_condition}
                 ORDER BY created_at DESC, id DESC
@@ -161,7 +247,9 @@ async def list_recent_exports(limit: int = Query(50), page: int = Query(1), sear
                     "src": r[2],
                     "format": r[3],
                     "dashboard": r[4],
-                    "created_at": r[5].isoformat() if hasattr(r[5], 'isoformat') else str(r[5])
+                    "type": r[5] if len(r) > 5 else None,
+                    "created_by": r[6] if len(r) > 6 else "System",
+                    "created_at": r[7].isoformat() if len(r) > 7 and hasattr(r[7], 'isoformat') else (str(r[7]) if len(r) > 7 else "")
                 }
                 for r in rows
             ]
@@ -283,6 +371,60 @@ async def generate_dynamic_report(request: Request):
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate dynamic report: {str(e)}")
+
+
+@router.get("/api/exports/{export_id}/download")
+async def download_export(export_id: int):
+    """Download a saved export file by ID"""
+    try:
+        import pyodbc
+        from config import get_database_connection_string
+        import os
+        
+        connection_string = get_database_connection_string()
+        conn = pyodbc.connect(connection_string)
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT src, format FROM dbo.report_exports WHERE id = ?", export_id)
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Export not found")
+            
+            src = row[0]
+            fmt = row[1] or 'pdf'
+            
+            if not src:
+                raise HTTPException(status_code=404, detail="Export file not found")
+            
+            # Build file path
+            base_dir = os.path.dirname(os.path.dirname(__file__))
+            file_path = os.path.join(base_dir, src)
+            
+            if not os.path.exists(file_path):
+                raise HTTPException(status_code=404, detail="Export file not found on disk")
+            
+            # Determine media type
+            media_types = {
+                'pdf': 'application/pdf',
+                'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'xls': 'application/vnd.ms-excel',
+                'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'doc': 'application/msword'
+            }
+            media_type = media_types.get(fmt.lower(), 'application/octet-stream')
+            
+            return FileResponse(
+                file_path,
+                media_type=media_type,
+                filename=os.path.basename(file_path)
+            )
+        finally:
+            cursor.close()
+            conn.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to download export: {str(e)}")
 
 
 @router.post("/api/reports/schedule")

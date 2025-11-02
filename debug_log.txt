@@ -1,0 +1,580 @@
+[12:57:56.810] [RISKS PDF] startDate=None endDate=None
+[12:57:56.810] [RISKS PDF] cardType=None onlyCard=False onlyChart=true
+[12:57:56.810] [RISKS PDF] chartType=risksByCategory onlyOverallTable=False tableType=None
+[12:57:56.810] [RISKS PDF] normalized cardType=risksByCategory
+[12:57:56.814] [RiskService] _execute_sync_query SQL: 
+        SELECT 
+            ISNULL(c.name, 'Uncategorized') as name,
+            COUNT(r.id) as value
+        FROM [NEWDCC-V4-UAT].dbo.[Risks] r
+        LEFT JOIN dbo.RiskCategories rc ON r.id = rc.risk_id AND rc.isDeleted = 0
+        LEFT JOIN dbo.Categories c ON rc.category_id = c.id AND c.isDeleted = 0
+        WHERE r.isDeleted = 0 
+        GROUP BY c.name
+        ORDER BY value DESC
+        
+[12:57:57.677] [RiskService] execute_query OK: rows=12
+[12:57:57.677] risks_data: {'risksByCategory': [{'name': 'Operational Risk', 'value': 942}, {'name': 'Credit Risk', 'value': 270}, {'name': 'Reputation Risk', 'value': 270}, {'name': 'Information Risk', 'value': 238}, {'name': 'Market Risk', 'value': 138}, {'name': 'Strategic Risk', 'value': 103}, {'name': 'Uncategorized', 'value': 18}, {'name': 'Supplier Risk', 'value': 12}, {'name': 'Fraud Risk', 'value': 7}, {'name': 'Compliance - Sharia Risk', 'value': 5}, {'name': 'External Threats', 'value': 1}, {'name': 'Physical Security Risk', 'value': 1}]}
+[12:57:57.693] [RISKS PDF] data_type=list data_len=12
+[12:57:57.693] DEBUG: ===== generate_risks_pdf START =====
+[12:57:57.693]   - header_config tableHeaderBgColor (before merge): #1F4E79
+[12:57:57.694]   - card_type: risksByCategory
+[12:57:57.694]   - only_card: False
+[12:57:57.694]   - only_chart: True
+[12:57:57.695]   - only_overall_table: False
+[12:57:57.695]   - header_config tableHeaderBgColor (before merge_header_config): #1F4E79
+[12:57:57.696]   - final_config tableHeaderBgColor: #1F4E79
+[12:57:57.696] DEBUG: Using PDF config (risks): {'includeHeader': True, 'showLogo': True, 'showDate': True, 'showPageNumbers': True, 'showBankInfo': True, 'bankInfoLocation': 'top', 'title': 'Dashboard Report', 'subtitle': 'Comprehensive Analysis Report', 'icon': 'chart-line', 'logoPosition': 'left', 'logoHeight': 36, 'logoFile': None, 'logoBase64': None, 'bankName': 'PIANAT.AI', 'bankAddress': 'King Abdulaziz Road, Riyadh, Saudi Arabia', 'bankPhone': '+966 11 402 9000', 'bankWebsite': 'www.pianat.ai', 'fontColor': '#1F4E79', 'backgroundColor': '#FFFFFF', 'tableHeaderBgColor': '#1F4E79', 'tableHeaderTextColor': '#FFFFFF', 'tableBodyBgColor': '#FFFFFF', 'tableBodyTextColor': '#000000', 'borderStyle': 'solid', 'borderColor': '#C9CED6', 'borderWidth': 1, 'leftMargin': 24, 'rightMargin': 24, 'topMargin': 36, 'bottomMargin': 36, 'padding': 12, 'margin': 8, 'fontSize': 'medium', 'footerShowDate': True, 'footerShowConfidentiality': True, 'footerConfidentialityText': 'Confidential Report - Internal Use Only', 'footerShowPageNumbers': True, 'footerAlign': 'center', 'watermarkEnabled': True, 'watermarkText': 'CONFIDENTIAL', 'watermarkOpacity': 10, 'watermarkDiagonal': True, 'chart_type': 'bar', 'chart_data': {'labels': ['Operational Risk', 'Credit Risk', 'Reputation Risk', 'Information Risk', 'Market Risk', 'Strategic Risk', 'Uncategorized', 'Supplier Risk', 'Fraud Risk', 'Compliance - Sharia Risk', 'External Threats', 'Physical Security Risk'], 'values': [942, 270, 270, 238, 138, 103, 18, 12, 7, 5, 1, 1]}, 'excelFreezeTopRow': True, 'excelAutoFitColumns': True, 'excelZebraStripes': True, 'excelFitToWidth': True, 'pdfPageOrientation': 'portrait', 'maxCellChars': 300, 'maxRowsPerTable': 25, 'location': 'top', 'chartType': 'bar'}
+[12:57:57.696] PDF generate_pdf_report: tableHeaderBgColor from header_config = #1F4E79
+[12:57:57.698] PDF chart precheck: chart_type=bar, has_chart_data=True
+[12:57:57.698] PDF chart precheck lengths: labels=12, values=12
+[12:57:57.709] PDF chart: type=bar, labels_count=12, values_count=12
+[12:57:57.709] PDF chart sample label[0]: Operational Risk
+[12:57:57.712] PDF chart sample value[0]: 942
+[12:57:58.012] DEBUG: PDF generated successfully for risksByCategory
+[12:57:58.012] [Save Export] Setting lock for cache_key: 0c40e842...
+[12:57:59.007] [Save Export] Created new export record ID: 497 for reports_export/2025-11-02/risks_Risks_By_Category_2025-11-02_125758_331.pdf
+[12:57:59.130] [Save Export] Successfully saved export: risks_Risks_By_Category_2025-11-02_125758_331.pdf (ID: 497)
+[12:58:02.165] [RISKS PDF] startDate=None endDate=None
+[12:58:02.165] [RISKS PDF] cardType=None onlyCard=False onlyChart=true
+[12:58:02.165] [RISKS PDF] chartType=risksByCategory onlyOverallTable=False tableType=None
+[12:58:02.165] [RISKS PDF] normalized cardType=risksByCategory
+[12:58:02.165] [RiskService] _execute_sync_query SQL: 
+        SELECT 
+            ISNULL(c.name, 'Uncategorized') as name,
+            COUNT(r.id) as value
+        FROM [NEWDCC-V4-UAT].dbo.[Risks] r
+        LEFT JOIN dbo.RiskCategories rc ON r.id = rc.risk_id AND rc.isDeleted = 0
+        LEFT JOIN dbo.Categories c ON rc.category_id = c.id AND c.isDeleted = 0
+        WHERE r.isDeleted = 0 
+        GROUP BY c.name
+        ORDER BY value DESC
+        
+[12:58:02.423] [RiskService] execute_query OK: rows=12
+[12:58:02.423] risks_data: {'risksByCategory': [{'name': 'Operational Risk', 'value': 942}, {'name': 'Credit Risk', 'value': 270}, {'name': 'Reputation Risk', 'value': 270}, {'name': 'Information Risk', 'value': 238}, {'name': 'Market Risk', 'value': 138}, {'name': 'Strategic Risk', 'value': 103}, {'name': 'Uncategorized', 'value': 18}, {'name': 'Supplier Risk', 'value': 12}, {'name': 'Fraud Risk', 'value': 7}, {'name': 'Compliance - Sharia Risk', 'value': 5}, {'name': 'External Threats', 'value': 1}, {'name': 'Physical Security Risk', 'value': 1}]}
+[12:58:02.423] [RISKS PDF] data_type=list data_len=12
+[12:58:02.423] DEBUG: ===== generate_risks_pdf START =====
+[12:58:02.423]   - header_config tableHeaderBgColor (before merge): #1F4E79
+[12:58:02.423]   - card_type: risksByCategory
+[12:58:02.423]   - only_card: False
+[12:58:02.423]   - only_chart: True
+[12:58:02.423]   - only_overall_table: False
+[12:58:02.423]   - header_config tableHeaderBgColor (before merge_header_config): #1F4E79
+[12:58:02.423]   - final_config tableHeaderBgColor: #1F4E79
+[12:58:02.423] DEBUG: Using PDF config (risks): {'includeHeader': True, 'showLogo': True, 'showDate': True, 'showPageNumbers': True, 'showBankInfo': True, 'bankInfoLocation': 'top', 'title': 'Dashboard Report', 'subtitle': 'Comprehensive Analysis Report', 'icon': 'chart-line', 'logoPosition': 'left', 'logoHeight': 36, 'logoFile': None, 'logoBase64': None, 'bankName': 'PIANAT.AI', 'bankAddress': 'King Abdulaziz Road, Riyadh, Saudi Arabia', 'bankPhone': '+966 11 402 9000', 'bankWebsite': 'www.pianat.ai', 'fontColor': '#1F4E79', 'backgroundColor': '#FFFFFF', 'tableHeaderBgColor': '#1F4E79', 'tableHeaderTextColor': '#FFFFFF', 'tableBodyBgColor': '#FFFFFF', 'tableBodyTextColor': '#000000', 'borderStyle': 'solid', 'borderColor': '#C9CED6', 'borderWidth': 1, 'leftMargin': 24, 'rightMargin': 24, 'topMargin': 36, 'bottomMargin': 36, 'padding': 12, 'margin': 8, 'fontSize': 'medium', 'footerShowDate': True, 'footerShowConfidentiality': True, 'footerConfidentialityText': 'Confidential Report - Internal Use Only', 'footerShowPageNumbers': True, 'footerAlign': 'center', 'watermarkEnabled': True, 'watermarkText': 'CONFIDENTIAL', 'watermarkOpacity': 10, 'watermarkDiagonal': True, 'chart_type': 'bar', 'chart_data': {'labels': ['Operational Risk', 'Credit Risk', 'Reputation Risk', 'Information Risk', 'Market Risk', 'Strategic Risk', 'Uncategorized', 'Supplier Risk', 'Fraud Risk', 'Compliance - Sharia Risk', 'External Threats', 'Physical Security Risk'], 'values': [942, 270, 270, 238, 138, 103, 18, 12, 7, 5, 1, 1]}, 'excelFreezeTopRow': True, 'excelAutoFitColumns': True, 'excelZebraStripes': True, 'excelFitToWidth': True, 'pdfPageOrientation': 'portrait', 'maxCellChars': 300, 'maxRowsPerTable': 25, 'location': 'top', 'chartType': 'bar'}
+[12:58:02.423] PDF generate_pdf_report: tableHeaderBgColor from header_config = #1F4E79
+[12:58:02.423] PDF chart precheck: chart_type=bar, has_chart_data=True
+[12:58:02.423] PDF chart precheck lengths: labels=12, values=12
+[12:58:02.423] PDF chart: type=bar, labels_count=12, values_count=12
+[12:58:02.423] PDF chart sample label[0]: Operational Risk
+[12:58:02.423] PDF chart sample value[0]: 942
+[12:58:02.662] DEBUG: PDF generated successfully for risksByCategory
+[12:58:02.662] [Save Export] Setting lock for cache_key: ddf32a1b...
+[12:58:02.792] [Save Export] Duplicate database entry found (ID: 497), returning existing file: reports_export/2025-11-02/risks_Risks_By_Category_2025-11-02_125758_331.pdf
+[12:58:02.999] [RISKS PDF] startDate=None endDate=None
+[12:58:02.999] [RISKS PDF] cardType=None onlyCard=False onlyChart=true
+[12:58:02.999] [RISKS PDF] chartType=risksByCategory onlyOverallTable=False tableType=None
+[12:58:02.999] [RISKS PDF] normalized cardType=risksByCategory
+[12:58:02.999] [RiskService] _execute_sync_query SQL: 
+        SELECT 
+            ISNULL(c.name, 'Uncategorized') as name,
+            COUNT(r.id) as value
+        FROM [NEWDCC-V4-UAT].dbo.[Risks] r
+        LEFT JOIN dbo.RiskCategories rc ON r.id = rc.risk_id AND rc.isDeleted = 0
+        LEFT JOIN dbo.Categories c ON rc.category_id = c.id AND c.isDeleted = 0
+        WHERE r.isDeleted = 0 
+        GROUP BY c.name
+        ORDER BY value DESC
+        
+[12:58:02.999] [RISKS PDF] startDate=None endDate=None
+[12:58:02.999] [RISKS PDF] cardType=None onlyCard=False onlyChart=true
+[12:58:02.999] [RISKS PDF] chartType=risksByCategory onlyOverallTable=False tableType=None
+[12:58:02.999] [RISKS PDF] normalized cardType=risksByCategory
+[12:58:02.999] [RiskService] _execute_sync_query SQL: 
+        SELECT 
+            ISNULL(c.name, 'Uncategorized') as name,
+            COUNT(r.id) as value
+        FROM [NEWDCC-V4-UAT].dbo.[Risks] r
+        LEFT JOIN dbo.RiskCategories rc ON r.id = rc.risk_id AND rc.isDeleted = 0
+        LEFT JOIN dbo.Categories c ON rc.category_id = c.id AND c.isDeleted = 0
+        WHERE r.isDeleted = 0 
+        GROUP BY c.name
+        ORDER BY value DESC
+        
+[12:58:03.255] [RiskService] execute_query OK: rows=12
+[12:58:03.255] risks_data: {'risksByCategory': [{'name': 'Operational Risk', 'value': 942}, {'name': 'Credit Risk', 'value': 270}, {'name': 'Reputation Risk', 'value': 270}, {'name': 'Information Risk', 'value': 238}, {'name': 'Market Risk', 'value': 138}, {'name': 'Strategic Risk', 'value': 103}, {'name': 'Uncategorized', 'value': 18}, {'name': 'Supplier Risk', 'value': 12}, {'name': 'Fraud Risk', 'value': 7}, {'name': 'Compliance - Sharia Risk', 'value': 5}, {'name': 'External Threats', 'value': 1}, {'name': 'Physical Security Risk', 'value': 1}]}
+[12:58:03.255] [RISKS PDF] data_type=list data_len=12
+[12:58:03.255] DEBUG: ===== generate_risks_pdf START =====
+[12:58:03.255]   - header_config tableHeaderBgColor (before merge): #1F4E79
+[12:58:03.255]   - card_type: risksByCategory
+[12:58:03.255]   - only_card: False
+[12:58:03.255]   - only_chart: True
+[12:58:03.255]   - only_overall_table: False
+[12:58:03.270]   - header_config tableHeaderBgColor (before merge_header_config): #1F4E79
+[12:58:03.270]   - final_config tableHeaderBgColor: #1F4E79
+[12:58:03.270] DEBUG: Using PDF config (risks): {'includeHeader': True, 'showLogo': True, 'showDate': True, 'showPageNumbers': True, 'showBankInfo': True, 'bankInfoLocation': 'top', 'title': 'Dashboard Report', 'subtitle': 'Comprehensive Analysis Report', 'icon': 'chart-line', 'logoPosition': 'left', 'logoHeight': 36, 'logoFile': None, 'logoBase64': None, 'bankName': 'PIANAT.AI', 'bankAddress': 'King Abdulaziz Road, Riyadh, Saudi Arabia', 'bankPhone': '+966 11 402 9000', 'bankWebsite': 'www.pianat.ai', 'fontColor': '#1F4E79', 'backgroundColor': '#FFFFFF', 'tableHeaderBgColor': '#1F4E79', 'tableHeaderTextColor': '#FFFFFF', 'tableBodyBgColor': '#FFFFFF', 'tableBodyTextColor': '#000000', 'borderStyle': 'solid', 'borderColor': '#C9CED6', 'borderWidth': 1, 'leftMargin': 24, 'rightMargin': 24, 'topMargin': 36, 'bottomMargin': 36, 'padding': 12, 'margin': 8, 'fontSize': 'medium', 'footerShowDate': True, 'footerShowConfidentiality': True, 'footerConfidentialityText': 'Confidential Report - Internal Use Only', 'footerShowPageNumbers': True, 'footerAlign': 'center', 'watermarkEnabled': True, 'watermarkText': 'CONFIDENTIAL', 'watermarkOpacity': 10, 'watermarkDiagonal': True, 'chart_type': 'bar', 'chart_data': {'labels': ['Operational Risk', 'Credit Risk', 'Reputation Risk', 'Information Risk', 'Market Risk', 'Strategic Risk', 'Uncategorized', 'Supplier Risk', 'Fraud Risk', 'Compliance - Sharia Risk', 'External Threats', 'Physical Security Risk'], 'values': [942, 270, 270, 238, 138, 103, 18, 12, 7, 5, 1, 1]}, 'excelFreezeTopRow': True, 'excelAutoFitColumns': True, 'excelZebraStripes': True, 'excelFitToWidth': True, 'pdfPageOrientation': 'portrait', 'maxCellChars': 300, 'maxRowsPerTable': 25, 'location': 'top', 'chartType': 'bar'}
+[12:58:03.270] PDF generate_pdf_report: tableHeaderBgColor from header_config = #1F4E79
+[12:58:03.273] PDF chart precheck: chart_type=bar, has_chart_data=True
+[12:58:03.273] PDF chart precheck lengths: labels=12, values=12
+[12:58:03.273] PDF chart: type=bar, labels_count=12, values_count=12
+[12:58:03.273] PDF chart sample label[0]: Operational Risk
+[12:58:03.273] PDF chart sample value[0]: 942
+[12:58:03.512] DEBUG: PDF generated successfully for risksByCategory
+[12:58:03.512] [Save Export] Setting lock for cache_key: e0f1b19f...
+[12:58:03.646] [Save Export] Duplicate database entry found (ID: 497), returning existing file: reports_export/2025-11-02/risks_Risks_By_Category_2025-11-02_125758_331.pdf
+[12:58:03.828] [RiskService] execute_query OK: rows=12
+[12:58:03.828] risks_data: {'risksByCategory': [{'name': 'Operational Risk', 'value': 942}, {'name': 'Credit Risk', 'value': 270}, {'name': 'Reputation Risk', 'value': 270}, {'name': 'Information Risk', 'value': 238}, {'name': 'Market Risk', 'value': 138}, {'name': 'Strategic Risk', 'value': 103}, {'name': 'Uncategorized', 'value': 18}, {'name': 'Supplier Risk', 'value': 12}, {'name': 'Fraud Risk', 'value': 7}, {'name': 'Compliance - Sharia Risk', 'value': 5}, {'name': 'External Threats', 'value': 1}, {'name': 'Physical Security Risk', 'value': 1}]}
+[12:58:03.828] [RISKS PDF] data_type=list data_len=12
+[12:58:03.828] DEBUG: ===== generate_risks_pdf START =====
+[12:58:03.828]   - header_config tableHeaderBgColor (before merge): #1F4E79
+[12:58:03.828]   - card_type: risksByCategory
+[12:58:03.828]   - only_card: False
+[12:58:03.828]   - only_chart: True
+[12:58:03.828]   - only_overall_table: False
+[12:58:03.828]   - header_config tableHeaderBgColor (before merge_header_config): #1F4E79
+[12:58:03.828]   - final_config tableHeaderBgColor: #1F4E79
+[12:58:03.828] DEBUG: Using PDF config (risks): {'includeHeader': True, 'showLogo': True, 'showDate': True, 'showPageNumbers': True, 'showBankInfo': True, 'bankInfoLocation': 'top', 'title': 'Dashboard Report', 'subtitle': 'Comprehensive Analysis Report', 'icon': 'chart-line', 'logoPosition': 'left', 'logoHeight': 36, 'logoFile': None, 'logoBase64': None, 'bankName': 'PIANAT.AI', 'bankAddress': 'King Abdulaziz Road, Riyadh, Saudi Arabia', 'bankPhone': '+966 11 402 9000', 'bankWebsite': 'www.pianat.ai', 'fontColor': '#1F4E79', 'backgroundColor': '#FFFFFF', 'tableHeaderBgColor': '#1F4E79', 'tableHeaderTextColor': '#FFFFFF', 'tableBodyBgColor': '#FFFFFF', 'tableBodyTextColor': '#000000', 'borderStyle': 'solid', 'borderColor': '#C9CED6', 'borderWidth': 1, 'leftMargin': 24, 'rightMargin': 24, 'topMargin': 36, 'bottomMargin': 36, 'padding': 12, 'margin': 8, 'fontSize': 'medium', 'footerShowDate': True, 'footerShowConfidentiality': True, 'footerConfidentialityText': 'Confidential Report - Internal Use Only', 'footerShowPageNumbers': True, 'footerAlign': 'center', 'watermarkEnabled': True, 'watermarkText': 'CONFIDENTIAL', 'watermarkOpacity': 10, 'watermarkDiagonal': True, 'chart_type': 'bar', 'chart_data': {'labels': ['Operational Risk', 'Credit Risk', 'Reputation Risk', 'Information Risk', 'Market Risk', 'Strategic Risk', 'Uncategorized', 'Supplier Risk', 'Fraud Risk', 'Compliance - Sharia Risk', 'External Threats', 'Physical Security Risk'], 'values': [942, 270, 270, 238, 138, 103, 18, 12, 7, 5, 1, 1]}, 'excelFreezeTopRow': True, 'excelAutoFitColumns': True, 'excelZebraStripes': True, 'excelFitToWidth': True, 'pdfPageOrientation': 'portrait', 'maxCellChars': 300, 'maxRowsPerTable': 25, 'location': 'top', 'chartType': 'bar'}
+[12:58:03.828] PDF generate_pdf_report: tableHeaderBgColor from header_config = #1F4E79
+[12:58:03.828] PDF chart precheck: chart_type=bar, has_chart_data=True
+[12:58:03.828] PDF chart precheck lengths: labels=12, values=12
+[12:58:03.848] PDF chart: type=bar, labels_count=12, values_count=12
+[12:58:03.848] PDF chart sample label[0]: Operational Risk
+[12:58:03.848] PDF chart sample value[0]: 942
+[12:58:04.169] DEBUG: PDF generated successfully for risksByCategory
+[12:58:04.169] [Save Export] Setting lock for cache_key: cd45ee7a...
+[12:58:04.304] [Save Export] Duplicate database entry found (ID: 497), returning existing file: reports_export/2025-11-02/risks_Risks_By_Category_2025-11-02_125758_331.pdf
+[14:43:51.622] [RISKS PDF] startDate=None endDate=None
+[14:43:51.622] [RISKS PDF] cardType=low onlyCard=true onlyChart=False
+[14:43:51.622] [RISKS PDF] chartType=None onlyOverallTable=False tableType=None
+[14:43:51.622] [RISKS PDF] normalized cardType=low
+[14:43:51.622] [RiskService] _execute_sync_query SQL: 
+        SELECT code ,name, inherent_value
+        FROM [NEWDCC-V4-UAT].dbo.[Risks]
+        WHERE isDeleted = 0 AND deletedAt IS NULL AND inherent_value = 'Low' 
+        ORDER BY createdAt DESC
+        
+[14:43:52.507] [RiskService] execute_query OK: rows=20
+[14:43:52.507] risks_data: {'low': [{'code': 'R1005', 'name': 'test1-10', 'inherent_value': 'Low'}, {'code': 'R1004', 'name': 'test', 'inherent_value': 'Low'}, {'code': 'R1003', 'name': 'CBE Information Security', 'inherent_value': 'Low'}, {'code': 'R1002', 'name': 'FFFFFFF', 'inherent_value': 'Low'}, {'code': 'R0996', 'name': 'nadin test new', 'inherent_value': 'Low'}, {'code': 'R0952', 'name': 'Unauthorized and unmonitored system access rights may lead to internal fraud that exposes the bank to financial losses and legal disputes.', 'inherent_value': 'Low'}, {'code': 'R0891', 'name': 'Non – abidance by CBE instructions and regulations will lead to regulatory Risk ', 'inherent_value': 'Low'}, {'code': 'R0766', 'name': 'Absence of approved process, policies, awareness for staff as well as absence of SLA between involved departments in some procedures may lead to inadequate and unauthorized processing of transactions, delay in providing service and prolonged TAT that exposes the bank to  financial losses, risk of fraud/, customer dissatisfaction and /or regulatory penalties', 'inherent_value': 'Low'}, {'code': 'R0765', 'name': 'Absence of approved process, policies, awareness for staff as well as absence of SLA between involved departments in some procedures may lead to inadequate and unauthorized processing of transactions, delay in providing service and prolonged TAT that exposes the bank to  financial losses, risk of fraud/, customer dissatisfaction and /or regulatory penalties', 'inherent_value': 'Low'}, {'code': 'R0597', 'name': 'Risk of not implementing the customer maintenance requests in timely manner that may lead to customer dissatisfaction/Financial Loss.', 'inherent_value': 'Low'}, {'code': 'R0483', 'name': 'Non-monitoring for outsourcing staff performance which may effect bank reputation and casue financial loss', 'inherent_value': 'Low'}, {'code': 'R0416', 'name': 'Mishandling the received staff gifts might lead to internal fraud', 'inherent_value': 'Low'}, {'code': 'R0298', 'name': 'Inaccuracy of reconciliation of source documentation, level of access , changes in formulas of spreadsheet will lead to financial loss or incorrect reporting to our data.', 'inherent_value': 'Low'}, {'code': 'R0267', 'name': 'Improper handling of covered card activation process that may lead to customer dissatisfaction and non-sharia compliance.', 'inherent_value': 'Low'}, {'code': 'R0229', 'name': 'Failure to ensure Complaints and retention request Logging and resolution of all requests can create a CBE escalation and can cause reputational risk', 'inherent_value': 'Low'}, {'code': 'R0227', 'name': 'Failure of proper Call Centre Customer Verification may result in disclosing information to unauthorized party.', 'inherent_value': 'Low'}, {'code': 'R0156', 'name': 'Card Activation/Blocking not processed adequately and immediately when the call is received from customer may lead to fraudulent transactions/customer dissatisfaction/penalties and legal disputes', 'inherent_value': 'Low'}, {'code': 'R0141', 'name': 'Avoid reputational risk', 'inherent_value': 'Low'}, {'code': 'R0040', 'name': '\r\nRisk of shortage of available staff to meet business volume in addition to back up during vacations and awareness/training of process ', 'inherent_value': 'Low'}, {'code': 'R0039', 'name': '\r\nLack of  bank products awareness or wrong information communicated to the customer may lead to customer dissatisfaction , reputational and financial loss \r\n', 'inherent_value': 'Low'}]}
+[14:43:52.508] [RISKS PDF] data_type=list data_len=20
+[14:43:52.508] DEBUG: ===== generate_risks_pdf START =====
+[14:43:52.509]   - header_config tableHeaderBgColor (before merge): #1F4E79
+[14:43:52.509]   - card_type: low
+[14:43:52.510]   - only_card: True
+[14:43:52.510]   - only_chart: False
+[14:43:52.510]   - only_overall_table: False
+[14:43:52.511] DEBUG: ===== only_card START =====
+[14:43:52.511]   - data type: <class 'list'>
+[14:43:52.511]   - header_config tableHeaderBgColor (before merge_header_config): #1F4E79
+[14:43:52.512]   - final_config tableHeaderBgColor: #1F4E79
+[14:43:52.512] DEBUG: Using PDF config (risks): {'includeHeader': True, 'showLogo': True, 'showDate': True, 'showPageNumbers': True, 'showBankInfo': True, 'bankInfoLocation': 'top', 'title': 'Dashboard Report', 'subtitle': 'Comprehensive Analysis Report', 'icon': 'chart-line', 'logoPosition': 'left', 'logoHeight': 36, 'logoFile': None, 'logoBase64': None, 'bankName': 'PIANAT.AI', 'bankAddress': 'King Abdulaziz Road, Riyadh, Saudi Arabia', 'bankPhone': '+966 11 402 9000', 'bankWebsite': 'www.pianat.ai', 'fontColor': '#1F4E79', 'backgroundColor': '#FFFFFF', 'tableHeaderBgColor': '#1F4E79', 'tableHeaderTextColor': '#FFFFFF', 'tableBodyBgColor': '#FFFFFF', 'tableBodyTextColor': '#000000', 'borderStyle': 'solid', 'borderColor': '#C9CED6', 'borderWidth': 1, 'leftMargin': 24, 'rightMargin': 24, 'topMargin': 36, 'bottomMargin': 36, 'padding': 12, 'margin': 8, 'fontSize': 'medium', 'footerShowDate': True, 'footerShowConfidentiality': True, 'footerConfidentialityText': 'Confidential Report - Internal Use Only', 'footerShowPageNumbers': True, 'footerAlign': 'center', 'watermarkEnabled': True, 'watermarkText': 'CONFIDENTIAL', 'watermarkOpacity': 10, 'watermarkDiagonal': True, 'chart_type': 'bar', 'chart_data': None, 'excelFreezeTopRow': True, 'excelAutoFitColumns': True, 'excelZebraStripes': True, 'excelFitToWidth': True, 'pdfPageOrientation': 'portrait', 'maxCellChars': 300, 'maxRowsPerTable': 25, 'location': 'top'}
+[14:43:52.513] PDF generate_pdf_report: tableHeaderBgColor from header_config = #1F4E79
+[14:43:52.514] PDF chart precheck: chart_type=bar, has_chart_data=False
+[14:43:52.539] DEBUG: PDF generated successfully for low
+[14:43:52.539] [Save Export] Setting lock for cache_key: 4504fee3...
+[14:43:53.700] [Save Export] Created new export record ID: 498 for reports_export/2025-11-02/risks_Low_2025-11-02_144352_862.pdf (type: dashboard)
+[14:43:53.838] [Save Export] Successfully saved export: risks_Low_2025-11-02_144352_862.pdf (ID: 498)
+[14:44:09.029] [RISKS PDF] startDate=None endDate=None
+[14:44:09.029] [RISKS PDF] cardType=low onlyCard=true onlyChart=False
+[14:44:09.029] [RISKS PDF] chartType=None onlyOverallTable=False tableType=None
+[14:44:09.029] [RISKS PDF] normalized cardType=low
+[14:44:09.029] [RiskService] _execute_sync_query SQL: 
+        SELECT code ,name, inherent_value
+        FROM [NEWDCC-V4-UAT].dbo.[Risks]
+        WHERE isDeleted = 0 AND deletedAt IS NULL AND inherent_value = 'Low' 
+        ORDER BY createdAt DESC
+        
+[14:44:09.275] [RiskService] execute_query OK: rows=20
+[14:44:09.275] risks_data: {'low': [{'code': 'R1005', 'name': 'test1-10', 'inherent_value': 'Low'}, {'code': 'R1004', 'name': 'test', 'inherent_value': 'Low'}, {'code': 'R1003', 'name': 'CBE Information Security', 'inherent_value': 'Low'}, {'code': 'R1002', 'name': 'FFFFFFF', 'inherent_value': 'Low'}, {'code': 'R0996', 'name': 'nadin test new', 'inherent_value': 'Low'}, {'code': 'R0952', 'name': 'Unauthorized and unmonitored system access rights may lead to internal fraud that exposes the bank to financial losses and legal disputes.', 'inherent_value': 'Low'}, {'code': 'R0891', 'name': 'Non – abidance by CBE instructions and regulations will lead to regulatory Risk ', 'inherent_value': 'Low'}, {'code': 'R0766', 'name': 'Absence of approved process, policies, awareness for staff as well as absence of SLA between involved departments in some procedures may lead to inadequate and unauthorized processing of transactions, delay in providing service and prolonged TAT that exposes the bank to  financial losses, risk of fraud/, customer dissatisfaction and /or regulatory penalties', 'inherent_value': 'Low'}, {'code': 'R0765', 'name': 'Absence of approved process, policies, awareness for staff as well as absence of SLA between involved departments in some procedures may lead to inadequate and unauthorized processing of transactions, delay in providing service and prolonged TAT that exposes the bank to  financial losses, risk of fraud/, customer dissatisfaction and /or regulatory penalties', 'inherent_value': 'Low'}, {'code': 'R0597', 'name': 'Risk of not implementing the customer maintenance requests in timely manner that may lead to customer dissatisfaction/Financial Loss.', 'inherent_value': 'Low'}, {'code': 'R0483', 'name': 'Non-monitoring for outsourcing staff performance which may effect bank reputation and casue financial loss', 'inherent_value': 'Low'}, {'code': 'R0416', 'name': 'Mishandling the received staff gifts might lead to internal fraud', 'inherent_value': 'Low'}, {'code': 'R0298', 'name': 'Inaccuracy of reconciliation of source documentation, level of access , changes in formulas of spreadsheet will lead to financial loss or incorrect reporting to our data.', 'inherent_value': 'Low'}, {'code': 'R0267', 'name': 'Improper handling of covered card activation process that may lead to customer dissatisfaction and non-sharia compliance.', 'inherent_value': 'Low'}, {'code': 'R0229', 'name': 'Failure to ensure Complaints and retention request Logging and resolution of all requests can create a CBE escalation and can cause reputational risk', 'inherent_value': 'Low'}, {'code': 'R0227', 'name': 'Failure of proper Call Centre Customer Verification may result in disclosing information to unauthorized party.', 'inherent_value': 'Low'}, {'code': 'R0156', 'name': 'Card Activation/Blocking not processed adequately and immediately when the call is received from customer may lead to fraudulent transactions/customer dissatisfaction/penalties and legal disputes', 'inherent_value': 'Low'}, {'code': 'R0141', 'name': 'Avoid reputational risk', 'inherent_value': 'Low'}, {'code': 'R0040', 'name': '\r\nRisk of shortage of available staff to meet business volume in addition to back up during vacations and awareness/training of process ', 'inherent_value': 'Low'}, {'code': 'R0039', 'name': '\r\nLack of  bank products awareness or wrong information communicated to the customer may lead to customer dissatisfaction , reputational and financial loss \r\n', 'inherent_value': 'Low'}]}
+[14:44:09.275] [RISKS PDF] data_type=list data_len=20
+[14:44:09.275] DEBUG: ===== generate_risks_pdf START =====
+[14:44:09.275]   - header_config tableHeaderBgColor (before merge): #1F4E79
+[14:44:09.275]   - card_type: low
+[14:44:09.275]   - only_card: True
+[14:44:09.275]   - only_chart: False
+[14:44:09.275]   - only_overall_table: False
+[14:44:09.275] DEBUG: ===== only_card START =====
+[14:44:09.275]   - data type: <class 'list'>
+[14:44:09.275]   - header_config tableHeaderBgColor (before merge_header_config): #1F4E79
+[14:44:09.275]   - final_config tableHeaderBgColor: #1F4E79
+[14:44:09.275] DEBUG: Using PDF config (risks): {'includeHeader': True, 'showLogo': True, 'showDate': True, 'showPageNumbers': True, 'showBankInfo': True, 'bankInfoLocation': 'top', 'title': 'Dashboard Report', 'subtitle': 'Comprehensive Analysis Report', 'icon': 'chart-line', 'logoPosition': 'left', 'logoHeight': 36, 'logoFile': None, 'logoBase64': None, 'bankName': 'PIANAT.AI', 'bankAddress': 'King Abdulaziz Road, Riyadh, Saudi Arabia', 'bankPhone': '+966 11 402 9000', 'bankWebsite': 'www.pianat.ai', 'fontColor': '#1F4E79', 'backgroundColor': '#FFFFFF', 'tableHeaderBgColor': '#1F4E79', 'tableHeaderTextColor': '#FFFFFF', 'tableBodyBgColor': '#FFFFFF', 'tableBodyTextColor': '#000000', 'borderStyle': 'solid', 'borderColor': '#C9CED6', 'borderWidth': 1, 'leftMargin': 24, 'rightMargin': 24, 'topMargin': 36, 'bottomMargin': 36, 'padding': 12, 'margin': 8, 'fontSize': 'medium', 'footerShowDate': True, 'footerShowConfidentiality': True, 'footerConfidentialityText': 'Confidential Report - Internal Use Only', 'footerShowPageNumbers': True, 'footerAlign': 'center', 'watermarkEnabled': True, 'watermarkText': 'CONFIDENTIAL', 'watermarkOpacity': 10, 'watermarkDiagonal': True, 'chart_type': 'bar', 'chart_data': None, 'excelFreezeTopRow': True, 'excelAutoFitColumns': True, 'excelZebraStripes': True, 'excelFitToWidth': True, 'pdfPageOrientation': 'portrait', 'maxCellChars': 300, 'maxRowsPerTable': 25, 'location': 'top'}
+[14:44:09.275] PDF generate_pdf_report: tableHeaderBgColor from header_config = #1F4E79
+[14:44:09.291] PDF chart precheck: chart_type=bar, has_chart_data=False
+[14:44:09.320] DEBUG: PDF generated successfully for low
+[14:44:09.320] [Save Export] Setting lock for cache_key: accf490f...
+[14:44:09.451] [Save Export] Duplicate database entry found (ID: 498), returning existing file: reports_export/2025-11-02/risks_Low_2025-11-02_144352_862.pdf
+[14:44:57.797] Exporting risks report in Excel format for None to None
+[14:44:57.797] cardType: low
+[14:44:57.797] onlyCard: true
+[14:44:57.797] onlyChart: False
+[14:44:57.797] chartType: None
+[14:44:57.797] onlyOverallTable: False
+[14:44:57.797] tableType: None
+[14:44:57.797] [RiskService] _execute_sync_query SQL: 
+        SELECT code ,name, inherent_value
+        FROM [NEWDCC-V4-UAT].dbo.[Risks]
+        WHERE isDeleted = 0 AND deletedAt IS NULL AND inherent_value = 'Low' 
+        ORDER BY createdAt DESC
+        
+[14:44:58.048] [RiskService] execute_query OK: rows=20
+[14:44:58.048] risks_data: {'low': [{'code': 'R1005', 'name': 'test1-10', 'inherent_value': 'Low'}, {'code': 'R1004', 'name': 'test', 'inherent_value': 'Low'}, {'code': 'R1003', 'name': 'CBE Information Security', 'inherent_value': 'Low'}, {'code': 'R1002', 'name': 'FFFFFFF', 'inherent_value': 'Low'}, {'code': 'R0996', 'name': 'nadin test new', 'inherent_value': 'Low'}, {'code': 'R0952', 'name': 'Unauthorized and unmonitored system access rights may lead to internal fraud that exposes the bank to financial losses and legal disputes.', 'inherent_value': 'Low'}, {'code': 'R0891', 'name': 'Non – abidance by CBE instructions and regulations will lead to regulatory Risk ', 'inherent_value': 'Low'}, {'code': 'R0766', 'name': 'Absence of approved process, policies, awareness for staff as well as absence of SLA between involved departments in some procedures may lead to inadequate and unauthorized processing of transactions, delay in providing service and prolonged TAT that exposes the bank to  financial losses, risk of fraud/, customer dissatisfaction and /or regulatory penalties', 'inherent_value': 'Low'}, {'code': 'R0765', 'name': 'Absence of approved process, policies, awareness for staff as well as absence of SLA between involved departments in some procedures may lead to inadequate and unauthorized processing of transactions, delay in providing service and prolonged TAT that exposes the bank to  financial losses, risk of fraud/, customer dissatisfaction and /or regulatory penalties', 'inherent_value': 'Low'}, {'code': 'R0597', 'name': 'Risk of not implementing the customer maintenance requests in timely manner that may lead to customer dissatisfaction/Financial Loss.', 'inherent_value': 'Low'}, {'code': 'R0483', 'name': 'Non-monitoring for outsourcing staff performance which may effect bank reputation and casue financial loss', 'inherent_value': 'Low'}, {'code': 'R0416', 'name': 'Mishandling the received staff gifts might lead to internal fraud', 'inherent_value': 'Low'}, {'code': 'R0298', 'name': 'Inaccuracy of reconciliation of source documentation, level of access , changes in formulas of spreadsheet will lead to financial loss or incorrect reporting to our data.', 'inherent_value': 'Low'}, {'code': 'R0267', 'name': 'Improper handling of covered card activation process that may lead to customer dissatisfaction and non-sharia compliance.', 'inherent_value': 'Low'}, {'code': 'R0229', 'name': 'Failure to ensure Complaints and retention request Logging and resolution of all requests can create a CBE escalation and can cause reputational risk', 'inherent_value': 'Low'}, {'code': 'R0227', 'name': 'Failure of proper Call Centre Customer Verification may result in disclosing information to unauthorized party.', 'inherent_value': 'Low'}, {'code': 'R0156', 'name': 'Card Activation/Blocking not processed adequately and immediately when the call is received from customer may lead to fraudulent transactions/customer dissatisfaction/penalties and legal disputes', 'inherent_value': 'Low'}, {'code': 'R0141', 'name': 'Avoid reputational risk', 'inherent_value': 'Low'}, {'code': 'R0040', 'name': '\r\nRisk of shortage of available staff to meet business volume in addition to back up during vacations and awareness/training of process ', 'inherent_value': 'Low'}, {'code': 'R0039', 'name': '\r\nLack of  bank products awareness or wrong information communicated to the customer may lead to customer dissatisfaction , reputational and financial loss \r\n', 'inherent_value': 'Low'}]}
+[14:44:58.048] Generating risks Excel report for None to None
+[14:44:58.048] card_type=low, only_card=True, only_overall_table=False, only_chart=False
+[14:44:58.048] risks_data: {'low': [{'code': 'R1005', 'name': 'test1-10', 'inherent_value': 'Low'}, {'code': 'R1004', 'name': 'test', 'inherent_value': 'Low'}, {'code': 'R1003', 'name': 'CBE Information Security', 'inherent_value': 'Low'}, {'code': 'R1002', 'name': 'FFFFFFF', 'inherent_value': 'Low'}, {'code': 'R0996', 'name': 'nadin test new', 'inherent_value': 'Low'}, {'code': 'R0952', 'name': 'Unauthorized and unmonitored system access rights may lead to internal fraud that exposes the bank to financial losses and legal disputes.', 'inherent_value': 'Low'}, {'code': 'R0891', 'name': 'Non – abidance by CBE instructions and regulations will lead to regulatory Risk ', 'inherent_value': 'Low'}, {'code': 'R0766', 'name': 'Absence of approved process, policies, awareness for staff as well as absence of SLA between involved departments in some procedures may lead to inadequate and unauthorized processing of transactions, delay in providing service and prolonged TAT that exposes the bank to  financial losses, risk of fraud/, customer dissatisfaction and /or regulatory penalties', 'inherent_value': 'Low'}, {'code': 'R0765', 'name': 'Absence of approved process, policies, awareness for staff as well as absence of SLA between involved departments in some procedures may lead to inadequate and unauthorized processing of transactions, delay in providing service and prolonged TAT that exposes the bank to  financial losses, risk of fraud/, customer dissatisfaction and /or regulatory penalties', 'inherent_value': 'Low'}, {'code': 'R0597', 'name': 'Risk of not implementing the customer maintenance requests in timely manner that may lead to customer dissatisfaction/Financial Loss.', 'inherent_value': 'Low'}, {'code': 'R0483', 'name': 'Non-monitoring for outsourcing staff performance which may effect bank reputation and casue financial loss', 'inherent_value': 'Low'}, {'code': 'R0416', 'name': 'Mishandling the received staff gifts might lead to internal fraud', 'inherent_value': 'Low'}, {'code': 'R0298', 'name': 'Inaccuracy of reconciliation of source documentation, level of access , changes in formulas of spreadsheet will lead to financial loss or incorrect reporting to our data.', 'inherent_value': 'Low'}, {'code': 'R0267', 'name': 'Improper handling of covered card activation process that may lead to customer dissatisfaction and non-sharia compliance.', 'inherent_value': 'Low'}, {'code': 'R0229', 'name': 'Failure to ensure Complaints and retention request Logging and resolution of all requests can create a CBE escalation and can cause reputational risk', 'inherent_value': 'Low'}, {'code': 'R0227', 'name': 'Failure of proper Call Centre Customer Verification may result in disclosing information to unauthorized party.', 'inherent_value': 'Low'}, {'code': 'R0156', 'name': 'Card Activation/Blocking not processed adequately and immediately when the call is received from customer may lead to fraudulent transactions/customer dissatisfaction/penalties and legal disputes', 'inherent_value': 'Low'}, {'code': 'R0141', 'name': 'Avoid reputational risk', 'inherent_value': 'Low'}, {'code': 'R0040', 'name': '\r\nRisk of shortage of available staff to meet business volume in addition to back up during vacations and awareness/training of process ', 'inherent_value': 'Low'}, {'code': 'R0039', 'name': '\r\nLack of  bank products awareness or wrong information communicated to the customer may lead to customer dissatisfaction , reputational and financial loss \r\n', 'inherent_value': 'Low'}]}
+[14:44:58.048] Risks Excel export - card_type=low, data type=<class 'list'>, len=20, only_card=True, only_overall_table=False, only_chart=False
+[14:44:58.048] Formatting column name: code
+[14:44:58.048] Formatting column name: Code
+[14:44:58.048] Generating risks Excel report for mmmmm None to None
+[14:44:58.048] card_type=low, only_card=True, only_overall_table=False, only_chart=False
+[14:44:58.048] data: [{'code': 'R1005', 'name': 'test1-10', 'inherent_value': 'Low'}, {'code': 'R1004', 'name': 'test', 'inherent_value': 'Low'}, {'code': 'R1003', 'name': 'CBE Information Security', 'inherent_value': 'Low'}, {'code': 'R1002', 'name': 'FFFFFFF', 'inherent_value': 'Low'}, {'code': 'R0996', 'name': 'nadin test new', 'inherent_value': 'Low'}, {'code': 'R0952', 'name': 'Unauthorized and unmonitored system access rights may lead to internal fraud that exposes the bank to financial losses and legal disputes.', 'inherent_value': 'Low'}, {'code': 'R0891', 'name': 'Non – abidance by CBE instructions and regulations will lead to regulatory Risk ', 'inherent_value': 'Low'}, {'code': 'R0766', 'name': 'Absence of approved process, policies, awareness for staff as well as absence of SLA between involved departments in some procedures may lead to inadequate and unauthorized processing of transactions, delay in providing service and prolonged TAT that exposes the bank to  financial losses, risk of fraud/, customer dissatisfaction and /or regulatory penalties', 'inherent_value': 'Low'}, {'code': 'R0765', 'name': 'Absence of approved process, policies, awareness for staff as well as absence of SLA between involved departments in some procedures may lead to inadequate and unauthorized processing of transactions, delay in providing service and prolonged TAT that exposes the bank to  financial losses, risk of fraud/, customer dissatisfaction and /or regulatory penalties', 'inherent_value': 'Low'}, {'code': 'R0597', 'name': 'Risk of not implementing the customer maintenance requests in timely manner that may lead to customer dissatisfaction/Financial Loss.', 'inherent_value': 'Low'}, {'code': 'R0483', 'name': 'Non-monitoring for outsourcing staff performance which may effect bank reputation and casue financial loss', 'inherent_value': 'Low'}, {'code': 'R0416', 'name': 'Mishandling the received staff gifts might lead to internal fraud', 'inherent_value': 'Low'}, {'code': 'R0298', 'name': 'Inaccuracy of reconciliation of source documentation, level of access , changes in formulas of spreadsheet will lead to financial loss or incorrect reporting to our data.', 'inherent_value': 'Low'}, {'code': 'R0267', 'name': 'Improper handling of covered card activation process that may lead to customer dissatisfaction and non-sharia compliance.', 'inherent_value': 'Low'}, {'code': 'R0229', 'name': 'Failure to ensure Complaints and retention request Logging and resolution of all requests can create a CBE escalation and can cause reputational risk', 'inherent_value': 'Low'}, {'code': 'R0227', 'name': 'Failure of proper Call Centre Customer Verification may result in disclosing information to unauthorized party.', 'inherent_value': 'Low'}, {'code': 'R0156', 'name': 'Card Activation/Blocking not processed adequately and immediately when the call is received from customer may lead to fraudulent transactions/customer dissatisfaction/penalties and legal disputes', 'inherent_value': 'Low'}, {'code': 'R0141', 'name': 'Avoid reputational risk', 'inherent_value': 'Low'}, {'code': 'R0040', 'name': '\r\nRisk of shortage of available staff to meet business volume in addition to back up during vacations and awareness/training of process ', 'inherent_value': 'Low'}, {'code': 'R0039', 'name': '\r\nLack of  bank products awareness or wrong information communicated to the customer may lead to customer dissatisfaction , reputational and financial loss \r\n', 'inherent_value': 'Low'}]
+[14:44:58.048] Formatting column name: code
+[14:44:58.048] Formatting column name: name
+[14:44:58.048] Formatting column name: inherent_value
+[14:44:58.048] generate_excel_report called with columns=['#', 'Code', 'Name', 'Inherent Value'], data_rows count=20
+[14:44:58.048] header_config provided with keys=['includeHeader', 'showLogo', 'showDate', 'showPageNumbers', 'showBankInfo', 'bankInfoLocation', 'title', 'subtitle', 'icon', 'logoPosition', 'logoHeight', 'logoFile', 'logoBase64', 'bankName', 'bankAddress', 'bankPhone', 'bankWebsite', 'fontColor', 'backgroundColor', 'tableHeaderBgColor', 'tableHeaderTextColor', 'tableBodyBgColor', 'tableBodyTextColor', 'borderStyle', 'borderColor', 'borderWidth', 'leftMargin', 'rightMargin', 'topMargin', 'bottomMargin', 'padding', 'margin', 'fontSize', 'footerShowDate', 'footerShowConfidentiality', 'footerConfidentialityText', 'footerShowPageNumbers', 'footerAlign', 'watermarkEnabled', 'watermarkText', 'watermarkOpacity', 'watermarkDiagonal', 'chart_type', 'chart_data', 'excelFreezeTopRow', 'excelAutoFitColumns', 'excelZebraStripes', 'excelFitToWidth', 'pdfPageOrientation', 'maxCellChars', 'maxRowsPerTable', 'location']
+[14:44:58.048] chart_data present? False
+[14:44:58.063] Checking for chart - chart_data=missing, chart_type=bar, is_stacked=None
+[14:44:58.063] Skipping chart - chart_data=None, labels=None, values=None
+[14:44:58.114] [Save Export] Setting lock for cache_key: 01899414...
+[14:44:59.198] [Save Export] Created new export record ID: 499 for reports_export/2025-11-02/risks_Low_2025-11-02_144458_447.xlsx (type: dashboard)
+[14:44:59.327] [Save Export] Successfully saved export: risks_Low_2025-11-02_144458_447.xlsx (ID: 499)
+[14:58:47.062] [KRIS PDF] startDate=None endDate=None
+[14:58:47.063] [KRIS PDF] cardType=pendingPreparer onlyCard=true onlyChart=False
+[14:58:47.064] [KRIS PDF] chartType=None onlyOverallTable=False tableType=None
+[14:58:47.064] [KRIS PDF] normalized cardType=pendingPreparer
+[14:58:47.065] Getting KRIS by status detail: pendingPreparer
+[14:58:47.066] Query: 
+        WITH KrisStatus AS (
+            SELECT 
+                k.code,
+                k.kriName as kri_name,
+                CASE 
+                    -- 1) Pending preparer: preparerStatus is anything other than 'sent'
+                    WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
+                    -- 2) Pending checker: checker not approved AND preparer already sent
+                    WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' THEN 'pendingChecker'
+                    -- 3) Pending reviewer: reviewer not approved AND checker approved
+                    WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') <> 'approved' THEN 'pendingReviewer'
+                    -- 4) Pending acceptance: acceptance not approved AND reviewer approved
+                    WHEN ISNULL(k.reviewerStatus, '') = 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'pendingAcceptance'
+                    -- 5) Fully approved
+                    WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
+                    ELSE 'Other'
+                END AS status,
+                FORMAT(CONVERT(datetime, k.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
+            FROM Kris k
+            WHERE k.isDeleted = 0 AND k.deletedAt IS NULL 
+        )
+        SELECT *
+        FROM KrisStatus
+        WHERE status = 'pendingPreparer'
+        ORDER BY createdAt DESC;
+        
+[14:58:47.330] kris_data: {'pendingPreparer': [{'code': 'K0835', 'kri_name': 'kri descrption 888', 'status': 'pendingPreparer', 'createdAt': '2025-10-14 10:09:27'}, {'code': 'K0833', 'kri_name': 'عدد الخزائن المؤجرة التي لم يتم دفع الايجار الخاص بها\xa0 No. of Un Paid Safe Lockers', 'status': 'pendingPreparer', 'createdAt': '2025-01-01 23:49:08'}]}
+[14:58:47.330] [KRIS PDF] data_type=<class 'list'> data_len=2
+[14:58:47.330] DEBUG: ===== generate_kris_pdf START =====
+[14:58:47.330]   - card_type: pendingPreparer
+[14:58:47.330]   - only_card: True
+[14:58:47.330]   - only_chart: False
+[14:58:47.330]   - only_overall_table: False
+[14:58:47.345] DEBUG: ===== kris only_card START =====
+[14:58:47.346] DEBUG: kris_data type=<class 'list'>, len=2
+[14:58:47.346] DEBUG: Using PDF config (kris): {'includeHeader': True, 'showLogo': True, 'showDate': True, 'showPageNumbers': True, 'showBankInfo': True, 'bankInfoLocation': 'top', 'title': 'Dashboard Report', 'subtitle': 'Comprehensive Analysis Report', 'icon': 'chart-line', 'logoPosition': 'left', 'logoHeight': 36, 'logoFile': None, 'logoBase64': None, 'bankName': 'PIANAT.AI', 'bankAddress': 'King Abdulaziz Road, Riyadh, Saudi Arabia', 'bankPhone': '+966 11 402 9000', 'bankWebsite': 'www.pianat.ai', 'fontColor': '#1F4E79', 'backgroundColor': '#FFFFFF', 'tableHeaderBgColor': '#1F4E79', 'tableHeaderTextColor': '#FFFFFF', 'tableBodyBgColor': '#FFFFFF', 'tableBodyTextColor': '#000000', 'borderStyle': 'solid', 'borderColor': '#C9CED6', 'borderWidth': 1, 'leftMargin': 24, 'rightMargin': 24, 'topMargin': 36, 'bottomMargin': 36, 'padding': 12, 'margin': 8, 'fontSize': 'medium', 'footerShowDate': True, 'footerShowConfidentiality': True, 'footerConfidentialityText': 'Confidential Report - Internal Use Only', 'footerShowPageNumbers': True, 'footerAlign': 'center', 'watermarkEnabled': True, 'watermarkText': 'CONFIDENTIAL', 'watermarkOpacity': 10, 'watermarkDiagonal': True, 'chart_type': 'bar', 'chart_data': None, 'excelFreezeTopRow': True, 'excelAutoFitColumns': True, 'excelZebraStripes': True, 'excelFitToWidth': True, 'pdfPageOrientation': 'portrait', 'maxCellChars': 300, 'maxRowsPerTable': 25, 'location': 'top'}
+[14:58:47.347] PDF generate_pdf_report: tableHeaderBgColor from header_config = #1F4E79
+[14:58:47.348] PDF chart precheck: chart_type=bar, has_chart_data=False
+[14:58:47.362] DEBUG: KRIs PDF generated successfully for pendingPreparer
+[14:58:47.362] [Save Export] Setting lock for cache_key: 2ff37d19...
+[14:58:48.512] [Save Export] Created new export record ID: 500 for reports_export/2025-11-02/kris_Pending_Preparer_2025-11-02_145847_696.pdf (type: dashboard)
+[14:58:48.655] [Save Export] Successfully saved export: kris_Pending_Preparer_2025-11-02_145847_696.pdf (ID: 500)
+[14:58:53.289] [KRIS PDF] startDate=None endDate=None
+[14:58:53.289] [KRIS PDF] cardType=pendingPreparer onlyCard=true onlyChart=False
+[14:58:53.289] [KRIS PDF] chartType=None onlyOverallTable=False tableType=None
+[14:58:53.289] [KRIS PDF] normalized cardType=pendingPreparer
+[14:58:53.289] Getting KRIS by status detail: pendingPreparer
+[14:58:53.289] Query: 
+        WITH KrisStatus AS (
+            SELECT 
+                k.code,
+                k.kriName as kri_name,
+                CASE 
+                    -- 1) Pending preparer: preparerStatus is anything other than 'sent'
+                    WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
+                    -- 2) Pending checker: checker not approved AND preparer already sent
+                    WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' THEN 'pendingChecker'
+                    -- 3) Pending reviewer: reviewer not approved AND checker approved
+                    WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') <> 'approved' THEN 'pendingReviewer'
+                    -- 4) Pending acceptance: acceptance not approved AND reviewer approved
+                    WHEN ISNULL(k.reviewerStatus, '') = 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'pendingAcceptance'
+                    -- 5) Fully approved
+                    WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
+                    ELSE 'Other'
+                END AS status,
+                FORMAT(CONVERT(datetime, k.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
+            FROM Kris k
+            WHERE k.isDeleted = 0 AND k.deletedAt IS NULL 
+        )
+        SELECT *
+        FROM KrisStatus
+        WHERE status = 'pendingPreparer'
+        ORDER BY createdAt DESC;
+        
+[14:58:53.558] kris_data: {'pendingPreparer': [{'code': 'K0835', 'kri_name': 'kri descrption 888', 'status': 'pendingPreparer', 'createdAt': '2025-10-14 10:09:27'}, {'code': 'K0833', 'kri_name': 'عدد الخزائن المؤجرة التي لم يتم دفع الايجار الخاص بها\xa0 No. of Un Paid Safe Lockers', 'status': 'pendingPreparer', 'createdAt': '2025-01-01 23:49:08'}]}
+[14:58:53.558] [KRIS PDF] data_type=<class 'list'> data_len=2
+[14:58:53.558] DEBUG: ===== generate_kris_pdf START =====
+[14:58:53.558]   - card_type: pendingPreparer
+[14:58:53.558]   - only_card: True
+[14:58:53.563]   - only_chart: False
+[14:58:53.563]   - only_overall_table: False
+[14:58:53.563] DEBUG: ===== kris only_card START =====
+[14:58:53.563] DEBUG: kris_data type=<class 'list'>, len=2
+[14:58:53.563] DEBUG: Using PDF config (kris): {'includeHeader': True, 'showLogo': True, 'showDate': True, 'showPageNumbers': True, 'showBankInfo': True, 'bankInfoLocation': 'top', 'title': 'Dashboard Report', 'subtitle': 'Comprehensive Analysis Report', 'icon': 'chart-line', 'logoPosition': 'left', 'logoHeight': 36, 'logoFile': None, 'logoBase64': None, 'bankName': 'PIANAT.AI', 'bankAddress': 'King Abdulaziz Road, Riyadh, Saudi Arabia', 'bankPhone': '+966 11 402 9000', 'bankWebsite': 'www.pianat.ai', 'fontColor': '#1F4E79', 'backgroundColor': '#FFFFFF', 'tableHeaderBgColor': '#1F4E79', 'tableHeaderTextColor': '#FFFFFF', 'tableBodyBgColor': '#FFFFFF', 'tableBodyTextColor': '#000000', 'borderStyle': 'solid', 'borderColor': '#C9CED6', 'borderWidth': 1, 'leftMargin': 24, 'rightMargin': 24, 'topMargin': 36, 'bottomMargin': 36, 'padding': 12, 'margin': 8, 'fontSize': 'medium', 'footerShowDate': True, 'footerShowConfidentiality': True, 'footerConfidentialityText': 'Confidential Report - Internal Use Only', 'footerShowPageNumbers': True, 'footerAlign': 'center', 'watermarkEnabled': True, 'watermarkText': 'CONFIDENTIAL', 'watermarkOpacity': 10, 'watermarkDiagonal': True, 'chart_type': 'bar', 'chart_data': None, 'excelFreezeTopRow': True, 'excelAutoFitColumns': True, 'excelZebraStripes': True, 'excelFitToWidth': True, 'pdfPageOrientation': 'portrait', 'maxCellChars': 300, 'maxRowsPerTable': 25, 'location': 'top'}
+[14:58:53.563] PDF generate_pdf_report: tableHeaderBgColor from header_config = #1F4E79
+[14:58:53.563] PDF chart precheck: chart_type=bar, has_chart_data=False
+[14:58:53.574] DEBUG: KRIs PDF generated successfully for pendingPreparer
+[14:58:53.574] [Save Export] Setting lock for cache_key: 80a12947...
+[14:58:53.705] [Save Export] Duplicate database entry found (ID: 500), returning existing file: reports_export/2025-11-02/kris_Pending_Preparer_2025-11-02_145847_696.pdf
+[14:58:53.916] [KRIS PDF] startDate=None endDate=None
+[14:58:53.916] [KRIS PDF] cardType=pendingPreparer onlyCard=true onlyChart=False
+[14:58:53.916] [KRIS PDF] chartType=None onlyOverallTable=False tableType=None
+[14:58:53.916] [KRIS PDF] normalized cardType=pendingPreparer
+[14:58:53.932] Getting KRIS by status detail: pendingPreparer
+[14:58:53.932] Query: 
+        WITH KrisStatus AS (
+            SELECT 
+                k.code,
+                k.kriName as kri_name,
+                CASE 
+                    -- 1) Pending preparer: preparerStatus is anything other than 'sent'
+                    WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
+                    -- 2) Pending checker: checker not approved AND preparer already sent
+                    WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' THEN 'pendingChecker'
+                    -- 3) Pending reviewer: reviewer not approved AND checker approved
+                    WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') <> 'approved' THEN 'pendingReviewer'
+                    -- 4) Pending acceptance: acceptance not approved AND reviewer approved
+                    WHEN ISNULL(k.reviewerStatus, '') = 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'pendingAcceptance'
+                    -- 5) Fully approved
+                    WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
+                    ELSE 'Other'
+                END AS status,
+                FORMAT(CONVERT(datetime, k.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
+            FROM Kris k
+            WHERE k.isDeleted = 0 AND k.deletedAt IS NULL 
+        )
+        SELECT *
+        FROM KrisStatus
+        WHERE status = 'pendingPreparer'
+        ORDER BY createdAt DESC;
+        
+[14:58:54.191] kris_data: {'pendingPreparer': [{'code': 'K0835', 'kri_name': 'kri descrption 888', 'status': 'pendingPreparer', 'createdAt': '2025-10-14 10:09:27'}, {'code': 'K0833', 'kri_name': 'عدد الخزائن المؤجرة التي لم يتم دفع الايجار الخاص بها\xa0 No. of Un Paid Safe Lockers', 'status': 'pendingPreparer', 'createdAt': '2025-01-01 23:49:08'}]}
+[14:58:54.191] [KRIS PDF] data_type=<class 'list'> data_len=2
+[14:58:54.191] DEBUG: ===== generate_kris_pdf START =====
+[14:58:54.191]   - card_type: pendingPreparer
+[14:58:54.191]   - only_card: True
+[14:58:54.191]   - only_chart: False
+[14:58:54.191]   - only_overall_table: False
+[14:58:54.191] DEBUG: ===== kris only_card START =====
+[14:58:54.191] DEBUG: kris_data type=<class 'list'>, len=2
+[14:58:54.207] DEBUG: Using PDF config (kris): {'includeHeader': True, 'showLogo': True, 'showDate': True, 'showPageNumbers': True, 'showBankInfo': True, 'bankInfoLocation': 'top', 'title': 'Dashboard Report', 'subtitle': 'Comprehensive Analysis Report', 'icon': 'chart-line', 'logoPosition': 'left', 'logoHeight': 36, 'logoFile': None, 'logoBase64': None, 'bankName': 'PIANAT.AI', 'bankAddress': 'King Abdulaziz Road, Riyadh, Saudi Arabia', 'bankPhone': '+966 11 402 9000', 'bankWebsite': 'www.pianat.ai', 'fontColor': '#1F4E79', 'backgroundColor': '#FFFFFF', 'tableHeaderBgColor': '#1F4E79', 'tableHeaderTextColor': '#FFFFFF', 'tableBodyBgColor': '#FFFFFF', 'tableBodyTextColor': '#000000', 'borderStyle': 'solid', 'borderColor': '#C9CED6', 'borderWidth': 1, 'leftMargin': 24, 'rightMargin': 24, 'topMargin': 36, 'bottomMargin': 36, 'padding': 12, 'margin': 8, 'fontSize': 'medium', 'footerShowDate': True, 'footerShowConfidentiality': True, 'footerConfidentialityText': 'Confidential Report - Internal Use Only', 'footerShowPageNumbers': True, 'footerAlign': 'center', 'watermarkEnabled': True, 'watermarkText': 'CONFIDENTIAL', 'watermarkOpacity': 10, 'watermarkDiagonal': True, 'chart_type': 'bar', 'chart_data': None, 'excelFreezeTopRow': True, 'excelAutoFitColumns': True, 'excelZebraStripes': True, 'excelFitToWidth': True, 'pdfPageOrientation': 'portrait', 'maxCellChars': 300, 'maxRowsPerTable': 25, 'location': 'top'}
+[14:58:54.207] PDF generate_pdf_report: tableHeaderBgColor from header_config = #1F4E79
+[14:58:54.207] PDF chart precheck: chart_type=bar, has_chart_data=False
+[14:58:54.213] DEBUG: KRIs PDF generated successfully for pendingPreparer
+[14:58:54.223] [Save Export] Setting lock for cache_key: e221398c...
+[14:58:54.353] [Save Export] Duplicate database entry found (ID: 500), returning existing file: reports_export/2025-11-02/kris_Pending_Preparer_2025-11-02_145847_696.pdf
+[15:00:28.434] [INCIDENTS PDF] startDate=None endDate=None
+[15:00:28.434] [INCIDENTS PDF] cardType=pendingPreparer onlyCard=true onlyChart=False
+[15:00:28.434] [INCIDENTS PDF] chartType=None onlyOverallTable=False tableType=None
+[15:00:28.434] [INCIDENTS PDF] normalized cardType=pendingPreparer
+[15:00:28.434] [INCIDENTS PDF] fetching pending preparer incidents for None to None
+[15:00:28.434] [INCIDENTS BY STATUS] query: 
+        WITH IncidentStatus AS (
+            SELECT 
+                i.code,
+                i.title,
+                CASE 
+                    -- 1) Pending preparer: preparerStatus is anything other than 'sent'
+                    WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
+                    -- 2) Pending checker: checker not approved AND preparer already sent
+                    WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' THEN 'pendingChecker'
+                    -- 3) Pending reviewer: reviewer not approved AND checker approved
+                    WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'approved' THEN 'pendingReviewer'
+                    -- 4) Pending acceptance: acceptance not approved AND reviewer approved
+                    WHEN ISNULL(i.reviewerStatus, '') = 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'pendingAcceptance'
+                    -- 5) Fully approved
+                    WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
+                    ELSE 'Other'
+                END AS status,
+                FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
+            FROM Incidents i
+            WHERE i.isDeleted = 0 AND i.deletedAt IS NULL 
+        )
+        SELECT *
+        FROM IncidentStatus
+        WHERE status = 'pendingPreparer'
+        ORDER BY createdAt DESC;
+        
+[15:00:28.700] incidents_data: {'pendingPreparer': [{'code': 'I0444', 'title': 'tgtgtg', 'status': 'pendingPreparer', 'createdAt': '2025-07-10 09:57:27'}]}
+[15:00:28.700] [INCIDENTS PDF] data_type=list data_len=1
+[15:00:28.700] DEBUG: ===== generate_incidents_pdf START =====
+[15:00:28.700]   - card_type: pendingPreparer
+[15:00:28.700]   - only_card: True
+[15:00:28.716]   - only_chart: False
+[15:00:28.717]   - only_overall_table: False
+[15:00:28.717] DEBUG: ===== incidents only_card START =====
+[15:00:28.718] DEBUG: Using PDF config (incidents): {'includeHeader': True, 'showLogo': True, 'showDate': True, 'showPageNumbers': True, 'showBankInfo': True, 'bankInfoLocation': 'top', 'title': 'Dashboard Report', 'subtitle': 'Comprehensive Analysis Report', 'icon': 'chart-line', 'logoPosition': 'left', 'logoHeight': 36, 'logoFile': None, 'logoBase64': None, 'bankName': 'PIANAT.AI', 'bankAddress': 'King Abdulaziz Road, Riyadh, Saudi Arabia', 'bankPhone': '+966 11 402 9000', 'bankWebsite': 'www.pianat.ai', 'fontColor': '#1F4E79', 'backgroundColor': '#FFFFFF', 'tableHeaderBgColor': '#1F4E79', 'tableHeaderTextColor': '#FFFFFF', 'tableBodyBgColor': '#FFFFFF', 'tableBodyTextColor': '#000000', 'borderStyle': 'solid', 'borderColor': '#C9CED6', 'borderWidth': 1, 'leftMargin': 24, 'rightMargin': 24, 'topMargin': 36, 'bottomMargin': 36, 'padding': 12, 'margin': 8, 'fontSize': 'medium', 'footerShowDate': True, 'footerShowConfidentiality': True, 'footerConfidentialityText': 'Confidential Report - Internal Use Only', 'footerShowPageNumbers': True, 'footerAlign': 'center', 'watermarkEnabled': True, 'watermarkText': 'CONFIDENTIAL', 'watermarkOpacity': 10, 'watermarkDiagonal': True, 'chart_type': 'bar', 'chart_data': None, 'excelFreezeTopRow': True, 'excelAutoFitColumns': True, 'excelZebraStripes': True, 'excelFitToWidth': True, 'pdfPageOrientation': 'portrait', 'maxCellChars': 300, 'maxRowsPerTable': 25, 'location': 'top'}
+[15:00:28.718] PDF generate_pdf_report: tableHeaderBgColor from header_config = #1F4E79
+[15:00:28.718] PDF chart precheck: chart_type=bar, has_chart_data=False
+[15:00:28.718] DEBUG: Incidents PDF generated successfully for pendingPreparer
+[15:00:28.718] [Save Export] Setting lock for cache_key: d6807734...
+[15:00:29.875] [Save Export] Created new export record ID: 501 for reports_export/2025-11-02/incidents_Pending_Preparer_2025-11-02_150029_052.pdf (type: dashboard)
+[15:00:29.999] [Save Export] Successfully saved export: incidents_Pending_Preparer_2025-11-02_150029_052.pdf (ID: 501)
+[15:00:34.201] [INCIDENTS PDF] startDate=None endDate=None
+[15:00:34.201] [INCIDENTS PDF] cardType=pendingPreparer onlyCard=true onlyChart=False
+[15:00:34.201] [INCIDENTS PDF] chartType=None onlyOverallTable=False tableType=None
+[15:00:34.201] [INCIDENTS PDF] normalized cardType=pendingPreparer
+[15:00:34.201] [INCIDENTS PDF] fetching pending preparer incidents for None to None
+[15:00:34.201] [INCIDENTS BY STATUS] query: 
+        WITH IncidentStatus AS (
+            SELECT 
+                i.code,
+                i.title,
+                CASE 
+                    -- 1) Pending preparer: preparerStatus is anything other than 'sent'
+                    WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
+                    -- 2) Pending checker: checker not approved AND preparer already sent
+                    WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' THEN 'pendingChecker'
+                    -- 3) Pending reviewer: reviewer not approved AND checker approved
+                    WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'approved' THEN 'pendingReviewer'
+                    -- 4) Pending acceptance: acceptance not approved AND reviewer approved
+                    WHEN ISNULL(i.reviewerStatus, '') = 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'pendingAcceptance'
+                    -- 5) Fully approved
+                    WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
+                    ELSE 'Other'
+                END AS status,
+                FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
+            FROM Incidents i
+            WHERE i.isDeleted = 0 AND i.deletedAt IS NULL 
+        )
+        SELECT *
+        FROM IncidentStatus
+        WHERE status = 'pendingPreparer'
+        ORDER BY createdAt DESC;
+        
+[15:00:34.457] incidents_data: {'pendingPreparer': [{'code': 'I0444', 'title': 'tgtgtg', 'status': 'pendingPreparer', 'createdAt': '2025-07-10 09:57:27'}]}
+[15:00:34.457] [INCIDENTS PDF] data_type=list data_len=1
+[15:00:34.457] DEBUG: ===== generate_incidents_pdf START =====
+[15:00:34.457]   - card_type: pendingPreparer
+[15:00:34.457]   - only_card: True
+[15:00:34.472]   - only_chart: False
+[15:00:34.472]   - only_overall_table: False
+[15:00:34.472] DEBUG: ===== incidents only_card START =====
+[15:00:34.472] DEBUG: Using PDF config (incidents): {'includeHeader': True, 'showLogo': True, 'showDate': True, 'showPageNumbers': True, 'showBankInfo': True, 'bankInfoLocation': 'top', 'title': 'Dashboard Report', 'subtitle': 'Comprehensive Analysis Report', 'icon': 'chart-line', 'logoPosition': 'left', 'logoHeight': 36, 'logoFile': None, 'logoBase64': None, 'bankName': 'PIANAT.AI', 'bankAddress': 'King Abdulaziz Road, Riyadh, Saudi Arabia', 'bankPhone': '+966 11 402 9000', 'bankWebsite': 'www.pianat.ai', 'fontColor': '#1F4E79', 'backgroundColor': '#FFFFFF', 'tableHeaderBgColor': '#1F4E79', 'tableHeaderTextColor': '#FFFFFF', 'tableBodyBgColor': '#FFFFFF', 'tableBodyTextColor': '#000000', 'borderStyle': 'solid', 'borderColor': '#C9CED6', 'borderWidth': 1, 'leftMargin': 24, 'rightMargin': 24, 'topMargin': 36, 'bottomMargin': 36, 'padding': 12, 'margin': 8, 'fontSize': 'medium', 'footerShowDate': True, 'footerShowConfidentiality': True, 'footerConfidentialityText': 'Confidential Report - Internal Use Only', 'footerShowPageNumbers': True, 'footerAlign': 'center', 'watermarkEnabled': True, 'watermarkText': 'CONFIDENTIAL', 'watermarkOpacity': 10, 'watermarkDiagonal': True, 'chart_type': 'bar', 'chart_data': None, 'excelFreezeTopRow': True, 'excelAutoFitColumns': True, 'excelZebraStripes': True, 'excelFitToWidth': True, 'pdfPageOrientation': 'portrait', 'maxCellChars': 300, 'maxRowsPerTable': 25, 'location': 'top'}
+[15:00:34.472] PDF generate_pdf_report: tableHeaderBgColor from header_config = #1F4E79
+[15:00:34.474] PDF chart precheck: chart_type=bar, has_chart_data=False
+[15:00:34.482] DEBUG: Incidents PDF generated successfully for pendingPreparer
+[15:00:34.482] [Save Export] Setting lock for cache_key: 50020adc...
+[15:00:34.614] [Save Export] Duplicate database entry found (ID: 501), returning existing file: reports_export/2025-11-02/incidents_Pending_Preparer_2025-11-02_150029_052.pdf
+[15:32:55.148] [RISKS PDF] startDate=None endDate=None
+[15:32:55.148] [RISKS PDF] cardType=None onlyCard=False onlyChart=true
+[15:32:55.150] [RISKS PDF] chartType=risksByEventType onlyOverallTable=False tableType=None
+[15:32:55.150] [RISKS PDF] normalized cardType=risksByEventType
+[15:32:55.151] [RiskService] _execute_sync_query SQL: 
+        SELECT 
+            ISNULL(et.name, 'Unknown') as name,
+            COUNT(r.id) as value
+        FROM [NEWDCC-V4-UAT].dbo.[Risks] r
+        LEFT JOIN dbo.[EventTypes] et ON r.event = et.id
+        WHERE r.isDeleted = 0 
+        GROUP BY et.name
+        ORDER BY value DESC
+        
+[15:32:57.171] [RiskService] execute_query OK: rows=4
+[15:32:57.173] risks_data: {'risksByEventType': [{'name': 'Event', 'value': 741}, {'name': 'Consequence', 'value': 223}, {'name': 'Unknown', 'value': 22}, {'name': 'Impact', 'value': 17}]}
+[15:32:57.173] [RISKS PDF] data_type=list data_len=4
+[15:32:57.173] DEBUG: ===== generate_risks_pdf START =====
+[15:32:57.173]   - header_config tableHeaderBgColor (before merge): #1F4E79
+[15:32:57.178]   - card_type: risksByEventType
+[15:32:57.178]   - only_card: False
+[15:32:57.180]   - only_chart: True
+[15:32:57.180]   - only_overall_table: False
+[15:32:57.180]   - header_config tableHeaderBgColor (before merge_header_config): #1F4E79
+[15:32:57.184]   - final_config tableHeaderBgColor: #1F4E79
+[15:32:57.184] DEBUG: Using PDF config (risks): {'includeHeader': True, 'showLogo': True, 'showDate': True, 'showPageNumbers': True, 'showBankInfo': True, 'bankInfoLocation': 'top', 'title': 'Dashboard Report', 'subtitle': 'Comprehensive Analysis Report', 'icon': 'chart-line', 'logoPosition': 'left', 'logoHeight': 36, 'logoFile': None, 'logoBase64': None, 'bankName': 'PIANAT.AI', 'bankAddress': 'King Abdulaziz Road, Riyadh, Saudi Arabia', 'bankPhone': '+966 11 402 9000', 'bankWebsite': 'www.pianat.ai', 'fontColor': '#1F4E79', 'backgroundColor': '#FFFFFF', 'tableHeaderBgColor': '#1F4E79', 'tableHeaderTextColor': '#FFFFFF', 'tableBodyBgColor': '#FFFFFF', 'tableBodyTextColor': '#000000', 'borderStyle': 'solid', 'borderColor': '#C9CED6', 'borderWidth': 1, 'leftMargin': 24, 'rightMargin': 24, 'topMargin': 36, 'bottomMargin': 36, 'padding': 12, 'margin': 8, 'fontSize': 'medium', 'footerShowDate': True, 'footerShowConfidentiality': True, 'footerConfidentialityText': 'Confidential Report - Internal Use Only', 'footerShowPageNumbers': True, 'footerAlign': 'center', 'watermarkEnabled': True, 'watermarkText': 'CONFIDENTIAL', 'watermarkOpacity': 10, 'watermarkDiagonal': True, 'chart_type': 'pie', 'chart_data': {'labels': ['Event', 'Consequence', 'Unknown', 'Impact'], 'values': [741, 223, 22, 17]}, 'excelFreezeTopRow': True, 'excelAutoFitColumns': True, 'excelZebraStripes': True, 'excelFitToWidth': True, 'pdfPageOrientation': 'portrait', 'maxCellChars': 300, 'maxRowsPerTable': 25, 'location': 'top', 'chartType': 'pie'}
+[15:32:57.184] PDF generate_pdf_report: tableHeaderBgColor from header_config = #1F4E79
+[15:32:57.189] PDF chart precheck: chart_type=pie, has_chart_data=True
+[15:32:57.189] PDF chart precheck lengths: labels=4, values=4
+[15:32:57.239] PDF chart: type=pie, labels_count=4, values_count=4
+[15:32:57.239] PDF chart sample label[0]: Event
+[15:32:57.243] PDF chart sample value[0]: 741
+[15:32:57.706] DEBUG: PDF generated successfully for risksByEventType
+[15:32:57.713] [Save Export] Setting lock for cache_key: 49708d63...
+[15:32:58.962] [Save Export] Created new export record ID: 502 for reports_export/2025-11-02/risks_Risks_By_Event_Type_2025-11-02_153258_149.pdf (type: dashboard)
+[15:32:59.101] [Save Export] Successfully saved export: risks_Risks_By_Event_Type_2025-11-02_153258_149.pdf (ID: 502)
+[15:33:02.460] [RISKS PDF] startDate=None endDate=None
+[15:33:02.460] [RISKS PDF] cardType=None onlyCard=False onlyChart=true
+[15:33:02.460] [RISKS PDF] chartType=risksByEventType onlyOverallTable=False tableType=None
+[15:33:02.460] [RISKS PDF] normalized cardType=risksByEventType
+[15:33:02.460] [RiskService] _execute_sync_query SQL: 
+        SELECT 
+            ISNULL(et.name, 'Unknown') as name,
+            COUNT(r.id) as value
+        FROM [NEWDCC-V4-UAT].dbo.[Risks] r
+        LEFT JOIN dbo.[EventTypes] et ON r.event = et.id
+        WHERE r.isDeleted = 0 
+        GROUP BY et.name
+        ORDER BY value DESC
+        
+[15:33:02.807] [RiskService] execute_query OK: rows=4
+[15:33:02.807] risks_data: {'risksByEventType': [{'name': 'Event', 'value': 741}, {'name': 'Consequence', 'value': 223}, {'name': 'Unknown', 'value': 22}, {'name': 'Impact', 'value': 17}]}
+[15:33:02.807] [RISKS PDF] data_type=list data_len=4
+[15:33:02.807] DEBUG: ===== generate_risks_pdf START =====
+[15:33:02.807]   - header_config tableHeaderBgColor (before merge): #1F4E79
+[15:33:02.807]   - card_type: risksByEventType
+[15:33:02.807]   - only_card: False
+[15:33:02.807]   - only_chart: True
+[15:33:02.807]   - only_overall_table: False
+[15:33:02.807]   - header_config tableHeaderBgColor (before merge_header_config): #1F4E79
+[15:33:02.807]   - final_config tableHeaderBgColor: #1F4E79
+[15:33:02.807] DEBUG: Using PDF config (risks): {'includeHeader': True, 'showLogo': True, 'showDate': True, 'showPageNumbers': True, 'showBankInfo': True, 'bankInfoLocation': 'top', 'title': 'Dashboard Report', 'subtitle': 'Comprehensive Analysis Report', 'icon': 'chart-line', 'logoPosition': 'left', 'logoHeight': 36, 'logoFile': None, 'logoBase64': None, 'bankName': 'PIANAT.AI', 'bankAddress': 'King Abdulaziz Road, Riyadh, Saudi Arabia', 'bankPhone': '+966 11 402 9000', 'bankWebsite': 'www.pianat.ai', 'fontColor': '#1F4E79', 'backgroundColor': '#FFFFFF', 'tableHeaderBgColor': '#1F4E79', 'tableHeaderTextColor': '#FFFFFF', 'tableBodyBgColor': '#FFFFFF', 'tableBodyTextColor': '#000000', 'borderStyle': 'solid', 'borderColor': '#C9CED6', 'borderWidth': 1, 'leftMargin': 24, 'rightMargin': 24, 'topMargin': 36, 'bottomMargin': 36, 'padding': 12, 'margin': 8, 'fontSize': 'medium', 'footerShowDate': True, 'footerShowConfidentiality': True, 'footerConfidentialityText': 'Confidential Report - Internal Use Only', 'footerShowPageNumbers': True, 'footerAlign': 'center', 'watermarkEnabled': True, 'watermarkText': 'CONFIDENTIAL', 'watermarkOpacity': 10, 'watermarkDiagonal': True, 'chart_type': 'pie', 'chart_data': {'labels': ['Event', 'Consequence', 'Unknown', 'Impact'], 'values': [741, 223, 22, 17]}, 'excelFreezeTopRow': True, 'excelAutoFitColumns': True, 'excelZebraStripes': True, 'excelFitToWidth': True, 'pdfPageOrientation': 'portrait', 'maxCellChars': 300, 'maxRowsPerTable': 25, 'location': 'top', 'chartType': 'pie'}
+[15:33:02.823] PDF generate_pdf_report: tableHeaderBgColor from header_config = #1F4E79
+[15:33:02.823] PDF chart precheck: chart_type=pie, has_chart_data=True
+[15:33:02.823] PDF chart precheck lengths: labels=4, values=4
+[15:33:02.857] PDF chart: type=pie, labels_count=4, values_count=4
+[15:33:02.857] PDF chart sample label[0]: Event
+[15:33:02.857] PDF chart sample value[0]: 741
+[15:33:03.306] DEBUG: PDF generated successfully for risksByEventType
+[15:33:03.306] [Save Export] Setting lock for cache_key: 53ef3cc7...
+[15:33:03.444] [Save Export] Duplicate database entry found (ID: 502), returning existing file: reports_export/2025-11-02/risks_Risks_By_Event_Type_2025-11-02_153258_149.pdf
+[15:33:03.718] [RISKS PDF] startDate=None endDate=None
+[15:33:03.718] [RISKS PDF] cardType=None onlyCard=False onlyChart=true
+[15:33:03.721] [RISKS PDF] chartType=risksByEventType onlyOverallTable=False tableType=None
+[15:33:03.721] [RISKS PDF] normalized cardType=risksByEventType
+[15:33:03.721] [RiskService] _execute_sync_query SQL: 
+        SELECT 
+            ISNULL(et.name, 'Unknown') as name,
+            COUNT(r.id) as value
+        FROM [NEWDCC-V4-UAT].dbo.[Risks] r
+        LEFT JOIN dbo.[EventTypes] et ON r.event = et.id
+        WHERE r.isDeleted = 0 
+        GROUP BY et.name
+        ORDER BY value DESC
+        
+[15:33:04.006] [RiskService] execute_query OK: rows=4
+[15:33:04.006] risks_data: {'risksByEventType': [{'name': 'Event', 'value': 741}, {'name': 'Consequence', 'value': 223}, {'name': 'Unknown', 'value': 22}, {'name': 'Impact', 'value': 17}]}
+[15:33:04.006] [RISKS PDF] data_type=list data_len=4
+[15:33:04.006] DEBUG: ===== generate_risks_pdf START =====
+[15:33:04.006]   - header_config tableHeaderBgColor (before merge): #1F4E79
+[15:33:04.013]   - card_type: risksByEventType
+[15:33:04.013]   - only_card: False
+[15:33:04.015]   - only_chart: True
+[15:33:04.015]   - only_overall_table: False
+[15:33:04.017]   - header_config tableHeaderBgColor (before merge_header_config): #1F4E79
+[15:33:04.017]   - final_config tableHeaderBgColor: #1F4E79
+[15:33:04.017] DEBUG: Using PDF config (risks): {'includeHeader': True, 'showLogo': True, 'showDate': True, 'showPageNumbers': True, 'showBankInfo': True, 'bankInfoLocation': 'top', 'title': 'Dashboard Report', 'subtitle': 'Comprehensive Analysis Report', 'icon': 'chart-line', 'logoPosition': 'left', 'logoHeight': 36, 'logoFile': None, 'logoBase64': None, 'bankName': 'PIANAT.AI', 'bankAddress': 'King Abdulaziz Road, Riyadh, Saudi Arabia', 'bankPhone': '+966 11 402 9000', 'bankWebsite': 'www.pianat.ai', 'fontColor': '#1F4E79', 'backgroundColor': '#FFFFFF', 'tableHeaderBgColor': '#1F4E79', 'tableHeaderTextColor': '#FFFFFF', 'tableBodyBgColor': '#FFFFFF', 'tableBodyTextColor': '#000000', 'borderStyle': 'solid', 'borderColor': '#C9CED6', 'borderWidth': 1, 'leftMargin': 24, 'rightMargin': 24, 'topMargin': 36, 'bottomMargin': 36, 'padding': 12, 'margin': 8, 'fontSize': 'medium', 'footerShowDate': True, 'footerShowConfidentiality': True, 'footerConfidentialityText': 'Confidential Report - Internal Use Only', 'footerShowPageNumbers': True, 'footerAlign': 'center', 'watermarkEnabled': True, 'watermarkText': 'CONFIDENTIAL', 'watermarkOpacity': 10, 'watermarkDiagonal': True, 'chart_type': 'pie', 'chart_data': {'labels': ['Event', 'Consequence', 'Unknown', 'Impact'], 'values': [741, 223, 22, 17]}, 'excelFreezeTopRow': True, 'excelAutoFitColumns': True, 'excelZebraStripes': True, 'excelFitToWidth': True, 'pdfPageOrientation': 'portrait', 'maxCellChars': 300, 'maxRowsPerTable': 25, 'location': 'top', 'chartType': 'pie'}
+[15:33:04.017] PDF generate_pdf_report: tableHeaderBgColor from header_config = #1F4E79
+[15:33:04.022] PDF chart precheck: chart_type=pie, has_chart_data=True
+[15:33:04.022] PDF chart precheck lengths: labels=4, values=4
+[15:33:04.054] PDF chart: type=pie, labels_count=4, values_count=4
+[15:33:04.054] PDF chart sample label[0]: Event
+[15:33:04.054] PDF chart sample value[0]: 741
+[15:33:04.512] DEBUG: PDF generated successfully for risksByEventType
+[15:33:04.514] [Save Export] Setting lock for cache_key: f3778c31...
+[15:33:04.664] [Save Export] Duplicate database entry found (ID: 502), returning existing file: reports_export/2025-11-02/risks_Risks_By_Event_Type_2025-11-02_153258_149.pdf

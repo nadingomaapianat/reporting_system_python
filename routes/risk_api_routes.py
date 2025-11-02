@@ -17,7 +17,7 @@ from services.enhanced_bank_check_service import EnhancedBankCheckService
 DashboardActivityService = None  # type: ignore
 from utils.export_utils import get_default_header_config
 from models import ExportRequest, ExportResponse
-from routes.route_utils import write_debug, parse_header_config, merge_header_config, convert_to_boolean
+from routes.route_utils import write_debug, parse_header_config, merge_header_config, convert_to_boolean, save_and_log_export
 
 # Initialize services
 api_service = APIService()
@@ -167,14 +167,30 @@ async def export_risks_pdf(
             write_debug(f"[RISKS PDF] generate_risks_pdf error: {gen_err}")
             raise
         
-        # Filename
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"risks_{cardType}_{timestamp}.pdf"  # ← FIXED: Proper indentation
+        # Get user from request headers (if available)
+        created_by = request.headers.get('X-User-Name') or request.headers.get('Authorization') or "System"
+        
+        # Save file and log to database
+        export_info = await save_and_log_export(
+            content=pdf_content,
+            file_extension='pdf',
+            dashboard='risks',
+            card_type=cardType,
+            header_config=header_config,
+            created_by=created_by,
+            date_range={'startDate': startDate, 'endDate': endDate}
+        )
+        
+        filename = export_info['filename']
         
         return Response(
             content=pdf_content,
             media_type='application/pdf',
-            headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"',
+                'X-Export-Src': export_info['relative_path'],
+                'X-Export-Id': str(export_info.get('export_id', ''))
+            }
         )
     except Exception as e:
         write_debug(f"[RISKS PDF] Export failed: {str(e)}")
@@ -300,13 +316,30 @@ async def export_risks_excel(
             risks_data, startDate, endDate, header_config, cardType, only_card_bool, only_overall_table_bool, only_chart_bool
         )
         
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"risks_{cardType}_{timestamp}.xlsx"
+        # Get user from request headers (if available)
+        created_by = request.headers.get('X-User-Name') or request.headers.get('Authorization') or "System"
+        
+        # Save file and log to database
+        export_info = await save_and_log_export(
+            content=excel_content,
+            file_extension='xlsx',
+            dashboard='risks',
+            card_type=cardType,
+            header_config=header_config,
+            created_by=created_by,
+            date_range={'startDate': startDate, 'endDate': endDate}
+        )
+        
+        filename = export_info['filename']
         
         return Response(
             content=excel_content,
             media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"',
+                'X-Export-Src': export_info['relative_path'],
+                'X-Export-Id': str(export_info.get('export_id', ''))
+            }
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")

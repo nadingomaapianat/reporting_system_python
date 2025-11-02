@@ -166,8 +166,8 @@ class ExcelService:
             
             # CARD SUMMARY EXPORT - same logic as PDF
             elif onlyCard and cardType:
-                write_debug(f"Generating risks Excel report for mmmmm {start_date} to {end_date}")
-                write_debug(f"card_type={card_type}, only_card={only_card}, only_overall_table={only_overall_table}, only_chart={only_chart}")
+                write_debug(f"Generating controls Excel report for card {cardType}, {startDate} to {endDate}")
+                write_debug(f"cardType={cardType}, onlyCard={onlyCard}, onlyOverallTable={onlyOverallTable}, onlyChart={onlyChart}")
                
                 # Handle both dict and list data
                 if isinstance(data, list) and data:
@@ -556,25 +556,33 @@ class ExcelService:
 
             # CARD SUMMARY EXPORT
             elif only_card and card_type:
-                write_debug(f"Generating KRIs Excel report for card {card_type}")
-                # Handle both dict and list data
-                if isinstance(data, list) and data:
-                    first_item = data[0] if data else {}
-                    if isinstance(first_item, dict):
-                        raw_keys = list(first_item.keys())
-                        columns = ['#'] + [format_column_name(k) for k in raw_keys]
-                        for i, item in enumerate(data, 1):
-                            values = [str(item.get(k, 'N/A')) for k in raw_keys]
-                            data_rows.append([str(i)] + values)
-                    else:
-                        columns = ['#', 'Value']
-                        data_rows = [[str(i+1), str(v)] for i, v in enumerate(data)]
+                   # Handle both dict and list data
+                if isinstance(data, list):
+                    if data:  # Non-empty list
+                        first_item = data[0]
+                        if isinstance(first_item, dict):
+                            raw_keys = list(first_item.keys())
+                            columns = ['#'] + [format_column_name(k) for k in raw_keys]
+                            for i, item in enumerate(data, 1):
+                                values = [str(item.get(k, 'N/A')) for k in raw_keys]
+                                data_rows.append([str(i)] + values)
+                        else:
+                            columns = ['#', 'Value']
+                            data_rows = [[str(i+1), str(v)] for i, v in enumerate(data)]
+                    else:  # Empty list
+                        write_debug("DEBUG: data is an empty list - showing 'No data available'")
+                        columns = ["Metric", "Value"]
+                        data_rows = [["No data available", "No KRIs found matching the criteria"]]
                 elif isinstance(data, dict):
-                    columns = ["Metric", "Value"]
-                    data_rows = [[key, str(value)] for key, value in data.items()]
+                    if data:  # Non-empty dict
+                        columns = ["Metric", "Value"]
+                        data_rows = [[key, str(value)] for key, value in data.items()]
+                    else:  # Empty dict
+                        columns = ["Metric", "Value"]
+                        data_rows = [["No data available", "No KRIs found matching the criteria"]]
                 else:
                     columns = ["Metric", "Value"]
-                    data_rows = [["No data available", "N/A"]]
+                    data_rows = [["No data available", "No KRIs found matching the criteria"]]
                 return generate_excel_report(columns, data_rows, header_config)
 
             # DEFAULT simple workbook if no specific mode

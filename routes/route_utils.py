@@ -51,6 +51,408 @@ def convert_to_boolean(value: Any) -> bool:
     return bool(value)
 
 
+# In-memory cache to prevent duplicate saves within a short time window
+_export_cache = {}  # Key: cache_key, Value: (result_dict, timestamp)
+_export_lock = {}  # Key: cache_key, Value: timestamp (for locking during save operations)
+
+async def save_and_log_export(
+    content: bytes,
+    file_extension: str,
+    dashboard: str,
+    card_type: Optional[str] = None,
+    header_config: Optional[Dict[str, Any]] = None,
+    created_by: Optional[str] = None,
+    date_range: Optional[Dict[str, Optional[str]]] = None
+) -> Dict[str, Any]:
+    """
+    Save export file to disk and log to database.
+    
+    Args:
+        content: File content (bytes)
+        file_extension: File extension (pdf, xlsx, docx)
+        dashboard: Dashboard name (incidents, kris, risks, controls)
+        card_type: Card type for the export
+        header_config: Header configuration dict
+        created_by: User who created the export (defaults to "System")
+        date_range: Dict with startDate and endDate
+        
+    Returns:
+        Dict with file_path, relative_path, and export_id
+    """
+    import os
+    import pyodbc
+    import hashlib
+    import time
+    from config import get_database_connection_string
+    global _export_cache
+    
+    # Ensure date_range is a dict (default to empty dict if None)
+    if date_range is None:
+        date_range = {}
+    elif not isinstance(date_range, dict):
+        date_range = {}
+    
+    # Create a cache key to prevent duplicate saves within 3 seconds
+    # Include content hash to detect identical exports
+    content_hash = hashlib.md5(content).hexdigest()[:8]
+    cache_key_parts = [
+        str(dashboard) if dashboard else '',
+        str(card_type) if card_type else '',
+        str(file_extension) if file_extension else '',
+        str(date_range.get('startDate', '')) if date_range else '',
+        str(date_range.get('endDate', '')) if date_range else '',
+        str(content_hash)
+    ]
+    cache_key = hashlib.md5('|'.join(cache_key_parts).encode()).hexdigest()
+    
+    # Clean up old cache entries (older than 10 seconds - extended to prevent duplicates)
+    current_time = time.time()
+    keys_to_remove = [k for k, v in _export_cache.items() if current_time - v[1] >= 10]
+    for k in keys_to_remove:
+        del _export_cache[k]
+    
+    # Clean up old locks (older than 5 seconds)
+    lock_keys_to_remove = [k for k, v in _export_lock.items() if current_time - v >= 5]
+    for k in lock_keys_to_remove:
+        del _export_lock[k]
+    
+    # Check if another request is currently saving the same export (lock check)
+    if cache_key in _export_lock:
+        lock_time = _export_lock[cache_key]
+        # Wait a bit if lock is very recent (within 1 second)
+        if current_time - lock_time < 1:
+            import asyncio
+            await asyncio.sleep(0.2)  # Wait 200ms for the other request to finish
+            # Check cache again after waiting
+            if cache_key in _export_cache:
+                cached_result, _ = _export_cache[cache_key]
+                if os.path.exists(cached_result['file_path']):
+                    write_debug(f"[Save Export] Waited for concurrent save, using existing file: {cached_result['filename']}")
+                    return cached_result
+    
+    # Check if we recently saved the same export (deduplication)
+    if cache_key in _export_cache:
+        cached_result, _ = _export_cache[cache_key]
+        # Verify the file still exists
+        if os.path.exists(cached_result['file_path']):
+            write_debug(f"[Save Export] Duplicate export detected via cache, using existing file: {cached_result['filename']}")
+            return cached_result
+        else:
+            # File was deleted, remove from cache and continue
+            del _export_cache[cache_key]
+    
+    # Set lock to prevent concurrent saves of the same export
+    _export_lock[cache_key] = current_time
+    write_debug(f"[Save Export] Setting lock for cache_key: {cache_key[:8]}...")
+    
+    # Get user info (default to "System")
+    user_name = created_by or "System"
+    
+    # Build title for database check (we need this before creating filename)
+    # Prioritize card_type for unique database titles, not header_config.title (which is always "Dashboard Report")
+    db_title = "Report"
+    if card_type:
+        import re
+        # Convert cardType to readable name (e.g., "pendingPreparer" -> "Pending Preparer")
+        db_title = card_type
+        db_title = re.sub(r'([A-Z])', r' \1', db_title).strip()
+        db_title = db_title.replace('_', ' ').title()
+        # Capitalize first letter of each word properly
+        db_title = ' '.join(word.capitalize() for word in db_title.split())
+    elif header_config and header_config.get("title"):
+        # Only use header_config.title as fallback if no card_type (should be rare)
+        db_title = header_config.get("title", "Report")
+    
+    # Check database FIRST to see if a recent duplicate exists (before saving file)
+    # This prevents duplicate database entries when multiple requests come in simultaneously
+    try:
+        connection_string = get_database_connection_string()
+        conn_check = pyodbc.connect(connection_string)
+        cursor_check = conn_check.cursor()
+        try:
+            # Build date suffix for title matching
+            date_suffix_check = ""
+            if date_range and isinstance(date_range, dict):
+                start = date_range.get("startDate")
+                end = date_range.get("endDate")
+                if start and end:
+                    date_suffix_check = f" ({start} to {end})"
+                elif start:
+                    date_suffix_check = f" (from {start})"
+                elif end:
+                    date_suffix_check = f" (until {end})"
+            
+            now_check = datetime.now()
+            date_str_check = now_check.strftime('%Y-%m-%d')
+            export_title_check = f"{db_title}{date_suffix_check} - {date_str_check}"
+            
+            # Check for recent duplicate in database (last 30 seconds)
+            cursor_check.execute(
+                """
+                SELECT TOP 1 id, src FROM dbo.report_exports 
+                WHERE dashboard = ? 
+                  AND format = ?
+                  AND created_by = ?
+                  AND (
+                    title = ? 
+                    OR title LIKE ?
+                  )
+                  AND created_at >= DATEADD(SECOND, -30, GETDATE())
+                ORDER BY created_at DESC
+                """,
+                (dashboard, file_extension, user_name, export_title_check, f"{db_title}%")
+            )
+            existing_db = cursor_check.fetchone()
+            
+            if existing_db:
+                # Found existing record - use it and return early (no file save needed)
+                existing_id = existing_db[0]
+                existing_src = existing_db[1]
+                base_dir_check = os.path.dirname(os.path.dirname(__file__))
+                existing_file_path = os.path.join(base_dir_check, existing_src) if existing_src else None
+                
+                if existing_file_path and os.path.exists(existing_file_path):
+                    write_debug(f"[Save Export] Duplicate database entry found (ID: {existing_id}), returning existing file: {existing_src}")
+                    result = {
+                        "file_path": existing_file_path,
+                        "relative_path": existing_src,
+                        "filename": os.path.basename(existing_src),
+                        "export_id": existing_id
+                    }
+                    # Cache it for future lookups
+                    _export_cache[cache_key] = (result, time.time())
+                    return result
+        finally:
+            cursor_check.close()
+            conn_check.close()
+    except Exception as e:
+        write_debug(f"[Save Export] Database pre-check failed (continuing): {str(e)}")
+        import traceback
+        write_debug(f"[Save Export] Pre-check traceback: {traceback.format_exc()}")
+        # Continue with file save even if pre-check fails
+    
+    # Create readable filename
+    now = datetime.now()
+    date_str = now.strftime('%Y-%m-%d')
+    # Use microseconds for better uniqueness (avoid collisions)
+    time_str = now.strftime('%H%M%S_%f')[:-3]  # Include milliseconds
+    
+    # Build filename from card_type (priority) or header config
+    # Always prefer cardType for filename even if header config has a different title
+    filename_title = "Report"
+    if card_type:
+        # Convert cardType to readable name (e.g., "pendingPreparer" -> "Pending_Preparer")
+        filename_title = card_type
+        # Add spaces before capital letters
+        import re
+        filename_title = re.sub(r'([A-Z])', r' \1', filename_title).strip()
+        filename_title = filename_title.replace('_', ' ').title()
+        # Replace spaces with underscores for filename
+        filename_title = filename_title.replace(' ', '_')
+    elif header_config and header_config.get("title"):
+        # Fallback to header title if no card_type
+        filename_title = header_config.get("title", "Report")
+        filename_title = "".join(c for c in filename_title if c.isalnum() or c in (' ', '-', '_')).strip()
+        filename_title = filename_title.replace(' ', '_')
+    
+    # Add date range to database title if available
+    date_suffix = ""
+    if date_range:
+        start = date_range.get("startDate")
+        end = date_range.get("endDate")
+        if start and end:
+            date_suffix = f" ({start} to {end})"
+        elif start:
+            date_suffix = f" (from {start})"
+        elif end:
+            date_suffix = f" (until {end})"
+    
+    # Create readable filename (always use cardType-based name)
+    safe_title = "".join(c for c in filename_title if c.isalnum() or c in ('-', '_')).strip()
+    base_filename = f"{dashboard}_{safe_title}_{date_str}_{time_str}.{file_extension}"
+    
+    # Save file to reports_export directory
+    base_dir = os.path.dirname(os.path.dirname(__file__))
+    date_folder = now.strftime('%Y-%m-%d')
+    reports_export_dir = os.path.join(base_dir, "reports_export", date_folder)
+    os.makedirs(reports_export_dir, exist_ok=True)
+    
+    # Ensure unique filename (handle collisions if they somehow occur)
+    readable_filename = base_filename
+    file_path = os.path.join(reports_export_dir, readable_filename)
+    counter = 1
+    while os.path.exists(file_path):
+        # If file exists (should be rare with microseconds), append counter
+        name_part = base_filename.rsplit('.', 1)[0]
+        ext_part = base_filename.rsplit('.', 1)[1]
+        readable_filename = f"{name_part}_{counter}.{ext_part}"
+        file_path = os.path.join(reports_export_dir, readable_filename)
+        counter += 1
+        if counter > 1000:  # Safety limit
+            write_debug(f"[Save Export] Warning: Too many file collisions for {base_filename}")
+            break
+    
+    relative_path = f"reports_export/{date_folder}/{readable_filename}"
+    
+    # Write file (only once)
+    try:
+        with open(file_path, 'wb') as f:
+            f.write(content)
+    except Exception as file_err:
+        # Remove lock on error
+        if cache_key in _export_lock:
+            del _export_lock[cache_key]
+        write_debug(f"[Save Export] Failed to write file: {str(file_err)}")
+        raise
+    
+    # Log to database
+    export_id = None
+    try:
+        connection_string = get_database_connection_string()
+        conn = pyodbc.connect(connection_string)
+        cursor = conn.cursor()
+        try:
+            # Ensure table exists with created_by and type
+            cursor.execute(
+                """
+                IF NOT EXISTS (
+                  SELECT * FROM INFORMATION_SCHEMA.TABLES 
+                  WHERE TABLE_NAME = 'report_exports' AND TABLE_SCHEMA='dbo'
+                )
+                BEGIN
+                  CREATE TABLE dbo.report_exports (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    title NVARCHAR(255) NOT NULL,
+                    src NVARCHAR(1024) NULL,
+                    format NVARCHAR(20) NOT NULL,
+                    dashboard NVARCHAR(100) NULL,
+                    type NVARCHAR(50) NULL,
+                    created_by NVARCHAR(255) NULL,
+                    created_at DATETIME2 DEFAULT GETDATE()
+                  )
+                END
+                """
+            )
+            conn.commit()
+            
+            # Add created_by column if it doesn't exist
+            try:
+                cursor.execute(
+                    """
+                    IF NOT EXISTS (
+                      SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                      WHERE TABLE_NAME = 'report_exports' AND COLUMN_NAME = 'created_by'
+                    )
+                    BEGIN
+                      ALTER TABLE dbo.report_exports ADD created_by NVARCHAR(255) NULL
+                    END
+                    """
+                )
+                conn.commit()
+            except Exception:
+                pass
+            
+            # Add type column if it doesn't exist
+            try:
+                cursor.execute(
+                    """
+                    IF NOT EXISTS (
+                      SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                      WHERE TABLE_NAME = 'report_exports' AND COLUMN_NAME = 'type'
+                    )
+                    BEGIN
+                      ALTER TABLE dbo.report_exports ADD type NVARCHAR(50) NULL
+                    END
+                    """
+                )
+                conn.commit()
+            except Exception:
+                pass
+            
+            # Insert export record (only if not already exists)
+            # Use db_title for database record (can include header config title)
+            export_title = f"{db_title}{date_suffix} - {date_str}"
+            
+            # Determine type based on dashboard
+            # Dashboard reports: incidents, kris, risks, controls
+            # Transaction reports: everything else
+            export_type = "transaction"  # Default
+            if dashboard and dashboard.lower() in ['incidents', 'kris', 'risks', 'controls']:
+                export_type = "dashboard"
+            
+            # Check if record already exists with same parameters within the last 30 seconds
+            # Check by multiple fields to catch duplicates even with different file paths or timestamps
+            # This prevents the same export from being logged 3 times
+            cursor.execute(
+                """
+                SELECT TOP 1 id, src FROM dbo.report_exports 
+                WHERE (
+                  src = ? 
+                  OR (
+                    title = ? 
+                    AND dashboard = ? 
+                    AND format = ?
+                    AND created_by = ?
+                  )
+                )
+                AND created_at >= DATEADD(SECOND, -30, GETDATE())
+                ORDER BY created_at DESC
+                """,
+                (relative_path, export_title, dashboard, file_extension, user_name)
+            )
+            existing = cursor.fetchone()
+            
+            if existing:
+                # Use existing record ID and path (prevent duplicate database entries)
+                export_id = existing[0]
+                existing_src = existing[1]
+                write_debug(f"[Save Export] Duplicate database entry prevented. Using existing ID: {export_id}, existing src: {existing_src}")
+                # Update result to use existing path if different
+                if existing_src and existing_src != relative_path:
+                    relative_path = existing_src
+                    # Update file_path if we can find the existing file
+                    existing_file_path = os.path.join(base_dir, existing_src)
+                    if os.path.exists(existing_file_path):
+                        file_path = existing_file_path
+                        readable_filename = os.path.basename(existing_src)
+            else:
+                # Insert new record
+                cursor.execute(
+                    """
+                    INSERT INTO dbo.report_exports (title, src, format, dashboard, type, created_by)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (export_title, relative_path, file_extension, dashboard, export_type, user_name)
+                )
+                conn.commit()
+                export_id = cursor.execute("SELECT @@IDENTITY").fetchone()[0]
+                write_debug(f"[Save Export] Created new export record ID: {export_id} for {relative_path} (type: {export_type})")
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        write_debug(f"[Save Export] Failed to log export: {str(e)}")
+        # Continue even if logging fails
+    finally:
+        # Always remove lock, even if there was an error
+        if cache_key in _export_lock:
+            del _export_lock[cache_key]
+    
+    result = {
+        "file_path": file_path,
+        "relative_path": relative_path,
+        "filename": readable_filename,
+        "export_id": export_id
+    }
+    
+    # Cache the result to prevent duplicate saves (with timestamp)
+    _export_cache[cache_key] = (result, time.time())
+    
+    write_debug(f"[Save Export] Successfully saved export: {readable_filename} (ID: {export_id})")
+    
+    return result
+
+
 def generate_filename(module_name: str, card_type: Optional[str] = None, 
                      start_date: Optional[str] = None, end_date: Optional[str] = None,
                      extension: str = "pdf") -> str:
@@ -613,65 +1015,13 @@ def generate_excel_report(columns, data_rows, header_config=None):
         elif footer_align == "right":
             ws.HeaderFooter.oddFooter.right.text = " | ".join(footer_text)
     
-    # Save to file
-    base_dir = os.path.dirname(os.path.dirname(__file__))
-    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-    date_folder = datetime.now().strftime('%Y-%m-%d')
-    reports_export_dir = os.path.join(base_dir, "reports_export", date_folder)
-    os.makedirs(reports_export_dir, exist_ok=True)
-    filename = f"dynamic_report_{ts}.xlsx"
-    file_path = os.path.join(reports_export_dir, filename)
-    
-    wb.save(file_path)
-    
-    # Save export record to database (best-effort)
-    try:
-        import pyodbc
-        from config import get_database_connection_string
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                """
-                IF NOT EXISTS (
-                  SELECT * FROM INFORMATION_SCHEMA.TABLES 
-                  WHERE TABLE_NAME = 'report_exports' AND TABLE_SCHEMA='dbo'
-                )
-                BEGIN
-                  CREATE TABLE dbo.report_exports (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    title NVARCHAR(255) NOT NULL,
-                    src NVARCHAR(1024) NULL,
-                    format NVARCHAR(20) NOT NULL,
-                    dashboard NVARCHAR(100) NULL,
-                    created_at DATETIME2 DEFAULT GETDATE()
-                  )
-                END
-                """
-            )
-            conn.commit()
-            export_title = header_config.get("title", "Dynamic Report") if header_config else "Dynamic Report"
-            export_title = f"{export_title} - {datetime.now().strftime('%Y-%m-%d')}"
-            export_dashboard = header_config.get("dashboard", "dynamic") if header_config else "dynamic"
-            cursor.execute(
-                """
-                INSERT INTO dbo.report_exports (title, src, format, dashboard)
-                VALUES (?, ?, ?, ?)
-                """,
-                (export_title, file_path, 'excel', export_dashboard)
-            )
-            conn.commit()
-        finally:
-            cursor.close()
-            conn.close()
-    except Exception:
-        pass
-
-    with open(file_path, 'rb') as f:
-        content = f.read()
-    
-    return content
+    # Save to BytesIO and return bytes (NOT to disk - file saving is handled by save_and_log_export in the route)
+    # This prevents duplicate file saves when generate_excel_report is called from control/risk/incident/kri routes
+    # The route will call save_and_log_export which handles file saving and database logging with proper naming
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output.getvalue()
 
 def generate_word_report(columns, data_rows, header_config=None):
     """Generate Word report from dynamic data with full header configuration support"""
@@ -1084,12 +1434,17 @@ def generate_word_report(columns, data_rows, header_config=None):
             export_title = header_config.get("title", "Dynamic Report") if header_config else "Dynamic Report"
             export_title = f"{export_title} - {datetime.now().strftime('%Y-%m-%d')}"
             export_dashboard = header_config.get("dashboard", "dynamic") if header_config else "dynamic"
+            # Determine type - dynamic reports are typically transaction type
+            export_type = "transaction"
+            if export_dashboard and export_dashboard.lower() in ['incidents', 'kris', 'risks', 'controls']:
+                export_type = "dashboard"
+            
             cursor.execute(
                 """
-                INSERT INTO dbo.report_exports (title, src, format, dashboard)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO dbo.report_exports (title, src, format, dashboard, type)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (export_title, file_path, 'word', export_dashboard)
+                (export_title, file_path, 'word', export_dashboard, export_type)
             )
             conn.commit()
         finally:
@@ -1111,9 +1466,12 @@ def generate_word_report(columns, data_rows, header_config=None):
     )
 
 def generate_pdf_report(columns, data_rows, header_config=None):
-    """Generate PDF report from dynamic data with full header configuration support"""
+    """Generate PDF report from dynamic data with full header configuration support
+    Returns bytes - does NOT save to disk (file saving is handled by save_and_log_export in the route)
+    """
     from reportlab.lib.pagesizes import letter, A4
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
+    from io import BytesIO
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors
     from reportlab.lib.units import inch
@@ -1135,12 +1493,9 @@ def generate_pdf_report(columns, data_rows, header_config=None):
         header_config = get_default_header_config("dynamic")
     
     base_dir = os.path.dirname(os.path.dirname(__file__))
-    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-    date_folder = datetime.now().strftime('%Y-%m-%d')
-    reports_export_dir = os.path.join(base_dir, "reports_export", date_folder)
-    os.makedirs(reports_export_dir, exist_ok=True)
-    filename = f"dynamic_report_{ts}.pdf"
-    file_path = os.path.join(reports_export_dir, filename)
+    # Create PDF in memory (BytesIO) - NOT to disk (file saving is handled by save_and_log_export in the route)
+    # This prevents duplicate file saves when generate_pdf_report is called from risk/control/incident/kri routes
+    buffer = BytesIO()
     
     # Extract ALL configuration values from header modal configuration
     # Basic report settings
@@ -1224,9 +1579,9 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     # Choose page size based on number of columns
     page_size = A4 if len(columns) <= 6 else letter
     
-    # Create document with margins
+    # Create document with margins (using BytesIO buffer, not file path)
     doc = SimpleDocTemplate(
-        file_path, 
+        buffer, 
         pagesize=page_size,
         rightMargin=margin,
         leftMargin=margin,
@@ -1537,54 +1892,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
         if footer_text:
             story.append(Paragraph(" | ".join(footer_text), footer_style))
     
-    # Build the PDF
+    # Build PDF and return bytes (NOT file path - file saving and DB logging handled by save_and_log_export)
     doc.build(story)
-    
-    # Save export record to database (best-effort)
-    try:
-        import pyodbc
-        from config import get_database_connection_string
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                """
-                IF NOT EXISTS (
-                  SELECT * FROM INFORMATION_SCHEMA.TABLES 
-                  WHERE TABLE_NAME = 'report_exports' AND TABLE_SCHEMA='dbo'
-                )
-                BEGIN
-                  CREATE TABLE dbo.report_exports (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    title NVARCHAR(255) NOT NULL,
-                    src NVARCHAR(1024) NULL,
-                    format NVARCHAR(20) NOT NULL,
-                    dashboard NVARCHAR(100) NULL,
-                    created_at DATETIME2 DEFAULT GETDATE()
-                  )
-                END
-                """
-            )
-            conn.commit()
-            export_title = header_config.get("title", "Dynamic Report") if header_config else "Dynamic Report"
-            export_title = f"{export_title} - {datetime.now().strftime('%Y-%m-%d')}"
-            export_dashboard = header_config.get("dashboard", "dynamic") if header_config else "dynamic"
-            cursor.execute(
-                """
-                INSERT INTO dbo.report_exports (title, src, format, dashboard)
-                VALUES (?, ?, ?, ?)
-                """,
-                (export_title, file_path, 'pdf', export_dashboard)
-            )
-            conn.commit()
-        finally:
-            cursor.close()
-            conn.close()
-    except Exception:
-        pass
-
-    with open(file_path, 'rb') as f:
-        content = f.read()
-    
-    return content
+    buffer.seek(0)
+    return buffer.getvalue()

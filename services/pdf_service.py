@@ -394,26 +394,36 @@ class PDFService:
             # CARD SUMMARY EXPORT
             elif only_card and card_type:
                 write_debug("DEBUG: ===== kris only_card START =====")
+                write_debug(f"DEBUG: kris_data type={type(kris_data)}, len={len(kris_data) if isinstance(kris_data, (list, dict)) else 'N/A'}")
                 # Build a simple table from the card data
-                if isinstance(kris_data, list) and kris_data:
-                    first_item = kris_data[0]
-                    if isinstance(first_item, dict):
-                        def nice(k: str) -> str:
-                            return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
-                        raw_keys = list(first_item.keys())
-                        columns = ['#'] + [nice(k) for k in raw_keys]
-                        for i, item in enumerate(kris_data, 1):
-                            values = [str(item.get(k, 'N/A')) for k in raw_keys]
-                            data_rows.append([str(i)] + values)
-                    else:
-                        columns = ['#', 'Value']
-                        data_rows = [["1", str(first_item)]]
+                if isinstance(kris_data, list):
+                    if kris_data:  # Non-empty list
+                        first_item = kris_data[0]
+                        if isinstance(first_item, dict):
+                            def nice(k: str) -> str:
+                                return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
+                            raw_keys = list(first_item.keys())
+                            columns = ['#'] + [nice(k) for k in raw_keys]
+                            for i, item in enumerate(kris_data, 1):
+                                values = [str(item.get(k, 'N/A')) for k in raw_keys]
+                                data_rows.append([str(i)] + values)
+                        else:
+                            columns = ['#', 'Value']
+                            data_rows = [["1", str(first_item)]]
+                    else:  # Empty list
+                        write_debug("DEBUG: kris_data is an empty list - showing 'No data available'")
+                        columns = ["Metric", "Value"]
+                        data_rows = [["No data available", "No KRIs found matching the criteria"]]
                 elif isinstance(kris_data, dict):
-                    columns = ["Metric", "Value"]
-                    data_rows = [[k, str(v)] for k, v in kris_data.items()]
+                    if kris_data:  # Non-empty dict
+                        columns = ["Metric", "Value"]
+                        data_rows = [[k, str(v)] for k, v in kris_data.items()]
+                    else:  # Empty dict
+                        columns = ["Metric", "Value"]
+                        data_rows = [["No data available", "No KRIs found matching the criteria"]]
                 else:
                     columns = ["Metric", "Value"]
-                    data_rows = [["No data available", "N/A"]]
+                    data_rows = [["No data available", "No KRIs found matching the criteria"]]
             else:
                 # Default simple report
                 data_rows = [['KRIs Dashboard Report', 'Generated Successfully']]

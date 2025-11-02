@@ -194,15 +194,13 @@ class KriService:
         
         query = f"""
         SELECT 
-            k.id,
             k.code,
             k.kriName as kri_name,
             k.threshold,
             k.isAscending as is_ascending,
             k.kri_level,
             k.status,
-            k.createdAt as created_at,
-            k.updatedAt as updated_at,
+            FORMAT(CONVERT(datetime, k.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
             ISNULL(f.name, 'Unknown') as function_name
         FROM Kris k
         LEFT JOIN Functions f ON k.related_function_id = f.id
@@ -213,6 +211,7 @@ class KriService:
           {date_filter}
         ORDER BY k.createdAt DESC
         """
+        write_debug(f"Query: {query}")
         return await self.execute_query(query)
 
     async def get_kris_by_status_detail(self, status: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:

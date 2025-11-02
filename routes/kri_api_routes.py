@@ -18,7 +18,7 @@ from services.enhanced_bank_check_service import EnhancedBankCheckService
 DashboardActivityService = None  # type: ignore
 from utils.export_utils import get_default_header_config
 from models import ExportRequest, ExportResponse
-from routes.route_utils import write_debug, parse_header_config, merge_header_config, convert_to_boolean
+from routes.route_utils import write_debug, parse_header_config, merge_header_config, convert_to_boolean, save_and_log_export
 
 # Initialize services
 api_service = APIService()
@@ -132,21 +132,17 @@ async def export_kris_pdf(
         
         # Status counts (metrics) - return lists for card export
         if cardType == 'totalKris' or cardType == 'krisList':
+            write_debug('jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj')
             data = await kri_service.get_kris_list(startDate, endDate)
         elif cardType == 'pendingPreparer':
-            write_debug(f"Getting pendingPreparer KRIS jjjjjjjjjjjjjjj")
             data = await kri_service.get_kris_by_status_detail('pendingPreparer', startDate, endDate)
         elif cardType == 'pendingChecker':
-            write_debug(f"Getting pendingChecker KRIS jjjjjjjjjjjjjjj mmmmmmm")
             data = await kri_service.get_kris_by_status_detail('pendingChecker', startDate, endDate)
         elif cardType == 'pendingReviewer':
-            write_debug(f"Getting pendingReviewer KRIS jjjjjjjjjjjjjjj nnnnnnnnnnnnnn")
             data = await kri_service.get_kris_by_status_detail('pendingReviewer', startDate, endDate)
         elif cardType == 'pendingAcceptance':
-            write_debug(f"Getting pendingAcceptance KRIS jjjjjjjjjjjjjjj ooooooooooooooo")
             data = await kri_service.get_kris_by_status_detail('pendingAcceptance', startDate, endDate)
         elif cardType == 'approved':
-            write_debug(f"Getting approved KRIS jjjjjjjjjjjjjjj ppppppppppppppp")
             data = await kri_service.get_kris_by_status_detail('Approved', startDate, endDate)
         
         # Charts
@@ -208,14 +204,30 @@ async def export_kris_pdf(
             write_debug(f"[KRIS PDF] generate_kris_pdf error: {gen_err}")
             raise
         
-        # Filename
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"kris_{cardType}_{timestamp}.pdf"
+        # Get user from request headers (if available)
+        created_by = request.headers.get('X-User-Name') or request.headers.get('Authorization') or "System"
+        
+        # Save file and log to database
+        export_info = await save_and_log_export(
+            content=pdf_content,
+            file_extension='pdf',
+            dashboard='kris',
+            card_type=cardType,
+            header_config=header_config,
+            created_by=created_by,
+            date_range={'startDate': startDate, 'endDate': endDate}
+        )
+        
+        filename = export_info['filename']
         
         return Response(
             content=pdf_content,
             media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                'X-Export-Src': export_info['relative_path'],
+                'X-Export-Id': str(export_info.get('export_id', ''))
+            }
         )
     except HTTPException:
         raise
@@ -367,14 +379,30 @@ async def export_kris_excel(
             kris_data, startDate, endDate, header_config, cardType, only_card_bool, only_overall_table_bool, only_chart_bool
         )
         
-        # Filename
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"kris_{cardType}_{timestamp}.xlsx"
+        # Get user from request headers (if available)
+        created_by = request.headers.get('X-User-Name') or request.headers.get('Authorization') or "System"
+        
+        # Save file and log to database
+        export_info = await save_and_log_export(
+            content=excel_content,
+            file_extension='xlsx',
+            dashboard='kris',
+            card_type=cardType,
+            header_config=header_config,
+            created_by=created_by,
+            date_range={'startDate': startDate, 'endDate': endDate}
+        )
+        
+        filename = export_info['filename']
         
         return Response(
             content=excel_content,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                'X-Export-Src': export_info['relative_path'],
+                'X-Export-Id': str(export_info.get('export_id', ''))
+            }
         )
     except HTTPException:
         raise
