@@ -249,57 +249,139 @@ class ExcelService:
 
             # CHART EXPORT
             if only_chart and card_type:
-                if isinstance(data, list) and data:
-                    first_item = data[0]
-                    if isinstance(first_item, dict):
-                        keys = list(first_item.keys())
-                        if len(keys) >= 2:
-                            key1 = keys[0]
-                            key2 = keys[-1]
-                            columns = [format_column_name(key1), format_column_name(key2)]
-                            for item in data:
-                                name = item.get(key1, "N/A")
-                                value = item.get(key2, 0)
-                                data_rows.append([name, str(value)])
-                        else:
-                            key1 = keys[0]
-                            columns = [format_column_name(key1), "Value"]
-                            for item in data:
-                                name = item.get(key1, "N/A")
-                                data_rows.append([name, 0])
-                    else:
-                        data_rows = [[str(first_item), "0"]]
-                        columns = ["Label", "Value"]
-                else:
-                    data_rows = [["No data available", "0"]]
-                    columns = ["Label", "Value"]
-
-                default_type_by_card = {
-                    "byCategory": "bar",
-                    "byStatus": "pie",
-                    "monthlyTrend": "line",
-                    "netLossAndRecovery": "bar",
-                    "topFinancialImpacts": "bar",
-                    "incidentsByEventType": "pie",
-                    "incidentsByFinancialImpact": "pie",
-                }
                 chart_type = header_config.get("chartType") or header_config.get("chart_type")
-                if chart_type not in {"bar", "line", "pie"}:
-                    chart_type = default_type_by_card.get(card_type, "bar")
-                header_config["chart_type"] = chart_type
+                
+                # Handle multiBar charts (like monthlyTrendByType)
+                if chart_type == "multiBar" or card_type == "monthlyTrendByType":
+                    if isinstance(data, list) and data:
+                        first_item = data[0]
+                        if isinstance(first_item, dict):
+                            # Get all keys except 'period' or 'name' for the label
+                            keys = list(first_item.keys())
+                            # Find the label key (usually 'period' or 'name')
+                            label_key = None
+                            value_keys = []
+                            for key in keys:
+                                if key.lower() in ['period', 'name', 'month', 'date']:
+                                    label_key = key
+                                else:
+                                    value_keys.append(key)
+                            
+                            if label_key:
+                                # Create columns: Period + all value columns
+                                columns = [format_column_name(label_key)] + [format_column_name(k) for k in value_keys]
+                                
+                                # Prepare data for stacked bar chart
+                                labels = []
+                                series_list = []
+                                
+                                for item in data:
+                                    row = [str(item.get(label_key, "N/A"))]
+                                    labels.append(str(item.get(label_key, "N/A")))
+                                    for k in value_keys:
+                                        row.append(str(item.get(k, 0)))
+                                    data_rows.append(row)
+                                
+                                # Create series for each value column (for stacked bar chart)
+                                for value_key in value_keys:
+                                    series_values = [float(item.get(value_key, 0) or 0) for item in data]
+                                    series_list.append({
+                                        'name': format_column_name(value_key),
+                                        'values': series_values
+                                    })
+                                
+                                # Set chart_data for stacked bar chart
+                                header_config["chart_data"] = {
+                                    "labels": labels,
+                                    "series": series_list
+                                }
+                            else:
+                                # Fallback: use first key as label, rest as values
+                                label_key = keys[0]
+                                value_keys = keys[1:]
+                                columns = [format_column_name(label_key)] + [format_column_name(k) for k in value_keys]
+                                
+                                labels = []
+                                series_list = []
+                                for item in data:
+                                    row = [str(item.get(label_key, "N/A"))]
+                                    labels.append(str(item.get(label_key, "N/A")))
+                                    for k in value_keys:
+                                        row.append(str(item.get(k, 0)))
+                                    data_rows.append(row)
+                                
+                                # Create series for each value column
+                                for value_key in value_keys:
+                                    series_values = [float(item.get(value_key, 0) or 0) for item in data]
+                                    series_list.append({
+                                        'name': format_column_name(value_key),
+                                        'values': series_values
+                                    })
+                                
+                                header_config["chart_data"] = {
+                                    "labels": labels,
+                                    "series": series_list
+                                }
+                        else:
+                            data_rows = [[str(first_item), "0"]]
+                            columns = ["Label", "Value"]
+                    else:
+                        data_rows = [["No data available", "0"]]
+                        columns = ["Label", "Value"]
+                    header_config["chart_type"] = "multiBar"
+                else:
+                    # Handle regular 2-column charts
+                    if isinstance(data, list) and data:
+                        first_item = data[0]
+                        if isinstance(first_item, dict):
+                            keys = list(first_item.keys())
+                            if len(keys) >= 2:
+                                key1 = keys[0]
+                                key2 = keys[-1]
+                                columns = [format_column_name(key1), format_column_name(key2)]
+                                for item in data:
+                                    name = item.get(key1, "N/A")
+                                    value = item.get(key2, 0)
+                                    data_rows.append([name, str(value)])
+                            else:
+                                key1 = keys[0]
+                                columns = [format_column_name(key1), "Value"]
+                                for item in data:
+                                    name = item.get(key1, "N/A")
+                                    data_rows.append([name, 0])
+                        else:
+                            data_rows = [[str(first_item), "0"]]
+                            columns = ["Label", "Value"]
+                    else:
+                        data_rows = [["No data available", "0"]]
+                        columns = ["Label", "Value"]
 
-                # Extract chart data from rows
-                chart_labels: List[str] = []
-                chart_values: List[float] = []
-                for row in data_rows:
-                    if len(row) >= 2:
-                        chart_labels.append(str(row[0]))
-                        try:
-                            chart_values.append(float(row[1]))
-                        except Exception:
-                            chart_values.append(0)
-                if chart_labels and chart_values:
-                    header_config["chart_data"] = {"labels": chart_labels, "values": chart_values}
+                    default_type_by_card = {
+                        "byCategory": "bar",
+                        "byStatus": "pie",
+                        "monthlyTrend": "line",
+                        "netLossAndRecovery": "bar",
+                        "topFinancialImpacts": "bar",
+                        "incidentsByEventType": "pie",
+                        "incidentsByFinancialImpact": "pie",
+                    }
+                    if chart_type not in {"bar", "line", "pie"}:
+                        chart_type = default_type_by_card.get(card_type, "bar")
+                    header_config["chart_type"] = chart_type
+
+                    # Extract chart data from rows (only for single-value charts)
+                    chart_labels: List[str] = []
+                    chart_values: List[float] = []
+                    for row in data_rows:
+                        if len(row) >= 2:
+                            chart_labels.append(str(row[0]))
+                            try:
+                                chart_values.append(float(row[1]))
+                            except Exception:
+                                chart_values.append(0)
+                    if chart_labels and chart_values:
+                        header_config["chart_data"] = {"labels": chart_labels, "values": chart_values}
+                
                 return generate_excel_report(columns, data_rows, header_config)
 
             # TABLE EXPORT

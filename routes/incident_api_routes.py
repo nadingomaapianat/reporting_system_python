@@ -156,6 +156,40 @@ async def export_incidents_pdf(
             data = await incident_service.get_incidents_with_timeframe(startDate, endDate)
         elif cardType == 'incidentsWithFinancialAndFunction':
             data = await incident_service.get_incidents_with_financial_and_function(startDate, endDate)
+        
+        # Operational Loss Metrics - Cards
+        elif cardType == 'atmTheftCount':
+            data = await incident_service.get_atm_theft_incidents(startDate, endDate)
+        elif cardType == 'avgRecognitionTime':
+            data = await incident_service.get_incidents_with_recognition_time(startDate, endDate)
+        elif cardType == 'internalFraudCount':
+            data = await incident_service.get_internal_fraud_incidents(startDate, endDate)
+        elif cardType == 'externalFraudCount':
+            data = await incident_service.get_external_fraud_incidents(startDate, endDate)
+        elif cardType == 'physicalAssetDamageCount':
+            data = await incident_service.get_physical_asset_damage_incidents(startDate, endDate)
+        elif cardType == 'peopleErrorCount':
+            data = await incident_service.get_people_error_incidents(startDate, endDate)
+        elif cardType == 'internalFraudLoss':
+            data = await incident_service.get_internal_fraud_incidents(startDate, endDate)
+        elif cardType == 'externalFraudLoss':
+            data = await incident_service.get_external_fraud_incidents(startDate, endDate)
+        elif cardType == 'physicalAssetLoss':
+            data = await incident_service.get_physical_asset_damage_incidents(startDate, endDate)
+        elif cardType == 'peopleErrorLoss':
+            data = await incident_service.get_people_error_incidents(startDate, endDate)
+        
+        # Operational Loss Metrics - Charts
+        elif cardType == 'operationalLossValue':
+            data = await incident_service.get_operational_loss_value_monthly(startDate, endDate)
+        elif cardType == 'monthlyTrendByType':
+            data = await incident_service.get_monthly_trend_by_incident_type(startDate, endDate)
+        
+        # Operational Loss Metrics - Tables
+        elif cardType == 'lossByRiskCategory':
+            data = await incident_service.get_loss_by_risk_category(startDate, endDate)
+        elif cardType == 'comprehensiveOperationalLoss':
+            data = await incident_service.get_comprehensive_operational_loss(startDate, endDate)
           
         """
         elif cardType == 'createdDeletedIncidentsPerQuarter':
@@ -341,6 +375,40 @@ async def export_incidents_excel(
             data = await incident_service.get_incidents_with_timeframe(startDate, endDate)
         elif cardType == 'incidentsWithFinancialAndFunction':
             data = await incident_service.get_incidents_with_financial_and_function(startDate, endDate)
+        
+        # Operational Loss Metrics - Cards
+        elif cardType == 'atmTheftCount':
+            data = await incident_service.get_atm_theft_incidents(startDate, endDate)
+        elif cardType == 'avgRecognitionTime':
+            data = await incident_service.get_incidents_with_recognition_time(startDate, endDate)
+        elif cardType == 'internalFraudCount':
+            data = await incident_service.get_internal_fraud_incidents(startDate, endDate)
+        elif cardType == 'externalFraudCount':
+            data = await incident_service.get_external_fraud_incidents(startDate, endDate)
+        elif cardType == 'physicalAssetDamageCount':
+            data = await incident_service.get_physical_asset_damage_incidents(startDate, endDate)
+        elif cardType == 'peopleErrorCount':
+            data = await incident_service.get_people_error_incidents(startDate, endDate)
+        elif cardType == 'internalFraudLoss':
+            data = await incident_service.get_internal_fraud_incidents(startDate, endDate)
+        elif cardType == 'externalFraudLoss':
+            data = await incident_service.get_external_fraud_incidents(startDate, endDate)
+        elif cardType == 'physicalAssetLoss':
+            data = await incident_service.get_physical_asset_damage_incidents(startDate, endDate)
+        elif cardType == 'peopleErrorLoss':
+            data = await incident_service.get_people_error_incidents(startDate, endDate)
+        
+        # Operational Loss Metrics - Charts
+        elif cardType == 'operationalLossValue':
+            data = await incident_service.get_operational_loss_value_monthly(startDate, endDate)
+        elif cardType == 'monthlyTrendByType':
+            data = await incident_service.get_monthly_trend_by_incident_type(startDate, endDate)
+        
+        # Operational Loss Metrics - Tables
+        elif cardType == 'lossByRiskCategory':
+            data = await incident_service.get_loss_by_risk_category(startDate, endDate)
+        elif cardType == 'comprehensiveOperationalLoss':
+            data = await incident_service.get_comprehensive_operational_loss(startDate, endDate)
 
        
         elif cardType == 'incidentsReduced':

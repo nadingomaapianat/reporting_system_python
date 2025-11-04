@@ -877,9 +877,11 @@ def generate_excel_report(columns, data_rows, header_config=None):
                         ax.bar(x, values, width, label=series_name, bottom=bottom, color=color)
                         bottom += np.array(values)
                     
-                    ax.set_xlabel('Month')
+                    ax.set_xlabel('Period')
                     ax.set_ylabel('Count')
-                    ax.set_title(title if title else 'Monthly KRI Assessments (Stacked)')
+                    # Use title from header_config or default based on card_type
+                    chart_title = title if title else (header_config.get('card_type') == 'monthlyTrendByType' and 'Monthly Trend Analysis by Incident Type' or 'Monthly Assessments (Stacked)')
+                    ax.set_title(chart_title)
                     ax.set_xticks(x)
                     ax.set_xticklabels(labels, rotation=45, ha='right')
                     ax.legend()

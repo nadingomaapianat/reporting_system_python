@@ -502,6 +502,368 @@ class IncidentService:
         """
         return await self.execute_query(query)
 
+    # ===== Operational Loss Metrics =====
+    
+    async def get_atm_theft_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return ATM theft incidents (last 12 months)"""
+        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            i.code,
+            i.title AS name,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            i.net_loss,
+            i.recovery_amount
+        FROM Incidents i
+        INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
+            AND sc.deletedAt IS NULL
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+            AND sc.name = N'ATM issue'
+        ORDER BY i.createdAt DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_internal_fraud_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return internal fraud incidents (last 12 months)"""
+        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            i.code,
+            i.title AS name,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            i.net_loss,
+            i.recovery_amount
+        FROM Incidents i
+        INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
+            AND ie.deletedAt IS NULL
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+            AND ie.name = N'Internal Fraud'
+        ORDER BY i.createdAt DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_external_fraud_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return external fraud incidents (last 12 months)"""
+        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            i.code,
+            i.title AS name,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            i.net_loss,
+            i.recovery_amount
+        FROM Incidents i
+        INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
+            AND ie.deletedAt IS NULL
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+            AND ie.name = N'External Fraud'
+        ORDER BY i.createdAt DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_physical_asset_damage_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return physical asset damage incidents (last 12 months)"""
+        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            i.code,
+            i.title AS name,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            i.net_loss,
+            i.recovery_amount
+        FROM Incidents i
+        INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
+            AND ie.deletedAt IS NULL
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+            AND ie.name = N'Damage to Physical Assets'
+        ORDER BY i.createdAt DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_people_error_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return people error incidents (last 12 months)"""
+        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            i.code,
+            i.title AS name,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            i.net_loss,
+            i.recovery_amount
+        FROM Incidents i
+        INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
+            AND sc.deletedAt IS NULL
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+            AND sc.name = N'Human Mistake'
+        ORDER BY i.createdAt DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_incidents_with_recognition_time(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return incidents with recognition time calculation (last 12 months)"""
+        date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND i.occurrence_date BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND i.occurrence_date >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND i.occurrence_date <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            i.code,
+            i.title AS name,
+            FORMAT(i.occurrence_date, 'yyyy-MM-dd') as occurrence_date,
+            FORMAT(i.reported_date, 'yyyy-MM-dd') as reported_date,
+            DATEDIFF(DAY, i.occurrence_date, i.reported_date) AS recognition_days,
+            CAST(DATEDIFF(DAY, i.occurrence_date, i.reported_date) AS FLOAT) / 30.44 AS recognition_months
+        FROM Incidents i
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+            AND i.occurrence_date IS NOT NULL
+            AND i.reported_date IS NOT NULL
+            AND i.reported_date >= i.occurrence_date
+        ORDER BY recognition_months DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_operational_loss_value_monthly(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return operational loss value by month (last 12 months)"""
+        date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND i.occurrence_date BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND i.occurrence_date >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND i.occurrence_date <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            YEAR(i.occurrence_date) AS year,
+            MONTH(i.occurrence_date) AS month,
+            CAST(SUM(i.net_loss) AS DECIMAL(18,2)) AS totalLossValue,
+            COUNT(*) AS incidentCount
+        FROM Incidents i
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+            AND i.net_loss IS NOT NULL
+        GROUP BY YEAR(i.occurrence_date), MONTH(i.occurrence_date)
+        ORDER BY year, month
+        """
+        return await self.execute_query(query)
+
+    async def get_monthly_trend_by_incident_type(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return monthly trend analysis by incident type (last 12 months)"""
+        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            FORMAT(COALESCE(i.occurrence_date, i.createdAt), 'yyyy-MM') AS Period,
+            SUM(CASE WHEN ie.name = N'Internal Fraud' THEN 1 ELSE 0 END) AS InternalFrauds,
+            SUM(CASE WHEN ie.name = N'External Fraud' THEN 1 ELSE 0 END) AS ExternalFrauds,
+            SUM(CASE WHEN ie.name = N'Damage to Physical Assets' THEN 1 ELSE 0 END) AS PhysicalAssetDamages,
+            SUM(CASE WHEN sc.name = N'Human Mistake' THEN 1 ELSE 0 END) AS HumanErrors,
+            SUM(CASE WHEN sc.name = N'ATM issue' THEN 1 ELSE 0 END) AS ATMIssues,
+            SUM(CASE WHEN sc.name IN (N'System Error', N'Prime System Issue', N'Transaction system error (TRX BUG)') THEN 1 ELSE 0 END) AS SystemErrors
+        FROM Incidents i
+        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id
+            AND ie.deletedAt IS NULL
+        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
+            AND sc.deletedAt IS NULL
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+        GROUP BY FORMAT(COALESCE(i.occurrence_date, i.createdAt), 'yyyy-MM')
+        ORDER BY Period
+        """
+        result = await self.execute_query(query)
+        # Transform to match Node.js format (lowercase/camelCase)
+        return [
+            {
+                'period': row.get('Period', ''),
+                'internalFrauds': row.get('InternalFrauds', 0) or 0,
+                'externalFrauds': row.get('ExternalFrauds', 0) or 0,
+                'physicalAssetDamages': row.get('PhysicalAssetDamages', 0) or 0,
+                'humanErrors': row.get('HumanErrors', 0) or 0,
+                'atmIssues': row.get('ATMIssues', 0) or 0,
+                'systemErrors': row.get('SystemErrors', 0) or 0
+            }
+            for row in result
+        ]
+
+    async def get_loss_by_risk_category(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return loss analysis by risk category (last 12 months)"""
+        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            c.name AS riskCategory,
+            COUNT(*) AS incidentCount,
+            CAST(SUM(ISNULL(i.net_loss, 0)) AS DECIMAL(18,2)) AS totalLoss,
+            CAST(AVG(NULLIF(i.net_loss, 0)) AS DECIMAL(18,2)) AS averageLoss
+        FROM Incidents i
+        INNER JOIN Categories c ON i.category_id = c.id
+            AND c.deletedAt IS NULL
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+            AND i.net_loss IS NOT NULL
+        GROUP BY c.name
+        ORDER BY totalLoss DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_comprehensive_operational_loss(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return comprehensive operational loss dashboard metrics (last 12 months)"""
+        date_filter = "COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+        elif end_date:
+            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            'Total Operational Loss Incidents' as metric,
+            COUNT(*) as count,
+            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+        FROM Incidents i
+        WHERE {date_filter}
+            AND i.isDeleted = 0
+            AND i.deletedAt IS NULL
+
+        UNION ALL
+
+        SELECT 
+            'ATM Issues' as metric,
+            COUNT(*) as count,
+            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+        FROM Incidents i
+        INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
+            AND sc.deletedAt IS NULL
+        WHERE {date_filter}
+            AND i.isDeleted = 0
+            AND i.deletedAt IS NULL
+            AND sc.name = N'ATM issue'
+
+        UNION ALL
+
+        SELECT 
+            'Internal Fraud' as metric,
+            COUNT(*) as count,
+            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+        FROM Incidents i
+        INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
+            AND ie.deletedAt IS NULL
+        WHERE {date_filter}
+            AND i.isDeleted = 0
+            AND i.deletedAt IS NULL
+            AND ie.name = N'Internal Fraud'
+
+        UNION ALL
+
+        SELECT 
+            'External Fraud' as metric,
+            COUNT(*) as count,
+            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+        FROM Incidents i
+        INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
+            AND ie.deletedAt IS NULL
+        WHERE {date_filter}
+            AND i.isDeleted = 0
+            AND i.deletedAt IS NULL
+            AND ie.name = N'External Fraud'
+
+        UNION ALL
+
+        SELECT 
+            'Human Mistakes' as metric,
+            COUNT(*) as count,
+            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+        FROM Incidents i
+        INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
+            AND sc.deletedAt IS NULL
+        WHERE {date_filter}
+            AND i.isDeleted = 0
+            AND i.deletedAt IS NULL
+            AND sc.name = N'Human Mistake'
+
+        UNION ALL
+
+        SELECT 
+            'System Errors' as metric,
+            COUNT(*) as count,
+            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+        FROM Incidents i
+        INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
+            AND sc.deletedAt IS NULL
+        WHERE {date_filter}
+            AND i.isDeleted = 0
+            AND i.deletedAt IS NULL
+            AND sc.name IN (N'System Error', N'Prime System Issue', N'Transaction system error (TRX BUG)')
+        """
+        return await self.execute_query(query)
+
     async def get_incidents_with_financial_and_function(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
         """Return incidents with financial impact and function details (matches grc-incidents.service.ts)"""
         date_filter = ""
@@ -527,5 +889,367 @@ class IncidentService:
         WHERE i.isDeleted = 0 
           AND i.deletedAt IS NULL
           {date_filter}
+        """
+        return await self.execute_query(query)
+
+    # ===== Operational Loss Metrics =====
+    
+    async def get_atm_theft_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return ATM theft incidents (last 12 months)"""
+        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            i.code,
+            i.title AS name,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            i.net_loss,
+            i.recovery_amount
+        FROM Incidents i
+        INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
+            AND sc.deletedAt IS NULL
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+            AND sc.name = N'ATM issue'
+        ORDER BY i.createdAt DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_internal_fraud_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return internal fraud incidents (last 12 months)"""
+        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            i.code,
+            i.title AS name,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            i.net_loss,
+            i.recovery_amount
+        FROM Incidents i
+        INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
+            AND ie.deletedAt IS NULL
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+            AND ie.name = N'Internal Fraud'
+        ORDER BY i.createdAt DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_external_fraud_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return external fraud incidents (last 12 months)"""
+        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            i.code,
+            i.title AS name,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            i.net_loss,
+            i.recovery_amount
+        FROM Incidents i
+        INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
+            AND ie.deletedAt IS NULL
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+            AND ie.name = N'External Fraud'
+        ORDER BY i.createdAt DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_physical_asset_damage_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return physical asset damage incidents (last 12 months)"""
+        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            i.code,
+            i.title AS name,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            i.net_loss,
+            i.recovery_amount
+        FROM Incidents i
+        INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
+            AND ie.deletedAt IS NULL
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+            AND ie.name = N'Damage to Physical Assets'
+        ORDER BY i.createdAt DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_people_error_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return people error incidents (last 12 months)"""
+        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            i.code,
+            i.title AS name,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            i.net_loss,
+            i.recovery_amount
+        FROM Incidents i
+        INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
+            AND sc.deletedAt IS NULL
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+            AND sc.name = N'Human Mistake'
+        ORDER BY i.createdAt DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_incidents_with_recognition_time(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return incidents with recognition time calculation (last 12 months)"""
+        date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND i.occurrence_date BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND i.occurrence_date >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND i.occurrence_date <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            i.code,
+            i.title AS name,
+            FORMAT(i.occurrence_date, 'yyyy-MM-dd') as occurrence_date,
+            FORMAT(i.reported_date, 'yyyy-MM-dd') as reported_date,
+            DATEDIFF(DAY, i.occurrence_date, i.reported_date) AS recognition_days,
+            CAST(DATEDIFF(DAY, i.occurrence_date, i.reported_date) AS FLOAT) / 30.44 AS recognition_months
+        FROM Incidents i
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+            AND i.occurrence_date IS NOT NULL
+            AND i.reported_date IS NOT NULL
+            AND i.reported_date >= i.occurrence_date
+        ORDER BY recognition_months DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_operational_loss_value_monthly(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return operational loss value by month (last 12 months)"""
+        date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND i.occurrence_date BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND i.occurrence_date >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND i.occurrence_date <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            YEAR(i.occurrence_date) AS year,
+            MONTH(i.occurrence_date) AS month,
+            CAST(SUM(i.net_loss) AS DECIMAL(18,2)) AS totalLossValue,
+            COUNT(*) AS incidentCount
+        FROM Incidents i
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+            AND i.net_loss IS NOT NULL
+        GROUP BY YEAR(i.occurrence_date), MONTH(i.occurrence_date)
+        ORDER BY year, month
+        """
+        return await self.execute_query(query)
+
+    async def get_monthly_trend_by_incident_type(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return monthly trend analysis by incident type (last 12 months)"""
+        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            FORMAT(COALESCE(i.occurrence_date, i.createdAt), 'yyyy-MM') AS Period,
+            SUM(CASE WHEN ie.name = N'Internal Fraud' THEN 1 ELSE 0 END) AS InternalFrauds,
+            SUM(CASE WHEN ie.name = N'External Fraud' THEN 1 ELSE 0 END) AS ExternalFrauds,
+            SUM(CASE WHEN ie.name = N'Damage to Physical Assets' THEN 1 ELSE 0 END) AS PhysicalAssetDamages,
+            SUM(CASE WHEN sc.name = N'Human Mistake' THEN 1 ELSE 0 END) AS HumanErrors,
+            SUM(CASE WHEN sc.name = N'ATM issue' THEN 1 ELSE 0 END) AS ATMIssues,
+            SUM(CASE WHEN sc.name IN (N'System Error', N'Prime System Issue', N'Transaction system error (TRX BUG)') THEN 1 ELSE 0 END) AS SystemErrors
+        FROM Incidents i
+        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id
+            AND ie.deletedAt IS NULL
+        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
+            AND sc.deletedAt IS NULL
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+        GROUP BY FORMAT(COALESCE(i.occurrence_date, i.createdAt), 'yyyy-MM')
+        ORDER BY Period
+        """
+        result = await self.execute_query(query)
+        # Transform to match Node.js format (lowercase/camelCase)
+        return [
+            {
+                'period': row.get('Period', ''),
+                'internalFrauds': row.get('InternalFrauds', 0) or 0,
+                'externalFrauds': row.get('ExternalFrauds', 0) or 0,
+                'physicalAssetDamages': row.get('PhysicalAssetDamages', 0) or 0,
+                'humanErrors': row.get('HumanErrors', 0) or 0,
+                'atmIssues': row.get('ATMIssues', 0) or 0,
+                'systemErrors': row.get('SystemErrors', 0) or 0
+            }
+            for row in result
+        ]
+
+    async def get_loss_by_risk_category(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return loss analysis by risk category (last 12 months)"""
+        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            c.name AS riskCategory,
+            COUNT(*) AS incidentCount,
+            CAST(SUM(ISNULL(i.net_loss, 0)) AS DECIMAL(18,2)) AS totalLoss,
+            CAST(AVG(NULLIF(i.net_loss, 0)) AS DECIMAL(18,2)) AS averageLoss
+        FROM Incidents i
+        INNER JOIN Categories c ON i.category_id = c.id
+            AND c.deletedAt IS NULL
+        WHERE i.isDeleted = 0 
+            AND i.deletedAt IS NULL
+            {date_filter}
+            AND i.net_loss IS NOT NULL
+        GROUP BY c.name
+        ORDER BY totalLoss DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_comprehensive_operational_loss(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return comprehensive operational loss dashboard metrics (last 12 months)"""
+        date_filter = "COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
+        if start_date and end_date:
+            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+        elif end_date:
+            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        query = f"""
+        SELECT 
+            'Total Operational Loss Incidents' as metric,
+            COUNT(*) as count,
+            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+        FROM Incidents i
+        WHERE {date_filter}
+            AND i.isDeleted = 0
+            AND i.deletedAt IS NULL
+
+        UNION ALL
+
+        SELECT 
+            'ATM Issues' as metric,
+            COUNT(*) as count,
+            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+        FROM Incidents i
+        INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
+            AND sc.deletedAt IS NULL
+        WHERE {date_filter}
+            AND i.isDeleted = 0
+            AND i.deletedAt IS NULL
+            AND sc.name = N'ATM issue'
+
+        UNION ALL
+
+        SELECT 
+            'Internal Fraud' as metric,
+            COUNT(*) as count,
+            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+        FROM Incidents i
+        INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
+            AND ie.deletedAt IS NULL
+        WHERE {date_filter}
+            AND i.isDeleted = 0
+            AND i.deletedAt IS NULL
+            AND ie.name = N'Internal Fraud'
+
+        UNION ALL
+
+        SELECT 
+            'External Fraud' as metric,
+            COUNT(*) as count,
+            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+        FROM Incidents i
+        INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
+            AND ie.deletedAt IS NULL
+        WHERE {date_filter}
+            AND i.isDeleted = 0
+            AND i.deletedAt IS NULL
+            AND ie.name = N'External Fraud'
+
+        UNION ALL
+
+        SELECT 
+            'Human Mistakes' as metric,
+            COUNT(*) as count,
+            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+        FROM Incidents i
+        INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
+            AND sc.deletedAt IS NULL
+        WHERE {date_filter}
+            AND i.isDeleted = 0
+            AND i.deletedAt IS NULL
+            AND sc.name = N'Human Mistake'
+
+        UNION ALL
+
+        SELECT 
+            'System Errors' as metric,
+            COUNT(*) as count,
+            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+        FROM Incidents i
+        INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
+            AND sc.deletedAt IS NULL
+        WHERE {date_filter}
+            AND i.isDeleted = 0
+            AND i.deletedAt IS NULL
+            AND sc.name IN (N'System Error', N'Prime System Issue', N'Transaction system error (TRX BUG)')
         """
         return await self.execute_query(query)
