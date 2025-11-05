@@ -14,6 +14,7 @@ from pathlib import Path
 # ReportLab imports
 from reportlab.lib.pagesizes import A4, letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage, PageBreak
+from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import inch
@@ -29,35 +30,47 @@ try:
 except Exception:
     ARABIC_AVAILABLE = False
 
-# Register Arabic font
+"""Font registration and discovery for Arabic-capable fonts.
+Prefers bundled fonts, then common Linux and Windows locations.
+"""
 ARABIC_FONT_NAME = None
 if ARABIC_AVAILABLE:
     try:
-        # Try bundled fonts first
         fonts_dir = Path(__file__).parent / 'fonts'
         preferred = [
             fonts_dir / 'NotoNaskhArabic-Regular.ttf',
             fonts_dir / 'Amiri-Regular.ttf',
             fonts_dir / 'Tahoma.ttf',
         ]
-        
+
         candidates = []
         for p in preferred:
             if p.exists():
                 candidates.append(p)
-        
+
+        # Include any other bundled TTFs
         if fonts_dir.exists():
             candidates.extend([p for p in fonts_dir.glob('*.ttf') if p not in candidates])
-        
+
+        # Common Linux font paths
+        linux_font_paths = [
+            Path('/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf'),
+            Path('/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf'),
+            Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),  # has Arabic glyphs
+            Path('/usr/local/share/fonts/NotoNaskhArabic-Regular.ttf'),
+        ]
+        candidates.extend([p for p in linux_font_paths if p.exists()])
+
         # Windows system fonts as fallback
         windows_fonts = Path('C:/Windows/Fonts')
         if windows_fonts.exists():
             candidates.extend([
                 windows_fonts / 'tahoma.ttf',
+                windows_fonts / 'TAHOMA.TTF',
                 windows_fonts / 'segoeui.ttf',
                 windows_fonts / 'arial.ttf',
             ])
-        
+
         for fpath in candidates:
             try:
                 pdfmetrics.registerFont(TTFont('ArabicMain', str(fpath)))
@@ -68,20 +81,25 @@ if ARABIC_AVAILABLE:
     except Exception:
         ARABIC_FONT_NAME = None
 
-# Fallback Tahoma registration for Windows
+# Final fallback: attempt to download Noto Naskh Arabic if nothing found (no extra deps)
 try:
-    if not ARABIC_FONT_NAME:
-        tahoma_paths = [
-            'C:/Windows/Fonts/tahoma.ttf',
-            'C:/Windows/Fonts/TAHOMA.TTF',
-            'C:/Windows/Fonts/Tahoma.ttf',
-        ]
-        for path in tahoma_paths:
-            if os.path.exists(path):
-                pdfmetrics.registerFont(TTFont('Tahoma', path))
-                ARABIC_FONT_NAME = 'Tahoma'
-                ARABIC_AVAILABLE = True
-                break
+    if ARABIC_AVAILABLE and not ARABIC_FONT_NAME:
+        fonts_dir = Path(__file__).parent / 'fonts'
+        fonts_dir.mkdir(parents=True, exist_ok=True)
+        target = fonts_dir / 'NotoNaskhArabic-Regular.ttf'
+        if not target.exists():
+            try:
+                import urllib.request
+                url = 'https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoNaskhArabic/NotoNaskhArabic-Regular.ttf'
+                urllib.request.urlretrieve(url, str(target))
+            except Exception:
+                target = None
+        if target and target.exists():
+            try:
+                pdfmetrics.registerFont(TTFont('ArabicMain', str(target)))
+                ARABIC_FONT_NAME = 'ArabicMain'
+            except Exception:
+                pass
 except Exception:
     pass
 
@@ -206,13 +224,21 @@ def generate_pdf_report(
     buffer = BytesIO()
     page_size = A4 if len(columns) <= 6 else letter
     
-    doc = SimpleDocTemplate(
+    # Use BaseDocTemplate so we can draw watermark at page end (over content)
+    doc = BaseDocTemplate(
         buffer,
         pagesize=page_size,
         rightMargin=right_margin,
         leftMargin=left_margin,
         topMargin=top_margin,
         bottomMargin=bottom_margin
+    )
+    frame = Frame(
+        doc.leftMargin,
+        doc.bottomMargin,
+        doc.width,
+        doc.height,
+        id='normal'
     )
     
     styles = getSampleStyleSheet()
@@ -596,34 +622,33 @@ def generate_pdf_report(
         )
         story.append(Paragraph(" | ".join(footer_items), footer_style))
     
-    # WATERMARK (if enabled)
-    watermark_callback = None
-    if header_config.get('watermarkEnabled', False):
-        def draw_watermark(canv, _doc):
-            try:
-                wm_text = shape_text_for_arabic(header_config.get('watermarkText', 'CONFIDENTIAL'))
-                canv.saveState()
-                opacity = max(0.05, min(0.3, header_config.get('watermarkOpacity', 10) / 100.0))
-                gray = 0.6 + (0.4 * (1 - opacity))
-                canv.setFillColorRGB(gray, gray, gray)
-                font_name = ARABIC_FONT_NAME if ARABIC_FONT_NAME else 'Helvetica'
-                canv.setFont(font_name, 48)
-                page_width, page_height = page_size
-                canv.translate(page_width / 2.0, page_height / 2.0)
-                if header_config.get('watermarkDiagonal', True):
-                    canv.rotate(45)
-                canv.drawCentredString(0, 0, wm_text)
-                canv.restoreState()
-            except:
-                pass
-        
-        watermark_callback = draw_watermark
-    
+    # WATERMARK (if enabled) — draw after content to overlay tables/charts
+    def _on_page_end(canv, _doc):
+        if not header_config.get('watermarkEnabled', False):
+            return
+        try:
+            wm_text = shape_text_for_arabic(header_config.get('watermarkText', 'CONFIDENTIAL'))
+            canv.saveState()
+            opacity = max(0.05, min(0.3, header_config.get('watermarkOpacity', 10) / 100.0))
+            gray = 0.6 + (0.4 * (1 - opacity))
+            canv.setFillColorRGB(gray, gray, gray)
+            font_name = ARABIC_FONT_NAME if ARABIC_FONT_NAME else 'Helvetica'
+            canv.setFont(font_name, 48)
+            page_width, page_height = page_size
+            canv.translate(page_width / 2.0, page_height / 2.0)
+            if header_config.get('watermarkDiagonal', True):
+                canv.rotate(45)
+            canv.drawCentredString(0, 0, wm_text)
+            canv.restoreState()
+        except Exception:
+            pass
+
+    doc.addPageTemplates([
+        PageTemplate(id='with-watermark', frames=[frame], onPageEnd=_on_page_end)
+    ])
+
     # Build PDF
-    if watermark_callback:
-        doc.build(story, onFirstPage=watermark_callback, onLaterPages=watermark_callback)
-    else:
-        doc.build(story)
+    doc.build(story)
     
     buffer.seek(0)
     return buffer.getvalue()
