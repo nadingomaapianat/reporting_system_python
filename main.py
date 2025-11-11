@@ -62,7 +62,7 @@ def create_app() -> FastAPI:
 
     # CORS
     allowed_origins = [
-        "https://reporting-system-frontend.pianat.ai",
+        "http://localhost:3000",
         "http://127.0.0.1:3000",
         os.getenv("FRONTEND_ORIGIN", "*")
     ]

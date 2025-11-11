@@ -34,52 +34,52 @@ except Exception:
 Prefers bundled fonts, then common Linux and Windows locations.
 """
 ARABIC_FONT_NAME = None
-if ARABIC_AVAILABLE:
-    try:
-        fonts_dir = Path(__file__).parent / 'fonts'
-        preferred = [
-            fonts_dir / 'NotoNaskhArabic-Regular.ttf',
-            fonts_dir / 'Amiri-Regular.ttf',
-            fonts_dir / 'Tahoma.ttf',
-        ]
+# Always attempt to register an Arabic-capable font, even if shaping libs are missing.
+try:
+    fonts_dir = Path(__file__).parent / 'fonts'
+    preferred = [
+        fonts_dir / 'NotoNaskhArabic-Regular.ttf',
+        fonts_dir / 'Amiri-Regular.ttf',
+        fonts_dir / 'Tahoma.ttf',
+    ]
 
-        candidates = []
-        for p in preferred:
-            if p.exists():
-                candidates.append(p)
+    candidates = []
+    for p in preferred:
+        if p.exists():
+            candidates.append(p)
 
-        # Include any other bundled TTFs
-        if fonts_dir.exists():
-            candidates.extend([p for p in fonts_dir.glob('*.ttf') if p not in candidates])
+    # Include any other bundled TTFs
+    if fonts_dir.exists():
+        candidates.extend([p for p in fonts_dir.glob('*.ttf') if p not in candidates])
 
-        # Common Linux font paths
-        linux_font_paths = [
-            Path('/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf'),
-            Path('/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf'),
-            Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),  # has Arabic glyphs
-            Path('/usr/local/share/fonts/NotoNaskhArabic-Regular.ttf'),
-        ]
-        candidates.extend([p for p in linux_font_paths if p.exists()])
+    # Common Linux font paths
+    linux_font_paths = [
+        Path('/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf'),
+        Path('/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf'),
+        Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),  # has Arabic glyphs
+        Path('/usr/local/share/fonts/NotoNaskhArabic-Regular.ttf'),
+    ]
+    candidates.extend([p for p in linux_font_paths if p.exists()])
 
-        # Windows system fonts as fallback
-        windows_fonts = Path('C:/Windows/Fonts')
-        if windows_fonts.exists():
-            candidates.extend([
-                windows_fonts / 'tahoma.ttf',
-                windows_fonts / 'TAHOMA.TTF',
-                windows_fonts / 'segoeui.ttf',
-                windows_fonts / 'arial.ttf',
-            ])
+    # Windows system fonts as fallback
+    windows_fonts = Path('C:/Windows/Fonts')
+    if windows_fonts.exists():
+        candidates.extend([
+            windows_fonts / 'tahoma.ttf',
+            windows_fonts / 'TAHOMA.TTF',
+            windows_fonts / 'segoeui.ttf',
+            windows_fonts / 'arial.ttf',
+        ])
 
-        for fpath in candidates:
-            try:
-                pdfmetrics.registerFont(TTFont('ArabicMain', str(fpath)))
-                ARABIC_FONT_NAME = 'ArabicMain'
-                break
-            except Exception:
-                continue
-    except Exception:
-        ARABIC_FONT_NAME = None
+    for fpath in candidates:
+        try:
+            pdfmetrics.registerFont(TTFont('ArabicMain', str(fpath)))
+            ARABIC_FONT_NAME = 'ArabicMain'
+            break
+        except Exception:
+            continue
+except Exception:
+    ARABIC_FONT_NAME = None
 
 # Final fallback: attempt to download Noto Naskh Arabic if nothing found (no extra deps)
 try:

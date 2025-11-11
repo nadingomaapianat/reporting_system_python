@@ -109,9 +109,9 @@ class IncidentService:
           i.title,
           CASE 
             WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-            WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' THEN 'Pending Checker'
-            WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'approved' THEN 'Pending Reviewer'
-            WHEN ISNULL(i.reviewerStatus, '') = 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
+            WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
+            WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
+            WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
             WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
             ELSE 'Other'
           END as status,
@@ -143,12 +143,12 @@ class IncidentService:
                 CASE 
                     -- 1) Pending preparer: preparerStatus is anything other than 'sent'
                     WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
-                    -- 2) Pending checker: checker not approved AND preparer already sent
-                    WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' THEN 'pendingChecker'
-                    -- 3) Pending reviewer: reviewer not approved AND checker approved
-                    WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'approved' THEN 'pendingReviewer'
-                    -- 4) Pending acceptance: acceptance not approved AND reviewer approved
-                    WHEN ISNULL(i.reviewerStatus, '') = 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'pendingAcceptance'
+                    -- 2) Pending checker: preparer sent AND checker not approved AND acceptance not approved
+                    WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'pendingChecker'
+                    -- 3) Pending reviewer: checker approved AND reviewer not approved AND acceptance not approved
+                    WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'pendingReviewer'
+                    -- 4) Pending acceptance: reviewer approved AND acceptance not approved
+                    WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'pendingAcceptance'
                     -- 5) Fully approved
                     WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
                     ELSE 'Other'
@@ -181,16 +181,16 @@ class IncidentService:
 
         query = f"""
         SELECT 
-            ISNULL(ic.name, 'Unknown') as category_name,
+            ISNULL(c.name, 'Unknown') as category_name,
             COUNT(i.id) as count
         FROM Incidents i
-        LEFT JOIN IncidentCategories ic ON i.category_id = ic.id
-            
-            AND ic.deletedAt IS NULL
+        LEFT JOIN Categories c ON i.category_id = c.id
+            AND c.isDeleted = 0
+            AND c.deletedAt IS NULL
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
-        GROUP BY ISNULL(ic.name, 'Unknown')
+        GROUP BY ISNULL(c.name, 'Unknown')
         ORDER BY COUNT(i.id) DESC
         """
         write_debug(f"[INCIDENTS BY CATEGORY] query: {query}")
@@ -212,21 +212,36 @@ class IncidentService:
                 i.id,
                 CASE 
                     WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-                    WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' THEN 'Pending Checker'
-                    WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'approved' THEN 'Pending Reviewer'
-                    WHEN ISNULL(i.reviewerStatus, '') = 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
+                    WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
+                    WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
+                    WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
                     WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
                     ELSE 'Other'
                 END AS status
             FROM Incidents i
             WHERE i.isDeleted = 0 AND i.deletedAt IS NULL {date_filter}
+        ),
+        StatusCounts AS (
+            SELECT 
+                status as status_name,
+                COUNT(*) as count
+            FROM IncidentStatus
+            GROUP BY status
+        ),
+        AllStatuses AS (
+            SELECT 'Pending Preparer' AS status_name
+            UNION ALL SELECT 'Pending Checker'
+            UNION ALL SELECT 'Pending Reviewer'
+            UNION ALL SELECT 'Pending Acceptance'
+            UNION ALL SELECT 'Approved'
+            UNION ALL SELECT 'Other'
         )
         SELECT 
-            status as status_name,
-            COUNT(*) as count
-        FROM IncidentStatus
-        GROUP BY status
-        ORDER BY count DESC
+            a.status_name,
+            ISNULL(s.count, 0) as count
+        FROM AllStatuses a
+        LEFT JOIN StatusCounts s ON a.status_name = s.status_name
+        ORDER BY s.count DESC, a.status_name
         """
         return await self.execute_query(query)
  
@@ -486,9 +501,9 @@ class IncidentService:
           (ISNULL(i.total_loss, 0) + ISNULL(i.recovery_amount, 0)) AS grossAmount, 
           CASE 
             WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-            WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' THEN 'Pending Checker'
-            WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'approved' THEN 'Pending Reviewer'
-            WHEN ISNULL(i.reviewerStatus, '') = 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
+            WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
+            WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
+            WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
             WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
             ELSE 'Other'
           END AS status 

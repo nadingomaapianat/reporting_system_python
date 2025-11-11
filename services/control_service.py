@@ -107,17 +107,7 @@ class ControlService:
 
    
     async def get_pending_controls(self, role: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Get pending controls for a given role: preparer/checker/reviewer/acceptance"""
-        status_field_map = {
-            'preparer': 'preparerStatus',
-            'checker': 'checkerStatus',
-            'reviewer': 'reviewerStatus',
-            'acceptance': 'acceptanceStatus',
-        }
-        field = status_field_map.get(role)
-        if not field:
-            return []
-
+        """Get pending controls for a given role: preparer/checker/reviewer/acceptance (using standardized sequential approval logic)"""
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -126,22 +116,30 @@ class ControlService:
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
 
-        # For preparer, pending means not 'sent' (including NULLs);
-        # for others, pending means not 'approved' (including NULLs)
+        # Use standardized staged workflow pattern matching Node.js base-dashboard.service.ts
         if role == 'preparer':
-            # Match Node: preparer pending means not 'sent' (exclude NULLs)
-            status_condition = "c.preparerStatus <> 'sent' OR c.preparerStatus IS NULL"
+            where_clause = "(ISNULL(c.preparerStatus, '') <> 'sent')"
+            status_field = 'preparerStatus'
+        elif role == 'checker':
+            where_clause = "(ISNULL(c.preparerStatus, '') = 'sent' AND ISNULL(c.checkerStatus, '') <> 'approved' AND ISNULL(c.acceptanceStatus, '') <> 'approved')"
+            status_field = 'checkerStatus'
+        elif role == 'reviewer':
+            where_clause = "(ISNULL(c.checkerStatus, '') = 'approved' AND ISNULL(c.reviewerStatus, '') <> 'sent' AND ISNULL(c.acceptanceStatus, '') <> 'approved')"
+            status_field = 'reviewerStatus'
+        elif role == 'acceptance':
+            where_clause = "(ISNULL(c.reviewerStatus, '') = 'sent' AND ISNULL(c.acceptanceStatus, '') <> 'approved')"
+            status_field = 'acceptanceStatus'
         else:
-            status_condition = f"(c.{field} <> 'approved' OR c.{field} IS NULL)"
+            return []
 
         query = f"""
         SELECT 
             c.code as control_code,
             c.name as control_name,
-            c.{field} as status
+            c.{status_field} as status
         FROM dbo.[Controls] c
         WHERE c.isDeleted = 0 AND c.deletedAt IS NULL {date_filter}
-          AND {status_condition}
+          AND {where_clause}
         ORDER BY c.createdAt DESC, c.name
         """
         write_debug(f"SQL Query: {query}")
@@ -192,9 +190,18 @@ class ControlService:
         
         status_column = status_column_map.get(status_type, 'preparerStatus')
         
-        # Use the exact same SQL query as Node.js frontend but return data instead of count
-        # Preparer pending means not 'sent'; others mean not 'approved'
-        not_value = "sent" if status_type == 'preparer' else 'approved'
+        # Use standardized staged workflow pattern matching Node.js base-dashboard.service.ts
+        if status_type == 'preparer':
+            where_clause = "(ISNULL(t.preparerStatus, '') <> 'sent')"
+        elif status_type == 'checker':
+            where_clause = "(ISNULL(t.preparerStatus, '') = 'sent' AND ISNULL(t.checkerStatus, '') <> 'approved' AND ISNULL(t.acceptanceStatus, '') <> 'approved')"
+        elif status_type == 'reviewer':
+            where_clause = "(ISNULL(t.checkerStatus, '') = 'approved' AND ISNULL(t.reviewerStatus, '') <> 'sent' AND ISNULL(t.acceptanceStatus, '') <> 'approved')"
+        elif status_type == 'acceptance':
+            where_clause = "(ISNULL(t.reviewerStatus, '') = 'sent' AND ISNULL(t.acceptanceStatus, '') <> 'approved')"
+        else:
+            return []
+        
         query = f"""
         SELECT 
             t.id,
@@ -205,12 +212,13 @@ class ControlService:
         FROM {self.get_fully_qualified_table_name('ControlDesignTests')} t
         INNER JOIN {self.get_fully_qualified_table_name('Controls')} c ON c.id = t.control_id
         INNER JOIN {self.get_fully_qualified_table_name('Functions')} f ON t.function_id = f.id
-        WHERE (t.{status_column} <> '{not_value}' OR t.{status_column} IS NULL) 
-        AND t.function_id IS NOT NULL 
-        AND c.isDeleted = 0
-        AND c.deletedAt IS NULL
+        WHERE {where_clause}
+          AND t.function_id IS NOT NULL 
+          AND c.isDeleted = 0
+          AND c.deletedAt IS NULL
+          AND t.deletedAt IS NULL
         {date_filter}
-        ORDER BY c.code
+        ORDER BY c.createdAt DESC, c.name
         """
         return await self.execute_query(query)
 
@@ -752,16 +760,23 @@ class ControlService:
         
         query = f"""
         SELECT 
-            c.code AS [Code],
             c.name AS [Control Name],
-            f.name AS [Business Unit],
+            c.createdAt AS [Created At],
+            c.id AS [Control ID],
+            c.code AS [Code],
             t.preparerStatus AS [Preparer Status],
             t.checkerStatus AS [Checker Status],
             t.reviewerStatus AS [Reviewer Status],
-            t.acceptanceStatus AS [Acceptance Status]
-           
-           
-           
+            t.acceptanceStatus AS [Acceptance Status],
+            f.name AS [Business Unit],
+            CASE 
+              WHEN ISNULL(t.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
+              WHEN ISNULL(t.preparerStatus, '') = 'sent' AND ISNULL(t.checkerStatus, '') <> 'approved' AND ISNULL(t.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
+              WHEN ISNULL(t.checkerStatus, '') = 'approved' AND ISNULL(t.reviewerStatus, '') <> 'sent' AND ISNULL(t.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
+              WHEN ISNULL(t.reviewerStatus, '') = 'sent' AND ISNULL(t.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
+              WHEN ISNULL(t.acceptanceStatus, '') = 'approved' THEN 'Approved'
+              ELSE 'Other'
+            END AS [Current Status]
         FROM {self.get_fully_qualified_table_name('ControlDesignTests')} AS t
         INNER JOIN {self.get_fully_qualified_table_name('Controls')} AS c ON t.control_id = c.id
         INNER JOIN {self.get_fully_qualified_table_name('Functions')} AS f ON t.function_id = f.id

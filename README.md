@@ -105,13 +105,13 @@ All export endpoints support:
 
 ```bash
 # Export all risks as PDF
-curl "https://reporting-system-python.pianat.ai/api/grc/risks/export-pdf"
+curl "http://localhost:8000/api/grc/risks/export-pdf"
 
 # Export specific risk card as Excel
-curl "https://reporting-system-python.pianat.ai/api/grc/risks/export-excel?cardType=totalRisks&onlyCard=true"
+curl "http://localhost:8000/api/grc/risks/export-excel?cardType=totalRisks&onlyCard=true"
 
 # Export with date range
-curl "https://reporting-system-python.pianat.ai/api/grc/controls/export-pdf?startDate=2024-01-01&endDate=2024-12-31"
+curl "http://localhost:8000/api/grc/controls/export-pdf?startDate=2024-01-01&endDate=2024-12-31"
 ```
 
 ## 🔧 Configuration
@@ -132,8 +132,8 @@ DATABASE_CONFIG = {
 ### API Configuration
 ```python
 API_CONFIG = {
-    'node_api_url': 'https://reporting-system-backend.pianat.ai',
-    'python_api_url': 'https://reporting-system-python.pianat.ai',
+    'node_api_url': 'http://localhost:3002',
+    'python_api_url': 'http://localhost:8000',
     'timeout': 30
 }
 ```

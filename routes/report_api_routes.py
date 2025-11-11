@@ -17,7 +17,17 @@ from services.enhanced_bank_check_service import EnhancedBankCheckService
 DashboardActivityService = None  # type: ignore
 from utils.export_utils import get_default_header_config
 from models import ExportRequest, ExportResponse
-from routes.route_utils import write_debug, parse_header_config, merge_header_config, convert_to_boolean
+from routes.route_utils import (
+    write_debug, 
+    parse_header_config, 
+    merge_header_config, 
+    convert_to_boolean, 
+    save_and_log_export,
+    build_dynamic_sql_query,
+    generate_excel_report,
+    generate_word_report,
+    generate_pdf_report
+)
 
 # Initialize services
 api_service = APIService()
@@ -322,54 +332,156 @@ async def generate_dynamic_report(request: Request):
         time_filter = body.get('timeFilter')
         format_type = body.get('format', 'excel')
         
+        write_debug(f"[Dynamic Report] Request received: tables={tables}, columns={columns}, format={format_type}")
+        
         if not tables or not columns:
             raise HTTPException(status_code=400, detail="Tables and columns are required")
         
         # Build SQL query
-        sql_query = build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter)
+        try:
+            sql_query = build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter)
+            write_debug(f"[Dynamic Report] SQL query built: {sql_query[:200]}...")
+        except Exception as sql_err:
+            write_debug(f"[Dynamic Report] SQL query build failed: {str(sql_err)}")
+            raise HTTPException(status_code=400, detail=f"Failed to build SQL query: {str(sql_err)}")
         
         # Execute query and get data
         import pyodbc
         from config import get_database_connection_string
         
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
-        cursor = conn.cursor()
+        try:
+            connection_string = get_database_connection_string()
+            conn = pyodbc.connect(connection_string)
+            cursor = conn.cursor()
+        except Exception as db_err:
+            write_debug(f"[Dynamic Report] Database connection failed: {str(db_err)}")
+            raise HTTPException(status_code=500, detail=f"Database connection failed: {str(db_err)}")
         
         try:
             cursor.execute(sql_query)
             rows = cursor.fetchall()
+            write_debug(f"[Dynamic Report] Query executed, fetched {len(rows)} rows")
             
             # Convert to list of dictionaries
             data_rows = []
             for row in rows:
                 data_rows.append([str(cell) if cell is not None else '' for cell in row])
             
+            # Add index column at the beginning for all dynamic reports
+            # Add "#" or "Index" as the first column header
+            index_column_name = "#"
+            columns_with_index = [index_column_name] + columns
+            
+            # Add index number (1, 2, 3, ...) to the beginning of each data row
+            data_rows_with_index = []
+            for idx, row in enumerate(data_rows, start=1):
+                data_rows_with_index.append([str(idx)] + row)
+            
+            # Use the modified columns and data
+            columns = columns_with_index
+            data_rows = data_rows_with_index
+            
+            write_debug(f"[Dynamic Report] Added index column, total columns: {len(columns)}, total rows: {len(data_rows)}")
+            
             # Get header configuration from request body
             header_config = body.get('headerConfig', {})
             if header_config:
-                from export_utils import get_default_header_config
+                from utils.export_utils import get_default_header_config
                 default_config = get_default_header_config("dynamic")
                 merged_config = {**default_config, **header_config}
             else:
-                from export_utils import get_default_header_config
+                from utils.export_utils import get_default_header_config
                 merged_config = get_default_header_config("dynamic")
             
+            # Get export type from request (transaction or dashboard)
+            export_type = body.get('type')
+            
             # Generate report based on format
-            if format_type == 'excel':
-                return generate_excel_report(columns, data_rows, merged_config)
-            elif format_type == 'word':
-                return generate_word_report(columns, data_rows, merged_config)
-            elif format_type == 'pdf':
-                return generate_pdf_report(columns, data_rows, merged_config)
-            else:
-                raise HTTPException(status_code=400, detail="Unsupported format")
+            report_content = None
+            file_extension = format_type
+            try:
+                if format_type == 'excel':
+                    write_debug(f"[Dynamic Report] Generating Excel report...")
+                    report_content = generate_excel_report(columns, data_rows, merged_config)
+                    file_extension = 'xlsx'
+                elif format_type == 'word':
+                    write_debug(f"[Dynamic Report] Generating Word report...")
+                    report_content = generate_word_report(columns, data_rows, merged_config)
+                    file_extension = 'docx'
+                elif format_type == 'pdf':
+                    write_debug(f"[Dynamic Report] Generating PDF report...")
+                    report_content = generate_pdf_report(columns, data_rows, merged_config)
+                    file_extension = 'pdf'
+                else:
+                    raise HTTPException(status_code=400, detail="Unsupported format")
+                write_debug(f"[Dynamic Report] Report generated successfully, size: {len(report_content)} bytes")
+            except Exception as gen_err:
+                write_debug(f"[Dynamic Report] Report generation failed: {str(gen_err)}")
+                import traceback
+                write_debug(f"[Dynamic Report] Traceback: {traceback.format_exc()}")
+                raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(gen_err)}")
+            
+            # Save file and log to database
+            try:
+                created_by = request.headers.get('X-User-Name') or request.headers.get('Authorization') or "System"
+                write_debug(f"[Dynamic Report] Saving export, type: {export_type}")
+                
+                # Create report name from table names
+                # Join table names with underscore for filename (e.g., "Users_Orders_Products")
+                # This will be formatted by save_and_log_export to create readable names
+                table_names = '_'.join(tables) if tables else 'Dynamic_Report'
+                write_debug(f"[Dynamic Report] Using table names for report: {table_names}")
+                
+                export_info = await save_and_log_export(
+                    content=report_content,
+                    file_extension=file_extension,
+                    dashboard='transactions',  # Use 'transactions' instead of 'dynamic' for filename
+                    card_type=table_names,  # Use table names as card_type for naming
+                    header_config=merged_config,
+                    created_by=created_by,
+                    export_type=export_type
+                )
+                write_debug(f"[Dynamic Report] Export saved: {export_info.get('relative_path')}")
+            except Exception as save_err:
+                write_debug(f"[Dynamic Report] Save failed: {str(save_err)}")
+                import traceback
+                write_debug(f"[Dynamic Report] Save traceback: {traceback.format_exc()}")
+                # Continue even if save fails - still return the file
+                export_info = {
+                    'filename': f'dynamic_report.{file_extension}',
+                    'relative_path': '',
+                    'export_id': None
+                }
+            
+            # Determine media type
+            media_types = {
+                'pdf': 'application/pdf',
+                'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            }
+            media_type = media_types.get(file_extension, 'application/octet-stream')
+            
+            # Return file with headers
+            return Response(
+                content=report_content,
+                media_type=media_type,
+                headers={
+                    'Content-Disposition': f'attachment; filename="{export_info["filename"]}"',
+                    'X-Export-Src': export_info['relative_path'],
+                    'X-Export-Id': str(export_info.get('export_id', ''))
+                }
+            )
                 
         finally:
             cursor.close()
             conn.close()
             
+    except HTTPException:
+        raise
     except Exception as e:
+        write_debug(f"[Dynamic Report] Unexpected error: {str(e)}")
+        import traceback
+        write_debug(f"[Dynamic Report] Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to generate dynamic report: {str(e)}")
 
 

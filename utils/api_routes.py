@@ -10,6 +10,8 @@ from routes.report_api_routes import router as report_router
 from routes.bank_check_api_routes import router as bank_check_router
 from routes.dynamic_report_endpoints import router as dynamic_router
 from routes.excel_to_word_endpoints import router as excel_word_router
+from routes.xbrl_routes import router as xbrl_router
+from routes.word_template_routes import router as word_template_router
 
 # Create main router
 router = APIRouter()
@@ -23,4 +25,6 @@ router.include_router(report_router)
 router.include_router(bank_check_router)
 router.include_router(dynamic_router)
 router.include_router(excel_word_router)
+router.include_router(xbrl_router)
+router.include_router(word_template_router)
 
