@@ -82,6 +82,31 @@ def create_app() -> FastAPI:
     # Serve exported files statically under /exports
     app.mount("/exports", StaticFiles(directory="exports"), name="exports")
 
+    @app.on_event("startup")
+    async def startup_event():
+        """Verify fonts are registered at startup"""
+        try:
+            from reportlab.pdfbase import pdfmetrics
+            from utils.pdf_utils import ARABIC_FONT_NAME, DEFAULT_FONT_NAME
+            
+            registered_fonts = pdfmetrics.getRegisteredFontNames()
+            logger.info(f"PDF Fonts: {len(registered_fonts)} fonts registered")
+            logger.info(f"PDF Fonts: ARABIC_FONT_NAME={ARABIC_FONT_NAME}, DEFAULT_FONT_NAME={DEFAULT_FONT_NAME}")
+            
+            # Verify key fonts are available
+            if ARABIC_FONT_NAME:
+                if ARABIC_FONT_NAME in registered_fonts:
+                    logger.info(f"PDF Fonts: ✓ {ARABIC_FONT_NAME} is registered and available")
+                else:
+                    logger.warning(f"PDF Fonts: ✗ {ARABIC_FONT_NAME} is not in registered fonts list")
+            
+            if DEFAULT_FONT_NAME in registered_fonts or DEFAULT_FONT_NAME == 'Helvetica':
+                logger.info(f"PDF Fonts: ✓ {DEFAULT_FONT_NAME} is available")
+            else:
+                logger.warning(f"PDF Fonts: ✗ {DEFAULT_FONT_NAME} may not be available")
+        except Exception as e:
+            logger.warning(f"PDF Fonts: Could not verify fonts at startup: {e}")
+
     @app.get("/")
     async def health_root():
         return {"status": "ok", "service": "python-api"}
