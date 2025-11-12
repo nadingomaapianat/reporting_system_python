@@ -23,9 +23,9 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 # Default bank information
 DEFAULT_BANK_CONFIG = {
     'name': 'PIANAT.AI',
-    'address': 'King Abdulaziz Road, Riyadh, Saudi Arabia',
-    'phone': '+966 11 402 9000',
-    'website': 'www.pianat.ai',
+    'address': 'Bank address',
+    'phone': 'Bank phone',
+    'website': 'www.website.com',
     'logo': '🏦'
 }
 
