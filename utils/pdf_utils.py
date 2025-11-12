@@ -32,8 +32,40 @@ except Exception:
 
 """Font registration and discovery for Arabic-capable fonts.
 Prefers bundled fonts, then common Linux and Windows locations.
+Registers system fonts that are installed in Docker.
 """
 ARABIC_FONT_NAME = None
+
+# Register DejaVu fonts first (installed in Docker, good Unicode support)
+# These fonts are guaranteed to be available in Docker after apt-get install
+DEFAULT_FONT_NAME = 'Helvetica'  # ReportLab built-in (fallback)
+try:
+    dejavu_regular = Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
+    dejavu_bold = Path('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf')
+    
+    if dejavu_regular.exists():
+        pdfmetrics.registerFont(TTFont('DejaVuSans', str(dejavu_regular)))
+        ARABIC_FONT_NAME = 'DejaVuSans'
+        DEFAULT_FONT_NAME = 'DejaVuSans'  # Use DejaVu as default in Docker
+        if dejavu_bold.exists():
+            pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', str(dejavu_bold)))
+except Exception:
+    pass
+
+# Also register Liberation fonts (installed in Docker)
+try:
+    liberation_regular = Path('/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf')
+    liberation_bold = Path('/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf')
+    
+    if liberation_regular.exists() and not ARABIC_FONT_NAME:
+        pdfmetrics.registerFont(TTFont('LiberationSans', str(liberation_regular)))
+        ARABIC_FONT_NAME = 'LiberationSans'
+        DEFAULT_FONT_NAME = 'LiberationSans'
+        if liberation_bold.exists():
+            pdfmetrics.registerFont(TTFont('LiberationSans-Bold', str(liberation_bold)))
+except Exception:
+    pass
+
 # Always attempt to register an Arabic-capable font, even if shaping libs are missing.
 try:
     fonts_dir = Path(__file__).parent / 'fonts'
@@ -52,11 +84,12 @@ try:
     if fonts_dir.exists():
         candidates.extend([p for p in fonts_dir.glob('*.ttf') if p not in candidates])
 
-    # Common Linux font paths
+    # Common Linux font paths (fonts installed in Docker)
     linux_font_paths = [
         Path('/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf'),
         Path('/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf'),
-        Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),  # has Arabic glyphs
+        Path('/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'),
+        Path('/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf'),
         Path('/usr/local/share/fonts/NotoNaskhArabic-Regular.ttf'),
     ]
     candidates.extend([p for p in linux_font_paths if p.exists()])
@@ -71,15 +104,17 @@ try:
             windows_fonts / 'arial.ttf',
         ])
 
-    for fpath in candidates:
-        try:
-            pdfmetrics.registerFont(TTFont('ArabicMain', str(fpath)))
-            ARABIC_FONT_NAME = 'ArabicMain'
-            break
-        except Exception:
-            continue
+    # Only register ArabicMain if we haven't already registered DejaVu
+    if not ARABIC_FONT_NAME:
+        for fpath in candidates:
+            try:
+                pdfmetrics.registerFont(TTFont('ArabicMain', str(fpath)))
+                ARABIC_FONT_NAME = 'ArabicMain'
+                break
+            except Exception:
+                continue
 except Exception:
-    ARABIC_FONT_NAME = None
+    pass
 
 # Final fallback: attempt to download Noto Naskh Arabic if nothing found (no extra deps)
 try:
@@ -295,7 +330,7 @@ def generate_pdf_report(
                     alignment=TA_CENTER,
                     spaceAfter=6,
                     textColor=font_color_rl,
-                    fontName=ARABIC_FONT_NAME or 'Helvetica-Bold'
+                    fontName=ARABIC_FONT_NAME or (DEFAULT_FONT_NAME + '-Bold' if DEFAULT_FONT_NAME != 'Helvetica' else 'Helvetica-Bold')
                 )
                 story.append(Paragraph("🏦", logo_style))
                 story.append(Spacer(1, 6))
@@ -346,7 +381,7 @@ def generate_pdf_report(
                 textColor=font_color_rl,
                 alignment=TA_CENTER,
                 spaceAfter=12,
-                fontName=ARABIC_FONT_NAME or 'Helvetica'
+                fontName=ARABIC_FONT_NAME or DEFAULT_FONT_NAME
             )
             story.append(Paragraph(shape_text_for_arabic(subtitle), subtitle_style))
         
@@ -570,13 +605,13 @@ def generate_pdf_report(
                 ('BACKGROUND', (0, 0), (-1, 0), header_bg_color_rl),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), ARABIC_FONT_NAME or 'Helvetica-Bold'),
+                ('FONTNAME', (0, 0), (-1, 0), ARABIC_FONT_NAME or (DEFAULT_FONT_NAME + '-Bold' if DEFAULT_FONT_NAME != 'Helvetica' else 'Helvetica-Bold')),
                 ('FONTSIZE', (0, 0), (-1, 0), 12),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 5),  # Reduced from 10 to 5
                 ('TOPPADDING', (0, 0), (-1, 0), 5),  # Reduced from 10 to 5
                 ('BACKGROUND', (0, 1), (-1, -1), body_bg_color_rl),
                 ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
-                ('FONTNAME', (0, 1), (-1, -1), ARABIC_FONT_NAME or 'Helvetica'),
+                ('FONTNAME', (0, 1), (-1, -1), ARABIC_FONT_NAME or DEFAULT_FONT_NAME),
                 ('FONTSIZE', (0, 1), (-1, -1), 9),
                 ('TOPPADDING', (0, 1), (-1, -1), 2),  # Reduced from 4 to 2
                 ('BOTTOMPADDING', (0, 1), (-1, -1), 2),  # Reduced from 4 to 2
@@ -632,7 +667,7 @@ def generate_pdf_report(
             opacity = max(0.05, min(0.3, header_config.get('watermarkOpacity', 10) / 100.0))
             gray = 0.6 + (0.4 * (1 - opacity))
             canv.setFillColorRGB(gray, gray, gray)
-            font_name = ARABIC_FONT_NAME if ARABIC_FONT_NAME else 'Helvetica'
+            font_name = ARABIC_FONT_NAME if ARABIC_FONT_NAME else DEFAULT_FONT_NAME
             canv.setFont(font_name, 48)
             page_width, page_height = page_size
             canv.translate(page_width / 2.0, page_height / 2.0)
