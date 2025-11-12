@@ -13,11 +13,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gnupg2 \
     ca-certificates \
+    fonts-dejavu \
+    fonts-dejavu-core \
+    fonts-dejavu-extra \
+    fonts-noto \
+    fonts-noto-core \
+    fonts-noto-extra \
+    fonts-noto-ui-core \
+    fonts-liberation \
+    fontconfig \
     && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
     && echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     && ACCEPT_EULA=Y apt-get install -y msodbcsql18 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && fc-cache -fv
 
 COPY requirements.txt .
 
@@ -26,7 +36,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Ensure all necessary directories exist
-RUN mkdir -p Disclosures template reports_export exports
+RUN mkdir -p Disclosures template reports_export exports utils/fonts
+
+# Copy custom fonts if they exist (fonts directory may be empty)
+# Note: If fonts directory is empty, this will still work as COPY handles empty directories
+COPY utils/fonts utils/fonts
+
+# Ensure font cache is updated after font installation
+RUN fc-cache -fv
 
 # Create demo files for testing
 RUN echo "This is a demo file for testing purposes." > Disclosures/Sample_Disclosure_Report_2025.pdf && \
