@@ -18,7 +18,7 @@ DB_USER=postgres
 DB_PASSWORD=your_password_here
 
 # API Configuration
-PYTHON_API_BASE=https://reporting-system-python.pianat.ai
+PYTHON_API_BASE=http://10.240.53.65:8000
 
 # OCR Configuration
 OCR_WEBHOOK_URL=https://n8nio.pianat.ai/webhook/ocr-check
