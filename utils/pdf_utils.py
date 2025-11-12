@@ -32,38 +32,8 @@ except Exception:
 
 """Font registration and discovery for Arabic-capable fonts.
 Prefers bundled fonts, then common Linux and Windows locations.
-Also registers standard fonts that work in both Linux and Windows.
 """
 ARABIC_FONT_NAME = None
-DEFAULT_FONT_NAME = 'Helvetica'  # ReportLab built-in font (always available)
-
-# Verify built-in fonts are available
-def verify_font_available(font_name: str) -> bool:
-    """Check if a font is registered and available in ReportLab"""
-    try:
-        from reportlab.pdfbase import pdfmetrics
-        return font_name in pdfmetrics.getRegisteredFontNames()
-    except Exception:
-        return False
-
-# Register standard fonts that are guaranteed to work
-try:
-    from reportlab.pdfbase.pdfmetrics import registerFontFamily, getRegisteredFontNames
-    # Verify Helvetica is available (it should be built-in)
-    registered_fonts = getRegisteredFontNames()
-    if 'Helvetica' not in registered_fonts:
-        # Register standard font family (built-in, always available)
-        registerFontFamily(
-            'Helvetica',
-            normal='Helvetica',
-            bold='Helvetica-Bold',
-            italic='Helvetica-Oblique',
-            boldItalic='Helvetica-BoldOblique'
-        )
-except Exception as e:
-    import sys
-    sys.stderr.write(f"Warning: Could not verify/register Helvetica font: {e}\n")
-
 # Always attempt to register an Arabic-capable font, even if shaping libs are missing.
 try:
     fonts_dir = Path(__file__).parent / 'fonts'
@@ -82,18 +52,12 @@ try:
     if fonts_dir.exists():
         candidates.extend([p for p in fonts_dir.glob('*.ttf') if p not in candidates])
 
-    # Common Linux font paths (expanded list)
+    # Common Linux font paths
     linux_font_paths = [
         Path('/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf'),
         Path('/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf'),
         Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),  # has Arabic glyphs
-        Path('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'),
-        Path('/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'),
-        Path('/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf'),
         Path('/usr/local/share/fonts/NotoNaskhArabic-Regular.ttf'),
-        # Additional Noto paths
-        Path('/usr/share/fonts/opentype/noto/NotoSansArabic-Regular.otf'),
-        Path('/usr/share/fonts/truetype/noto-cjk/NotoSansCJK-Regular.ttc'),
     ]
     candidates.extend([p for p in linux_font_paths if p.exists()])
 
@@ -111,43 +75,10 @@ try:
         try:
             pdfmetrics.registerFont(TTFont('ArabicMain', str(fpath)))
             ARABIC_FONT_NAME = 'ArabicMain'
-            import sys
-            sys.stderr.write(f"PDF Fonts: Successfully registered Arabic font: {fpath}\n")
-            # Also register bold variant if available
-            try:
-                bold_path = str(fpath).replace('-Regular', '-Bold').replace('Regular', 'Bold')
-                if Path(bold_path).exists():
-                    pdfmetrics.registerFont(TTFont('ArabicMain-Bold', bold_path))
-                    import sys
-                    sys.stderr.write(f"PDF Fonts: Successfully registered Arabic bold font: {bold_path}\n")
-            except Exception:
-                pass
             break
-        except Exception as e:
-            import sys
-            sys.stderr.write(f"Failed to register font {fpath}: {e}\n")
+        except Exception:
             continue
-    
-    # Also register DejaVu fonts explicitly if available (good Unicode support)
-    dejavu_paths = [
-        Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),
-        Path('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'),
-    ]
-    for dejavu_path in dejavu_paths:
-        if dejavu_path.exists() and not ARABIC_FONT_NAME:
-            try:
-                font_name = 'DejaVuSans' if 'Regular' in str(dejavu_path) or 'DejaVuSans.ttf' in str(dejavu_path) else 'DejaVuSans-Bold'
-                pdfmetrics.registerFont(TTFont(font_name, str(dejavu_path)))
-                if not ARABIC_FONT_NAME:
-                    ARABIC_FONT_NAME = 'DejaVuSans'
-                import sys
-                sys.stderr.write(f"PDF Fonts: Registered DejaVu font: {dejavu_path}\n")
-            except Exception as e:
-                import sys
-                sys.stderr.write(f"Failed to register DejaVu font {dejavu_path}: {e}\n")
-except Exception as e:
-    import sys
-    sys.stderr.write(f"Font registration error: {e}\n")
+except Exception:
     ARABIC_FONT_NAME = None
 
 # Final fallback: attempt to download Noto Naskh Arabic if nothing found (no extra deps)
@@ -224,25 +155,6 @@ def get_writer():
 
 write_debug = get_writer()
 
-def ensure_fonts_available():
-    """Ensure fonts are available before PDF generation - call this at runtime"""
-    global ARABIC_FONT_NAME, DEFAULT_FONT_NAME
-    try:
-        from reportlab.pdfbase import pdfmetrics
-        # Verify Helvetica is available (built-in)
-        if not verify_font_available('Helvetica'):
-            write_debug("WARNING: Helvetica font not available - PDF may show font errors")
-        # Verify Arabic font if registered
-        if ARABIC_FONT_NAME and not verify_font_available(ARABIC_FONT_NAME):
-            write_debug(f"WARNING: Arabic font {ARABIC_FONT_NAME} registered but not available")
-            ARABIC_FONT_NAME = None  # Fallback to default
-        # Log available fonts for debugging
-        available = pdfmetrics.getRegisteredFontNames()
-        write_debug(f"PDF Fonts available: {len(available)} fonts registered")
-        write_debug(f"PDF Fonts: Using ARABIC_FONT_NAME={ARABIC_FONT_NAME}, DEFAULT_FONT_NAME={DEFAULT_FONT_NAME}")
-    except Exception as e:
-        write_debug(f"Error checking fonts: {e}")
-
 def generate_pdf_report(
     columns: List[str], 
     data_rows: List[List[Any]], 
@@ -259,8 +171,6 @@ def generate_pdf_report(
     - Dynamic table sizing
     - Multi-line text support
     """
-    # Ensure fonts are available before generating PDF
-    ensure_fonts_available()
     
     # Get default config if none provided (uses centralized config system)
     if not header_config:
@@ -385,7 +295,7 @@ def generate_pdf_report(
                     alignment=TA_CENTER,
                     spaceAfter=6,
                     textColor=font_color_rl,
-                    fontName=ARABIC_FONT_NAME or DEFAULT_FONT_NAME + '-Bold'
+                    fontName=ARABIC_FONT_NAME or 'Helvetica-Bold'
                 )
                 story.append(Paragraph("🏦", logo_style))
                 story.append(Spacer(1, 6))
@@ -436,7 +346,7 @@ def generate_pdf_report(
                 textColor=font_color_rl,
                 alignment=TA_CENTER,
                 spaceAfter=12,
-                fontName=ARABIC_FONT_NAME or DEFAULT_FONT_NAME
+                fontName=ARABIC_FONT_NAME or 'Helvetica'
             )
             story.append(Paragraph(shape_text_for_arabic(subtitle), subtitle_style))
         
@@ -660,13 +570,13 @@ def generate_pdf_report(
                 ('BACKGROUND', (0, 0), (-1, 0), header_bg_color_rl),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), ARABIC_FONT_NAME or DEFAULT_FONT_NAME + '-Bold'),
+                ('FONTNAME', (0, 0), (-1, 0), ARABIC_FONT_NAME or 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 12),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 5),  # Reduced from 10 to 5
                 ('TOPPADDING', (0, 0), (-1, 0), 5),  # Reduced from 10 to 5
                 ('BACKGROUND', (0, 1), (-1, -1), body_bg_color_rl),
                 ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
-                ('FONTNAME', (0, 1), (-1, -1), ARABIC_FONT_NAME or DEFAULT_FONT_NAME),
+                ('FONTNAME', (0, 1), (-1, -1), ARABIC_FONT_NAME or 'Helvetica'),
                 ('FONTSIZE', (0, 1), (-1, -1), 9),
                 ('TOPPADDING', (0, 1), (-1, -1), 2),  # Reduced from 4 to 2
                 ('BOTTOMPADDING', (0, 1), (-1, -1), 2),  # Reduced from 4 to 2
@@ -722,7 +632,7 @@ def generate_pdf_report(
             opacity = max(0.05, min(0.3, header_config.get('watermarkOpacity', 10) / 100.0))
             gray = 0.6 + (0.4 * (1 - opacity))
             canv.setFillColorRGB(gray, gray, gray)
-            font_name = ARABIC_FONT_NAME if ARABIC_FONT_NAME else DEFAULT_FONT_NAME
+            font_name = ARABIC_FONT_NAME if ARABIC_FONT_NAME else 'Helvetica'
             canv.setFont(font_name, 48)
             page_width, page_height = page_size
             canv.translate(page_width / 2.0, page_height / 2.0)
