@@ -38,14 +38,13 @@ COPY . .
 # Ensure all necessary directories exist
 RUN mkdir -p Disclosures template reports_export exports utils/fonts
 
-# Copy custom fonts if they exist (fonts directory may be empty)
-# Note: If fonts directory is empty, this will still work as COPY handles empty directories
-COPY utils/fonts utils/fonts
+# Note: Custom fonts in utils/fonts/ are already copied by "COPY . ." above
+# If the directory is empty, that's fine - system fonts will be used
 
 # Ensure font cache is updated after font installation
 RUN fc-cache -fv
 
-# Create demo files for testing
+# Create demo files for testing (optional - can be removed if not needed)
 RUN echo "This is a demo file for testing purposes." > Disclosures/Sample_Disclosure_Report_2025.pdf && \
     echo "This is a demo file for testing purposes." > Disclosures/Financial_Disclosure_Demo.pdf && \
     echo "This is a demo file for testing purposes." > Disclosures/Risk_Assessment_Sample.pdf && \
@@ -55,11 +54,9 @@ RUN echo "This is a demo file for testing purposes." > Disclosures/Sample_Disclo
     echo "This is a demo template file for testing purposes." > template/Financial_Analysis_Template.docx && \
     echo "This is a demo template file for testing purposes." > template/Compliance_Checklist_Template.docx && \
     echo "This is a demo template file for testing purposes." > template/Dashboard_Report_Template.docx && \
-    mkdir -p reports_export/$(date +%Y-%m-%d) && \
+    mkdir -p reports_export && \
     echo "This is a demo export file for testing purposes." > reports_export/sample_export.xlsx && \
-    echo "This is a demo export file for testing purposes." > reports_export/demo_report.docx && \
-    echo "This is a demo export file for testing purposes." > reports_export/$(date +%Y-%m-%d)/dynamic_report_$(date +%Y%m%d_%H%M%S).xlsx && \
-    echo "This is a demo export file for testing purposes." > reports_export/$(date +%Y-%m-%d)/monthly_report_$(date +%Y%m%d_%H%M%S).docx
+    echo "This is a demo export file for testing purposes." > reports_export/demo_report.docx
 
 
 EXPOSE 8000
