@@ -2425,13 +2425,12 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     
     # Import Arabic text support
     try:
-        from utils.pdf_utils import shape_text_for_arabic, ARABIC_FONT_NAME, DEFAULT_FONT_NAME
+        from utils.pdf_utils import shape_text_for_arabic, ARABIC_FONT_NAME
     except ImportError:
         # Fallback if pdf_utils is not available
         def shape_text_for_arabic(text: str) -> str:
             return text
         ARABIC_FONT_NAME = None
-        DEFAULT_FONT_NAME = 'Helvetica'  # ReportLab built-in font
     
     # Get default header config if none provided
     if not header_config:
@@ -2695,7 +2694,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
         'TableHeader',
         parent=styles['Normal'],
         fontSize=12,
-        fontName=ARABIC_FONT_NAME or (DEFAULT_FONT_NAME + '-Bold'),
+        fontName=ARABIC_FONT_NAME or 'Helvetica-Bold',
         alignment=TA_CENTER,
         textColor=colors.whitesmoke,
         spaceAfter=6,
@@ -2707,7 +2706,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
         'TableCell',
         parent=styles['Normal'],
         fontSize=10,
-        fontName=ARABIC_FONT_NAME or DEFAULT_FONT_NAME,
+        fontName=ARABIC_FONT_NAME or 'Helvetica',
         alignment=TA_CENTER,
         spaceAfter=4,
         spaceBefore=4,
@@ -2761,14 +2760,14 @@ def generate_pdf_report(columns, data_rows, header_config=None):
         ('BACKGROUND', (0, 0), (-1, 0), header_bg_color_rl),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), ARABIC_FONT_NAME or (DEFAULT_FONT_NAME + '-Bold')),
+        ('FONTNAME', (0, 0), (-1, 0), ARABIC_FONT_NAME or 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, 0), 12),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
         ('TOPPADDING', (0, 0), (-1, 0), 12),
         
         # Data rows styling
         ('BACKGROUND', (0, 1), (-1, -1), body_bg_color_rl),
-        ('FONTNAME', (0, 1), (-1, -1), ARABIC_FONT_NAME or DEFAULT_FONT_NAME),
+        ('FONTNAME', (0, 1), (-1, -1), ARABIC_FONT_NAME or 'Helvetica'),
         ('FONTSIZE', (0, 1), (-1, -1), 10),
         ('TOPPADDING', (0, 1), (-1, -1), 8),
         ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
@@ -2786,7 +2785,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
         table_style += [
             ('BACKGROUND', (0, last_row_index), (-1, last_row_index), header_bg_color_rl),
             ('TEXTCOLOR', (0, last_row_index), (-1, last_row_index), colors.whitesmoke),
-            ('FONTNAME', (0, last_row_index), (-1, last_row_index), DEFAULT_FONT_NAME + '-Bold'),
+            ('FONTNAME', (0, last_row_index), (-1, last_row_index), 'Helvetica-Bold'),
         ]
     
     table.setStyle(TableStyle(table_style))
