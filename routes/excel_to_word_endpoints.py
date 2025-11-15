@@ -26,6 +26,14 @@ router = APIRouter()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Helper function to get project root directory
+def get_project_root():
+    """Get the project root directory (one level up from routes/)."""
+    current_file = os.path.abspath(__file__)
+    routes_dir = os.path.dirname(current_file)
+    project_root = os.path.dirname(routes_dir)
+    return project_root
+
 
 @router.post("/api/reports/excel-to-word/preview")
 async def excel_to_word_preview(
@@ -119,8 +127,8 @@ async def excel_to_word_preview(
 
 @router.get("/api/reports/files/templates")
 async def list_template_files():
-    base_dir = os.path.dirname(__file__)
-    templates_dir = os.path.join(base_dir, "template")
+    project_root = get_project_root()
+    templates_dir = os.path.join(project_root, "files", "template")
     if not os.path.isdir(templates_dir):
         raise HTTPException(status_code=404, detail="Templates directory not found")
     files = []
@@ -139,8 +147,11 @@ async def list_template_files():
 
 @router.get("/api/reports/files/disclosures")
 async def list_disclosure_files():
-    base_dir = os.path.dirname(__file__)
-    disclosures_dir = os.path.join(base_dir, "Disclosures")
+    project_root = get_project_root()
+    disclosures_dir = os.path.join(project_root, "files", "disclosures")
+    # Create directory if it doesn't exist
+    if not os.path.isdir(disclosures_dir):
+        os.makedirs(disclosures_dir, exist_ok=True)
     if not os.path.isdir(disclosures_dir):
         raise HTTPException(status_code=404, detail="Disclosures directory not found")
     files = []
@@ -2114,8 +2125,8 @@ async def download_template_file(filename: str):
     try:
         # URL decode the filename to handle spaces and special characters
         decoded_filename = urllib.parse.unquote(filename)
-        base_dir = os.path.dirname(__file__)
-        templates_dir = os.path.join(base_dir, "template")
+        project_root = get_project_root()
+        templates_dir = os.path.join(project_root, "files", "template")
         file_path = os.path.join(templates_dir, decoded_filename)
         
         if not os.path.exists(file_path):
@@ -2132,8 +2143,8 @@ async def download_disclosure_file(filename: str):
     try:
         # URL decode the filename to handle spaces and special characters
         decoded_filename = urllib.parse.unquote(filename)
-        base_dir = os.path.dirname(__file__)
-        disclosures_dir = os.path.join(base_dir, "Disclosures")
+        project_root = get_project_root()
+        disclosures_dir = os.path.join(project_root, "files", "disclosures")
         file_path = os.path.join(disclosures_dir, decoded_filename)
         
         if not os.path.exists(file_path):
@@ -2150,8 +2161,8 @@ async def delete_template_file(filename: str):
     try:
         # URL decode the filename to handle spaces and special characters
         decoded_filename = urllib.parse.unquote(filename)
-        base_dir = os.path.dirname(__file__)
-        templates_dir = os.path.join(base_dir, "template")
+        project_root = get_project_root()
+        templates_dir = os.path.join(project_root, "files", "template")
         file_path = os.path.join(templates_dir, decoded_filename)
         
         if not os.path.exists(file_path):
@@ -2173,8 +2184,8 @@ async def delete_disclosure_file(filename: str):
     try:
         # URL decode the filename to handle spaces and special characters
         decoded_filename = urllib.parse.unquote(filename)
-        base_dir = os.path.dirname(__file__)
-        disclosures_dir = os.path.join(base_dir, "Disclosures")
+        project_root = get_project_root()
+        disclosures_dir = os.path.join(project_root, "files", "disclosures")
         file_path = os.path.join(disclosures_dir, decoded_filename)
         
         if not os.path.exists(file_path):
@@ -2193,8 +2204,8 @@ async def delete_disclosure_file(filename: str):
 @router.get("/api/reports/files/reports-export")
 async def list_reports_export_files():
     """List all files in the reports_export directory and its subdirectories."""
-    base_dir = os.path.dirname(__file__)
-    reports_export_dir = os.path.join(base_dir, "reports_export")
+    project_root = get_project_root()
+    reports_export_dir = os.path.join(project_root, "reports_export")
     if not os.path.isdir(reports_export_dir):
         raise HTTPException(status_code=404, detail="Reports export directory not found")
     
@@ -2225,8 +2236,8 @@ async def download_reports_export_file(filename: str):
     try:
         # URL decode the filename to handle spaces and special characters
         decoded_filename = urllib.parse.unquote(filename)
-        base_dir = os.path.dirname(__file__)
-        reports_export_dir = os.path.join(base_dir, "reports_export")
+        project_root = get_project_root()
+        reports_export_dir = os.path.join(project_root, "reports_export")
         
         # Search for the file in all subdirectories
         file_path = None
@@ -2249,8 +2260,8 @@ async def delete_reports_export_file(filename: str):
     try:
         # URL decode the filename to handle spaces and special characters
         decoded_filename = urllib.parse.unquote(filename)
-        base_dir = os.path.dirname(__file__)
-        reports_export_dir = os.path.join(base_dir, "reports_export")
+        project_root = get_project_root()
+        reports_export_dir = os.path.join(project_root, "reports_export")
         
         # Search for the file in all subdirectories
         file_path = None

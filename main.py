@@ -84,7 +84,57 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def startup_event():
-        """Verify fonts are registered at startup"""
+        """Verify fonts and test database connection at startup"""
+        print("\n" + "="*70)
+        print("🚀 APPLICATION STARTUP")
+        print("="*70)
+        
+        # Test database connection
+        print("\n📊 Testing Database Connection...")
+        try:
+            from config.settings import test_database_connection, DATABASE_CONFIG
+            
+            success, message, details = test_database_connection()
+            
+            if success:
+                print("✅ DATABASE CONNECTION: SUCCESS")
+                print(f"   Server: {details.get('server', 'N/A')}")
+                print(f"   Database: {details.get('database', 'N/A')}")
+                print(f"   Authentication: {details.get('auth_type', 'N/A')}")
+                print(f"   Username: {details.get('username', 'N/A')}")
+                print(f"   Tables Found: {details.get('table_count', 0)}")
+                print(f"   SQL Version: {details.get('sql_version', 'N/A')[:50]}...")
+                logger.info("✅ Database connection successful")
+            else:
+                print("❌ DATABASE CONNECTION: FAILED")
+                print(f"   Server: {details.get('server', 'N/A')}")
+                print(f"   Database: {details.get('database', 'N/A')}")
+                print(f"   Authentication: {details.get('auth_type', 'N/A')}")
+                print(f"   Error: {message}")
+                if 'error' in details:
+                    error_detail = details['error']
+                    if 'Kerberos' in error_detail or 'SSPI' in error_detail:
+                        print("\n   ⚠️  TROUBLESHOOTING:")
+                        print("   - Windows Authentication (Kerberos) doesn't work in Docker containers")
+                        print("   - Set DB_USE_WINDOWS_AUTH=no in environment.env to use SQL Server Authentication")
+                        print("   - Make sure DB_USERNAME and DB_PASSWORD are set correctly")
+                    elif 'timeout' in error_detail.lower():
+                        print("\n   ⚠️  TROUBLESHOOTING:")
+                        print("   - Check if SQL Server is running and accessible")
+                        print("   - Verify network connectivity to the database server")
+                        print("   - Check firewall settings")
+                    else:
+                        print("\n   ⚠️  TROUBLESHOOTING:")
+                        print("   - Verify database credentials in environment.env")
+                        print("   - Check if SQL Server is running")
+                        print("   - Ensure ODBC Driver 18 for SQL Server is installed")
+                logger.error(f"❌ Database connection failed: {message}")
+        except Exception as e:
+            print(f"❌ DATABASE CONNECTION: ERROR - {str(e)}")
+            logger.error(f"Database connection test error: {e}")
+        
+        # Verify fonts
+        print("\n🔤 Verifying PDF Fonts...")
         try:
             from reportlab.pdfbase import pdfmetrics
             from utils.pdf_utils import ARABIC_FONT_NAME, DEFAULT_FONT_NAME
@@ -96,16 +146,25 @@ def create_app() -> FastAPI:
             # Verify key fonts are available
             if ARABIC_FONT_NAME:
                 if ARABIC_FONT_NAME in registered_fonts:
+                    print(f"✅ Arabic Font: {ARABIC_FONT_NAME} is available")
                     logger.info(f"PDF Fonts: ✓ {ARABIC_FONT_NAME} is registered and available")
                 else:
+                    print(f"⚠️  Arabic Font: {ARABIC_FONT_NAME} is not registered")
                     logger.warning(f"PDF Fonts: ✗ {ARABIC_FONT_NAME} is not in registered fonts list")
             
             if DEFAULT_FONT_NAME in registered_fonts or DEFAULT_FONT_NAME == 'Helvetica':
+                print(f"✅ Default Font: {DEFAULT_FONT_NAME} is available")
                 logger.info(f"PDF Fonts: ✓ {DEFAULT_FONT_NAME} is available")
             else:
+                print(f"⚠️  Default Font: {DEFAULT_FONT_NAME} may not be available")
                 logger.warning(f"PDF Fonts: ✗ {DEFAULT_FONT_NAME} may not be available")
         except Exception as e:
+            print(f"⚠️  Font verification error: {e}")
             logger.warning(f"PDF Fonts: Could not verify fonts at startup: {e}")
+        
+        print("\n" + "="*70)
+        print("✅ Application startup complete!")
+        print("="*70 + "\n")
 
     @app.get("/")
     async def health_root():

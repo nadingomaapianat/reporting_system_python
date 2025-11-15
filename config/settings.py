@@ -2,24 +2,13 @@
 Configuration settings for the reporting system
 """
 import os
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
+from dotenv import load_dotenv
 
-# Load environment variables from environment.env file
-def load_env_file(env_file='environment.env'):
-    """Load environment variables from a file"""
-    if os.path.exists(env_file):
-        with open(env_file, 'r') as f:
-            for line in f:
-                line = line.strip()
-                # Skip empty lines and comments
-                if line and not line.startswith('#'):
-                    # Split on first '=' to handle values with '=' in them
-                    if '=' in line:
-                        key, value = line.split('=', 1)
-                        os.environ[key.strip()] = value.strip()
-
-# Load environment variables on module import
-load_env_file()
+# Load environment variables from .env or environment.env file
+# Try .env first (standard), then fallback to environment.env for backward compatibility
+env_file = '.env' if os.path.exists('.env') else 'environment.env'
+load_dotenv(env_file, override=False)  # override=False means existing env vars take precedence
 
 # Database Configuration - loaded from environment variables
 # Supports Windows Authentication (NTLM) similar to NestJS app.module.ts
@@ -140,3 +129,71 @@ def get_database_connection_string() -> str:
 def get_default_header_config(dashboard_type: str) -> Dict[str, Any]:
     """Get default header configuration for a dashboard type"""
     return DEFAULT_HEADER_CONFIGS.get(dashboard_type, DEFAULT_HEADER_CONFIGS['risks']).copy()
+
+def test_database_connection() -> Tuple[bool, str, dict]:
+    """
+    Test database connection and return status
+    Returns: (success: bool, message: str, details: dict)
+    """
+    try:
+        import pyodbc
+        connection_string = get_database_connection_string()
+        config = DATABASE_CONFIG
+        
+        # Mask password in connection string for logging
+        safe_conn_str = connection_string
+        if 'PWD=' in safe_conn_str:
+            # Replace password with *** for security
+            parts = safe_conn_str.split('PWD=')
+            if len(parts) > 1:
+                pwd_part = parts[1].split(';')[0]
+                safe_conn_str = safe_conn_str.replace(pwd_part, '***')
+        
+        # Attempt connection
+        conn = pyodbc.connect(connection_string, timeout=10)
+        cursor = conn.cursor()
+        
+        # Test query
+        cursor.execute("SELECT @@VERSION")
+        version = cursor.fetchone()[0]
+        
+        # Get database info
+        cursor.execute("SELECT DB_NAME()")
+        db_name = cursor.fetchone()[0]
+        
+        # Get table count
+        cursor.execute("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'")
+        table_count = cursor.fetchone()[0]
+        
+        cursor.close()
+        conn.close()
+        
+        auth_type = "Windows Authentication" if config['use_windows_auth'] else "SQL Server Authentication"
+        username_display = config.get('username', 'N/A') if not config['use_windows_auth'] else "Current Windows User"
+        
+        details = {
+            "server": f"{config['server']}:{config['port']}",
+            "database": db_name,
+            "auth_type": auth_type,
+            "username": username_display,
+            "table_count": table_count,
+            "sql_version": version.split('\n')[0] if version else "Unknown"
+        }
+        
+        return True, "Database connection successful", details
+        
+    except ImportError:
+        return False, "pyodbc module not installed", {}
+    except Exception as e:
+        error_msg = str(e)
+        config = DATABASE_CONFIG
+        auth_type = "Windows Authentication" if config['use_windows_auth'] else "SQL Server Authentication"
+        
+        details = {
+            "server": f"{config['server']}:{config['port']}",
+            "database": config['database'],
+            "auth_type": auth_type,
+            "error": error_msg
+        }
+        
+        return False, f"Database connection failed: {error_msg}", details
