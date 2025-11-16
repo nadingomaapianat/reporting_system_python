@@ -82,8 +82,11 @@ DEFAULT_HEADER_CONFIGS = {
 
 def get_database_connection_string() -> str:
     """
-    Generate database connection string with Windows Authentication support
+    Generate database connection string with Windows Authentication (NTLM) support
     Similar to NestJS app.module.ts configuration with NTLM authentication
+    
+    For Docker containers: Uses SQL Server Authentication with domain\\username format
+    which internally uses NTLM protocol for authentication.
     """
     config = DATABASE_CONFIG
     
@@ -94,21 +97,28 @@ def get_database_connection_string() -> str:
         f"DATABASE={config['database']};",
     ]
     
-    # Windows Authentication (NTLM) - similar to NestJS app.module.ts
+    # Windows Authentication (NTLM) - matching NestJS app.module.ts configuration
+    # NestJS uses: trustedConnection: true, integratedSecurity: true, authentication.type: 'ntlm'
+    # NestJS uses Windows Authentication MODE with NTLM protocol and explicit credentials
     if config['use_windows_auth']:
-        # Use Windows Authentication (uses current Windows user context)
-        # This matches NestJS: trustedConnection: true, integratedSecurity: true
+        # Windows Authentication mode (matching NestJS trustedConnection: true)
+        # Note: NestJS uses authentication.type: 'ntlm' with credentials, but standard ODBC
+        # doesn't support Trusted_Connection=yes with explicit credentials
+        # This will use current Windows user context (works on Windows host only)
         conn_parts.append("Trusted_Connection=yes;")
         
-        # Note: For domain-specific authentication with credentials,
-        # you typically need to run the Python process under that domain user
-        # or use SQL Server Authentication mode with domain\username format
+        # IMPORTANT: In Docker containers, Windows Authentication doesn't work
+        # For Docker, you need DB_USE_WINDOWS_AUTH=no to use NTLM with credentials
+        # NestJS can use Windows Auth mode with NTLM credentials because Sequelize
+        # has special NTLM authentication support that pyodbc doesn't have natively
     else:
-        # SQL Server Authentication (fallback)
+        # NTLM Authentication with explicit credentials (fallback for Docker)
+        # Uses domain\username format which enables NTLM protocol
+        # This is the closest equivalent to NestJS authentication.type: 'ntlm'
         username = config['username'] or 'SA'
         password = config['password'] or ''
         
-        # If domain is provided, format as domain\username
+        # Format as domain\username for NTLM authentication (matching NestJS)
         if config['domain']:
             username = f"{config['domain']}\\{username}"
         
@@ -161,6 +171,13 @@ def test_database_connection() -> Tuple[bool, str, dict]:
         cursor.execute("SELECT DB_NAME()")
         db_name = cursor.fetchone()[0]
         
+        # Get the Windows user that is connected (VERIFY Windows Authentication)
+        cursor.execute("SELECT SUSER_SNAME(), SYSTEM_USER, USER_NAME()")
+        auth_info = cursor.fetchone()
+        connected_windows_user = auth_info[0] if auth_info[0] else "Unknown"
+        system_user = auth_info[1] if auth_info[1] else "Unknown"
+        database_user = auth_info[2] if auth_info[2] else "Unknown"
+        
         # Get table count
         cursor.execute("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'")
         table_count = cursor.fetchone()[0]
@@ -168,14 +185,25 @@ def test_database_connection() -> Tuple[bool, str, dict]:
         cursor.close()
         conn.close()
         
-        auth_type = "Windows Authentication" if config['use_windows_auth'] else "SQL Server Authentication"
-        username_display = config.get('username', 'N/A') if not config['use_windows_auth'] else "Current Windows User"
+        # Determine authentication type for display
+        if config['use_windows_auth']:
+            auth_type = "Windows Authentication (NTLM/Kerberos)"
+            username_display = "Current Windows User"
+        elif config.get('domain'):
+            auth_type = "SQL Server Authentication (NTLM)"
+            username_display = f"{config['domain']}\\{config.get('username', 'N/A')}"
+        else:
+            auth_type = "SQL Server Authentication"
+            username_display = config.get('username', 'N/A')
         
         details = {
             "server": f"{config['server']}:{config['port']}",
             "database": db_name,
             "auth_type": auth_type,
             "username": username_display,
+            "connected_windows_user": connected_windows_user,  # The actual Windows user connected
+            "system_user": system_user,
+            "database_user": database_user,
             "table_count": table_count,
             "sql_version": version.split('\n')[0] if version else "Unknown"
         }
@@ -187,7 +215,13 @@ def test_database_connection() -> Tuple[bool, str, dict]:
     except Exception as e:
         error_msg = str(e)
         config = DATABASE_CONFIG
-        auth_type = "Windows Authentication" if config['use_windows_auth'] else "SQL Server Authentication"
+        # Determine authentication type for display
+        if config['use_windows_auth']:
+            auth_type = "Windows Authentication (NTLM/Kerberos)"
+        elif config.get('domain'):
+            auth_type = "SQL Server Authentication (NTLM)"
+        else:
+            auth_type = "SQL Server Authentication"
         
         details = {
             "server": f"{config['server']}:{config['port']}",

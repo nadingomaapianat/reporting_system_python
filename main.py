@@ -102,6 +102,11 @@ def create_app() -> FastAPI:
                 print(f"   Database: {details.get('database', 'N/A')}")
                 print(f"   Authentication: {details.get('auth_type', 'N/A')}")
                 print(f"   Username: {details.get('username', 'N/A')}")
+                # Show the actual Windows user that connected (VERIFY Windows Auth)
+                if 'connected_windows_user' in details:
+                    print(f"   ✅ Connected Windows User: {details.get('connected_windows_user', 'N/A')}")
+                    print(f"   ✅ System User: {details.get('system_user', 'N/A')}")
+                    print(f"   ✅ Database User: {details.get('database_user', 'N/A')}")
                 print(f"   Tables Found: {details.get('table_count', 0)}")
                 print(f"   SQL Version: {details.get('sql_version', 'N/A')[:50]}...")
                 logger.info("✅ Database connection successful")
@@ -115,9 +120,10 @@ def create_app() -> FastAPI:
                     error_detail = details['error']
                     if 'Kerberos' in error_detail or 'SSPI' in error_detail:
                         print("\n   ⚠️  TROUBLESHOOTING:")
-                        print("   - Windows Authentication (Kerberos) doesn't work in Docker containers")
-                        print("   - Set DB_USE_WINDOWS_AUTH=no in environment.env to use SQL Server Authentication")
-                        print("   - Make sure DB_USERNAME and DB_PASSWORD are set correctly")
+                        print("   - Windows Authentication (Kerberos/NTLM via SSPI) doesn't work in Docker containers")
+                        print("   - Set DB_USE_WINDOWS_AUTH=no in environment.env to use SQL Server Authentication with NTLM")
+                        print("   - Make sure DB_DOMAIN, DB_USERNAME and DB_PASSWORD are set correctly")
+                        print("   - Using domain\\username format enables NTLM authentication in Docker")
                     elif 'timeout' in error_detail.lower():
                         print("\n   ⚠️  TROUBLESHOOTING:")
                         print("   - Check if SQL Server is running and accessible")
