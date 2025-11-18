@@ -1,2 +1,7 @@
 
 .venv/
+.env
+environment.env
+environment.docker.env
+*.tar
+dcc-reporting-python.tar
