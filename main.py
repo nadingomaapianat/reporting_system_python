@@ -129,7 +129,6 @@ def create_app() -> FastAPI:
                         print("   - Check if SQL Server is running and accessible")
                         print("   - Verify network connectivity to the database server")
                         print("   - Check firewall settings")
-<<<<<<< HEAD
                     elif '18456' in error_detail or 'Login failed' in error_detail:
                         print("\n   ⚠️  TROUBLESHOOTING (Login Failed - Error 18456):")
                         print("   - Account ADIBEG\\GRCSVC is Windows Authentication ONLY")
@@ -144,8 +143,6 @@ def create_app() -> FastAPI:
                         print("      - Set DB_USE_WINDOWS_AUTH=yes")
                         print("      - Run Python as ADIBEG\\GRCSVC user")
                         print("      - This will use Windows Authentication (works on Windows only)")
-=======
->>>>>>> parent of 7e9fe8ca (ntlm modification)
                     else:
                         print("\n   ⚠️  TROUBLESHOOTING:")
                         print("   - Verify database credentials in environment.env")
