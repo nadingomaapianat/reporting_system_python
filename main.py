@@ -83,7 +83,77 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def startup_event():
-        """Verify fonts are registered at startup"""
+        """Verify fonts and test database connection at startup"""
+        print("\n" + "="*70)
+        print("🚀 APPLICATION STARTUP")
+        print("="*70)
+        
+        # Test database connection
+        print("\n📊 Testing Database Connection...")
+        try:
+            from config.settings import test_database_connection, DATABASE_CONFIG
+            
+            success, message, details = test_database_connection()
+            
+            if success:
+                print("✅ DATABASE CONNECTION: SUCCESS")
+                print(f"   Server: {details.get('server', 'N/A')}")
+                print(f"   Database: {details.get('database', 'N/A')}")
+                print(f"   Authentication: {details.get('auth_type', 'N/A')}")
+                print(f"   Username: {details.get('username', 'N/A')}")
+                # Show the actual Windows user that connected (VERIFY Windows Auth)
+                if 'connected_windows_user' in details:
+                    print(f"   ✅ Connected Windows User: {details.get('connected_windows_user', 'N/A')}")
+                    print(f"   ✅ System User: {details.get('system_user', 'N/A')}")
+                    print(f"   ✅ Database User: {details.get('database_user', 'N/A')}")
+                print(f"   Tables Found: {details.get('table_count', 0)}")
+                print(f"   SQL Version: {details.get('sql_version', 'N/A')[:50]}...")
+                logger.info("✅ Database connection successful")
+            else:
+                print("❌ DATABASE CONNECTION: FAILED")
+                print(f"   Server: {details.get('server', 'N/A')}")
+                print(f"   Database: {details.get('database', 'N/A')}")
+                print(f"   Authentication: {details.get('auth_type', 'N/A')}")
+                print(f"   Error: {message}")
+                if 'error' in details:
+                    error_detail = details['error']
+                    if 'Kerberos' in error_detail or 'SSPI' in error_detail:
+                        print("\n   ⚠️  TROUBLESHOOTING:")
+                        print("   - Windows Authentication (Kerberos/NTLM via SSPI) doesn't work in Docker containers")
+                        print("   - Set DB_USE_WINDOWS_AUTH=no in environment.env to use SQL Server Authentication with NTLM")
+                        print("   - Make sure DB_DOMAIN, DB_USERNAME and DB_PASSWORD are set correctly")
+                        print("   - Using domain\\username format enables NTLM authentication in Docker")
+                    elif 'timeout' in error_detail.lower():
+                        print("\n   ⚠️  TROUBLESHOOTING:")
+                        print("   - Check if SQL Server is running and accessible")
+                        print("   - Verify network connectivity to the database server")
+                        print("   - Check firewall settings")
+                    elif '18456' in error_detail or 'Login failed' in error_detail:
+                        print("\n   ⚠️  TROUBLESHOOTING (Login Failed - Error 18456):")
+                        print("   - Account ADIBEG\\GRCSVC is Windows Authentication ONLY")
+                        print("   - SQL Server Authentication is NOT enabled for this account")
+                        print("   - Docker (Linux) cannot use Windows Authentication")
+                        print("\n   💡 SOLUTIONS:")
+                        print("   1. Ask bank to enable SQL Server Authentication for ADIBEG\\GRCSVC")
+                        print("      - Enable SQL Server Authentication mode on SQL Server")
+                        print("      - Create SQL Server login for ADIBEG\\GRCSVC")
+                        print("   2. Get a different account with SQL Server Authentication enabled")
+                        print("   3. Run on Windows host (not Docker):")
+                        print("      - Set DB_USE_WINDOWS_AUTH=yes")
+                        print("      - Run Python as ADIBEG\\GRCSVC user")
+                        print("      - This will use Windows Authentication (works on Windows only)")
+                    else:
+                        print("\n   ⚠️  TROUBLESHOOTING:")
+                        print("   - Verify database credentials in environment.env")
+                        print("   - Check if SQL Server is running")
+                        print("   - Ensure ODBC Driver 18 for SQL Server is installed")
+                logger.error(f"❌ Database connection failed: {message}")
+        except Exception as e:
+            print(f"❌ DATABASE CONNECTION: ERROR - {str(e)}")
+            logger.error(f"Database connection test error: {e}")
+        
+        # Verify fonts
+        print("\n🔤 Verifying PDF Fonts...")
         try:
             from reportlab.pdfbase import pdfmetrics
             from utils.pdf_utils import ARABIC_FONT_NAME, DEFAULT_FONT_NAME
