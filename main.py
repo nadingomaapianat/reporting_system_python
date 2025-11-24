@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 print("DEBUG: main.py - About to import routers...")
 # Import directly from api_routes to avoid circular dependency via utils/__init__.py
 from utils import api_routes
+from utils.csrf import CSRFMiddleware, create_csrf_token, set_csrf_cookie
 api_router = api_routes.router
 print("DEBUG: main.py - All routers imported (consolidated in api_router)")
 
@@ -77,6 +78,25 @@ def create_app() -> FastAPI:
 
     # Include consolidated API router (contains all sub-routers)
     app.include_router(api_router)
+
+    csrf_cookie_secure = os.getenv("CSRF_COOKIE_SECURE", "true").lower() == "true"
+
+    app.add_middleware(
+        CSRFMiddleware,
+        exempt_paths=(
+            "/csrf/token",
+            "/docs",
+            "/redoc",
+            "/openapi.json",
+            "/exports",
+        ),
+    )
+
+    @app.get("/csrf/token")
+    async def get_csrf_token(response: Response):
+        token = create_csrf_token()
+        set_csrf_cookie(response, token, secure=csrf_cookie_secure)
+        return {"csrfToken": token}
 
     # Serve exported files statically under /exports
     app.mount("/exports", StaticFiles(directory="exports"), name="exports")
