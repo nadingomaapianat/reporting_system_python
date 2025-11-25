@@ -8,6 +8,7 @@ print("DEBUG: main.py - About to import routers...")
 # Import directly from api_routes to avoid circular dependency via utils/__init__.py
 from utils import api_routes
 from utils.csrf import CSRFMiddleware, create_csrf_token, set_csrf_cookie
+from utils.auth import JWTAuthMiddleware
 api_router = api_routes.router
 print("DEBUG: main.py - All routers imported (consolidated in api_router)")
 
@@ -81,6 +82,9 @@ def create_app() -> FastAPI:
     app.include_router(api_router)
 
     csrf_cookie_secure = os.getenv("CSRF_COOKIE_SECURE", "true").lower() == "true"
+
+    # Add JWT authentication middleware (before CSRF)
+    app.add_middleware(JWTAuthMiddleware)
 
     app.add_middleware(
         CSRFMiddleware,
