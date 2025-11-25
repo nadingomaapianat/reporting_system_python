@@ -12,11 +12,13 @@ from routes.dynamic_report_endpoints import router as dynamic_router
 from routes.excel_to_word_endpoints import router as excel_word_router
 from routes.xbrl_routes import router as xbrl_router
 from routes.word_template_routes import router as word_template_router
+from routes.auth_routes import router as auth_router
 
 # Create main router
 router = APIRouter()
 
 # Include all sub-routers
+router.include_router(auth_router)
 router.include_router(control_router)
 router.include_router(risk_router)
 router.include_router(incident_router)
