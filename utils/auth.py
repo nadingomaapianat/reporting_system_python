@@ -55,6 +55,10 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
     """Middleware to validate JWT tokens on all requests except public paths."""
     
     async def dispatch(self, request: Request, call_next):
+        # Always allow CORS preflight through (OPTIONS) so CORSMiddleware can respond
+        if request.method.upper() == "OPTIONS":
+            return await call_next(request)
+        
         # Skip authentication for public paths
         if any(request.url.path.startswith(path) for path in PUBLIC_PATHS):
             return await call_next(request)

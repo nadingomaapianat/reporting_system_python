@@ -62,24 +62,6 @@ def create_app() -> FastAPI:
     
     print("DEBUG: Middleware added")
 
-    # CORS
-    allowed_origins = [
-        "https://reporting-system-frontend.pianat.ai",
-        "http://127.0.0.1:3000",
-        os.getenv("FRONTEND_ORIGIN", "*")
-    ]
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allowed_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-        expose_headers=["X-Export-Src"],
-    )
-
-    # Include consolidated API router (contains all sub-routers)
-    app.include_router(api_router)
-
     csrf_cookie_secure = os.getenv("CSRF_COOKIE_SECURE", "true").lower() == "true"
 
     # Add JWT authentication middleware (before CSRF)
@@ -95,6 +77,30 @@ def create_app() -> FastAPI:
             "/exports",
         ),
     )
+
+    # CORS MUST be the outermost middleware so it can handle preflight (OPTIONS) before auth/CSRF
+    allowed_origins = [
+        # Production frontend
+        "https://reporting-system-frontend.pianat.ai",
+        # Localhost variants used during development
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+    extra_origin = os.getenv("FRONTEND_ORIGIN")
+    if extra_origin and extra_origin not in allowed_origins and extra_origin != "*":
+        allowed_origins.append(extra_origin)
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["X-Export-Src"],
+    )
+
+    # Include consolidated API router (contains all sub-routers)
+    app.include_router(api_router)
 
     @app.get("/csrf/token")
     async def get_csrf_token(response: Response):
