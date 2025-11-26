@@ -10,7 +10,9 @@ from starlette.responses import JSONResponse, Response
 
 CSRF_COOKIE_NAME = "csrfToken"
 CSRF_HEADER_NAME = "x-csrf-token"
-DEFAULT_SAFE_METHODS: Set[str] = set()
+# We still enforce CSRF on all application methods (GET/POST/PUT/DELETE/PATCH),
+# but we explicitly treat OPTIONS as safe so that CORS preflight can succeed.
+DEFAULT_SAFE_METHODS: Set[str] = {"OPTIONS"}
 
 
 def create_csrf_token() -> str:

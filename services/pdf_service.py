@@ -60,6 +60,14 @@ class PDFService:
             if card_type:
                 data = incidents_data.get(card_type) or incidents_data.get('list') or []
 
+            write_debug(f"DEBUG: incidents_data keys: {list(incidents_data.keys()) if isinstance(incidents_data, dict) else 'N/A'}")
+            write_debug(f"DEBUG: card_type: {card_type}")
+            write_debug(f"DEBUG: data type: {type(data)}")
+            write_debug(f"DEBUG: data length: {len(data) if isinstance(data, (list, dict)) else 'N/A'}")
+            if isinstance(data, list) and data:
+                write_debug(f"DEBUG: first item: {data[0] if data else 'N/A'}")
+                write_debug(f"DEBUG: first item keys: {list(data[0].keys()) if isinstance(data[0], dict) else 'N/A'}")
+
             columns: List[str] = []
             data_rows: List[List[str]] = []
 
@@ -237,24 +245,56 @@ class PDFService:
             # CARD SUMMARY EXPORT
             elif only_card and card_type:
                 write_debug("DEBUG: ===== incidents only_card START =====")
+                write_debug(f"DEBUG: data: {data}")
+                write_debug(f"DEBUG: data type: {type(data)}")
+                
                 # Build a simple table from the card data
                 if isinstance(data, list) and data:
                     first_item = data[0]
+                    write_debug(f"DEBUG: first_item: {first_item}")
+                    write_debug(f"DEBUG: first_item type: {type(first_item)}")
+                    
                     if isinstance(first_item, dict):
-                        def nice(k: str) -> str:
-                            return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
-                        raw_keys = list(first_item.keys())
-                        columns = ['#'] + [nice(k) for k in raw_keys]
-                        for i, item in enumerate(data, 1):
-                            values = [str(item.get(k, 'N/A')) for k in raw_keys]
-                            data_rows.append([str(i)] + values)
+                        write_debug(f"DEBUG: first_item keys: {list(first_item.keys())}")
+                        
+                        # Special handling for status-based card types (similar to controls)
+                        if card_type in ['pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance']:
+                            write_debug(f"DEBUG: Creating columns for status card type: ['#', 'Code', 'Title', 'Status', 'Created At']")
+                            columns = ["#", "Code", "Title", "Status", "Created At"]
+                            data_rows = []
+                            for i, item in enumerate(data, 1):
+                                data_rows.append([
+                                    str(i),
+                                    str(item.get('code', 'N/A')),
+                                    str(item.get('title', 'N/A')),
+                                    str(item.get('status', 'N/A')),
+                                    str(item.get('createdAt', 'N/A'))
+                                ])
+                            write_debug(f"DEBUG: Created {len(data_rows)} rows with columns: {columns}")
+                        else:
+                            # Generic handling for other card types
+                            def nice(k: str) -> str:
+                                return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
+                            raw_keys = list(first_item.keys())
+                            columns = ['#'] + [nice(k) for k in raw_keys]
+                            write_debug(f"DEBUG: Generic handling - columns: {columns}")
+                            for i, item in enumerate(data, 1):
+                                values = [str(item.get(k, 'N/A')) for k in raw_keys]
+                                data_rows.append([str(i)] + values)
+                            write_debug(f"DEBUG: Created {len(data_rows)} rows")
                     else:
                         columns = ['#', 'Value']
                         data_rows = [["1", str(first_item)]]
+                elif isinstance(data, list) and not data:
+                    # Empty list
+                    write_debug("DEBUG: data is an empty list - showing 'No data available'")
+                    columns = ["Metric", "Value"]
+                    data_rows = [["No data available", "No incidents found matching the criteria"]]
                 elif isinstance(data, dict):
                     columns = ["Metric", "Value"]
                     data_rows = [[k, str(v)] for k, v in data.items()]
                 else:
+                    write_debug(f"DEBUG: data is not list or dict - type: {type(data)}, value: {data}")
                     columns = ["Metric", "Value"]
                     data_rows = [["No data available", "N/A"]]
             else:
