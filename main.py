@@ -83,7 +83,7 @@ def create_app() -> FastAPI:
         # Production frontend
         "https://reporting-system-frontend.pianat.ai",
         # Localhost variants used during development
-        "http://localhost:3000",
+        "https://reporting-system-frontend.pianat.ai",
         "http://127.0.0.1:3000",
     ]
     extra_origin = os.getenv("FRONTEND_ORIGIN")
