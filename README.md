@@ -132,7 +132,7 @@ DATABASE_CONFIG = {
 ### API Configuration
 ```python
 API_CONFIG = {
-    'node_api_url': 'http://localhost:3002',
+    'node_api_url': 'https://backendnode-fawry-reporting.comply.now',
     'python_api_url': 'https://reporting-system-python.pianat.ai',
     'timeout': 30
 }
