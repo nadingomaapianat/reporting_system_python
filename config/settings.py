@@ -34,9 +34,23 @@ DATABASE_CONFIG = {
 
 # API Configuration - loaded from environment variables
 API_CONFIG = {
-    'node_api_url': os.getenv('NODE_API_URL', 'http://10.240.53.65:3002'),
-    'python_api_url': os.getenv('PYTHON_API_URL', 'http://10.240.53.65:8000'),
-    'timeout': int(os.getenv('API_TIMEOUT', '60'))
+    'node_api_url': 'https://reporting-system-backend.pianat.ai',
+    'python_api_url': 'https://reporting-system-python.pianat.ai',
+    'timeout': 60
+}
+
+# Export Configuration
+EXPORT_CONFIG = {
+    'max_rows_per_sheet': 10000,
+    'chart_dpi': 150,
+    'chart_figsize': (8, 4),
+    'default_font_size': 10,
+    'page_margins': {
+        'top': 1.0,
+        'bottom': 1.0,
+        'left': 1.0,
+        'right': 1.0
+    }
 }
 
 # File Paths
