@@ -29,11 +29,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure FreeTDS ODBC driver and DSN
-# Driver definition
 RUN printf "[FreeTDS]\nDescription=FreeTDS Driver for SQL Server (NTLM Support)\nDriver=/usr/lib/x86_64-linux-gnu/odbc/libtdsodbc.so\nUsageCount=1\n" \
     > /etc/odbcinst.ini
 
-# DSN definition
 RUN printf "[SQLServerNTLM]\nDriver=FreeTDS\nServer=10.240.10.202\nPort=5555\nDatabase=NEWDCC-V4-UAT\nTDS_Version=7.3\n" \
     > /etc/odbc.ini
 
