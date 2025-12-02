@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unixodbc-dev \
     freetds-bin \
     freetds-dev \
+    tdsodbc \
     curl \
     gnupg2 \
     ca-certificates \
@@ -29,7 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure FreeTDS ODBC driver and DSN
-RUN printf "[FreeTDS]\nDescription=FreeTDS Driver for SQL Server (NTLM Support)\nDriver=/usr/lib/x86_64-linux-gnu/odbc/libtdsodbc.so\nUsageCount=1\n" \
+# The driver path below must match the actual libtdsodbc.so installed by tdsodbc
+RUN printf "[FreeTDS]\nDescription=FreeTDS Driver for SQL Server\nDriver=/usr/lib/x86_64-linux-gnu/odbc/libtdsodbc.so\nUsageCount=1\n" \
     > /etc/odbcinst.ini
 
 RUN printf "[SQLServerNTLM]\nDriver=FreeTDS\nServer=10.240.10.202\nPort=5555\nDatabase=NEWDCC-V4-UAT\nTDS_Version=7.3\n" \
