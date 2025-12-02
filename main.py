@@ -1,13 +1,19 @@
 import os
+from dotenv import load_dotenv  # NEW
+
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+# Load .env file (for local/dev; in Docker, env comes from container)
+load_dotenv()  # looks for ".env" in the project root by default
+
+# Import API routes and middleware
 print("DEBUG: main.py - About to import routers...")
 from utils import api_routes
 from utils.csrf import CSRFMiddleware, create_csrf_token, set_csrf_cookie
 from utils.auth import JWTAuthMiddleware
-from utils.db import get_connection  # NEW
+from utils.db import get_connection  # uses SQL auth via FreeTDS
 api_router = api_routes.router
 print("DEBUG: main.py - All routers imported (consolidated in api_router)")
 
@@ -65,6 +71,7 @@ def create_app() -> FastAPI:
     # JWT authentication middleware
     app.add_middleware(JWTAuthMiddleware)
 
+    # CSRF middleware
     app.add_middleware(
         CSRFMiddleware,
         exempt_paths=(
@@ -76,7 +83,7 @@ def create_app() -> FastAPI:
         ),
     )
 
-    # CORS
+    # CORS configuration
     allowed_origins = [
         "https://reporting-system-frontend.pianat.ai",
         "https://reporting-system-frontend.pianat.ai",
@@ -95,7 +102,7 @@ def create_app() -> FastAPI:
         expose_headers=["X-Export-Src"],
     )
 
-    # Include API router
+    # Include consolidated API router
     app.include_router(api_router)
 
     @app.get("/csrf/token")
@@ -104,7 +111,7 @@ def create_app() -> FastAPI:
         set_csrf_cookie(response, token, secure=csrf_cookie_secure)
         return {"csrfToken": token}
 
-    # Static exports
+    # Serve exported files statically under /exports
     app.mount("/exports", StaticFiles(directory="exports"), name="exports")
 
     @app.on_event("startup")
@@ -114,8 +121,8 @@ def create_app() -> FastAPI:
         print("🚀 APPLICATION STARTUP")
         print("=" * 70)
 
-        # Test database connection using FreeTDS + pyodbc
-        print("\n📊 Testing Database Connection (FreeTDS + pyodbc)...")
+        # Test database connection using SQL auth via FreeTDS + pyodbc
+        print("\n📊 Testing Database Connection (SQL auth, FreeTDS + pyodbc)...")
         try:
             conn = get_connection()
             cursor = conn.cursor()
@@ -132,7 +139,7 @@ def create_app() -> FastAPI:
             print(f"   Error: {e}")
             logger.error(f"❌ Database connection failed at startup: {e}")
 
-        # Verify fonts (unchanged)
+        # Verify fonts (same as before)
         print("\n🔤 Verifying PDF Fonts...")
         try:
             from reportlab.pdfbase import pdfmetrics
@@ -162,6 +169,7 @@ def create_app() -> FastAPI:
     return app
 
 
+# Create app instance - this will be imported by uvicorn
 app = create_app()
 
 if __name__ == "__main__":
