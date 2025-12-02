@@ -7,19 +7,17 @@ logger = logging.getLogger("db")
 
 def get_connection():
     """
-    Connect to SQL Server using NTLM/domain authentication via FreeTDS.
-    Uses environment variables for configuration.
+    Connect to SQL Server using SQL Server Authentication (username + password)
+    via FreeTDS + pyodbc.
     """
 
-    # Load credentials / settings from environment
-    DOMAIN = os.getenv("DB_DOMAIN", "ADIBEG")
-    USERNAME = os.getenv("DB_USER", "GRCSVC")
-    PASSWORD = os.getenv("DB_PASS", "")
+    # Load credentials / settings from environment (e.g. from .env or Docker env)
+    USERNAME = os.getenv("DB_USER", "sql_user")        # SQL login in SQL Server
+    PASSWORD = os.getenv("DB_PASS", "")               # SQL login password
     SERVER = os.getenv("DB_SERVER", "10.240.10.202")
     PORT = int(os.getenv("DB_PORT", "5555"))
     DATABASE = os.getenv("DB_NAME", "NEWDCC-V4-UAT")
 
-    # Either use DSN or full connection string; here we use DRIVER + SERVER
     conn_str = (
         f"DRIVER={{FreeTDS}};"
         f"SERVER={SERVER};"
@@ -27,11 +25,10 @@ def get_connection():
         f"DATABASE={DATABASE};"
         f"UID={USERNAME};"
         f"PWD={PASSWORD};"
-        f"Domain={DOMAIN};"
         f"TDS_Version=7.3;"
     )
 
-    logger.info("Connecting to SQL Server with FreeTDS/pyodbc (NTLM)...")
+    logger.info("Connecting to SQL Server with FreeTDS/pyodbc using SQL auth...")
 
     try:
         conn = pyodbc.connect(conn_str)
