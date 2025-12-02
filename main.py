@@ -3,19 +3,18 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-# Import API routes
 print("DEBUG: main.py - About to import routers...")
-# Import directly from api_routes to avoid circular dependency via utils/__init__.py
 from utils import api_routes
 from utils.csrf import CSRFMiddleware, create_csrf_token, set_csrf_cookie
 from utils.auth import JWTAuthMiddleware
+from utils.db import get_connection  # NEW
 api_router = api_routes.router
 print("DEBUG: main.py - All routers imported (consolidated in api_router)")
 
 
 def create_app() -> FastAPI:
     print("DEBUG: create_app() called")
-    
+
     # Setup logging
     import logging
     logging.basicConfig(
@@ -25,7 +24,7 @@ def create_app() -> FastAPI:
             logging.StreamHandler(),
         ]
     )
-    
+
     app = FastAPI(
         title="Reporting System Python API",
         version="1.0.0",
@@ -33,19 +32,18 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
         openapi_url="/openapi.json",
     )
-    
+
     print("DEBUG: FastAPI app created, adding middleware...")
-    
-    # Add request logging middleware and exception handler
+
     logger = logging.getLogger(__name__)
-    
+
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         logger.error(f"GLOBAL EXCEPTION: {type(exc).__name__}: {exc}")
         import traceback
         traceback.print_exc()
         return {"detail": f"Internal error: {str(exc)}"}, 500
-    
+
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
         logger.error(f"REQUEST: {request.method} {request.url.path}")
@@ -59,12 +57,12 @@ def create_app() -> FastAPI:
             import traceback
             traceback.print_exc()
             raise
-    
+
     print("DEBUG: Middleware added")
 
     csrf_cookie_secure = os.getenv("CSRF_COOKIE_SECURE", "true").lower() == "true"
 
-    # Add JWT authentication middleware (before CSRF)
+    # JWT authentication middleware
     app.add_middleware(JWTAuthMiddleware)
 
     app.add_middleware(
@@ -78,11 +76,9 @@ def create_app() -> FastAPI:
         ),
     )
 
-    # CORS MUST be the outermost middleware so it can handle preflight (OPTIONS) before auth/CSRF
+    # CORS
     allowed_origins = [
-        # Production frontend
         "https://reporting-system-frontend.pianat.ai",
-        # Localhost variants used during development
         "https://reporting-system-frontend.pianat.ai",
         "http://127.0.0.1:3000",
     ]
@@ -99,7 +95,7 @@ def create_app() -> FastAPI:
         expose_headers=["X-Export-Src"],
     )
 
-    # Include consolidated API router (contains all sub-routers)
+    # Include API router
     app.include_router(api_router)
 
     @app.get("/csrf/token")
@@ -108,97 +104,50 @@ def create_app() -> FastAPI:
         set_csrf_cookie(response, token, secure=csrf_cookie_secure)
         return {"csrfToken": token}
 
-    # Serve exported files statically under /exports
+    # Static exports
     app.mount("/exports", StaticFiles(directory="exports"), name="exports")
 
     @app.on_event("startup")
     async def startup_event():
         """Verify fonts and test database connection at startup"""
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("🚀 APPLICATION STARTUP")
-        print("="*70)
-        
-        # Test database connection
-        print("\n📊 Testing Database Connection...")
+        print("=" * 70)
+
+        # Test database connection using FreeTDS + pyodbc
+        print("\n📊 Testing Database Connection (FreeTDS + pyodbc)...")
         try:
-            from config.settings import test_database_connection, DATABASE_CONFIG
-            
-            success, message, details = test_database_connection()
-            
-            if success:
-                print("✅ DATABASE CONNECTION: SUCCESS")
-                print(f"   Server: {details.get('server', 'N/A')}")
-                print(f"   Database: {details.get('database', 'N/A')}")
-                print(f"   Authentication: {details.get('auth_type', 'N/A')}")
-                print(f"   Username: {details.get('username', 'N/A')}")
-                # Show the actual Windows user that connected (VERIFY Windows Auth)
-                if 'connected_windows_user' in details:
-                    print(f"   ✅ Connected Windows User: {details.get('connected_windows_user', 'N/A')}")
-                    print(f"   ✅ System User: {details.get('system_user', 'N/A')}")
-                    print(f"   ✅ Database User: {details.get('database_user', 'N/A')}")
-                print(f"   Tables Found: {details.get('table_count', 0)}")
-                print(f"   SQL Version: {details.get('sql_version', 'N/A')[:50]}...")
-                logger.info("✅ Database connection successful")
-            else:
-                print("❌ DATABASE CONNECTION: FAILED")
-                print(f"   Server: {details.get('server', 'N/A')}")
-                print(f"   Database: {details.get('database', 'N/A')}")
-                print(f"   Authentication: {details.get('auth_type', 'N/A')}")
-                print(f"   Error: {message}")
-                if 'error' in details:
-                    error_detail = details['error']
-                    if 'Kerberos' in error_detail or 'SSPI' in error_detail:
-                        print("\n   ⚠️  TROUBLESHOOTING:")
-                        print("   - Windows Authentication (Kerberos/NTLM via SSPI) doesn't work in Docker containers")
-                        print("   - Set DB_USE_WINDOWS_AUTH=no in environment.env to use SQL Server Authentication with NTLM")
-                        print("   - Make sure DB_DOMAIN, DB_USERNAME and DB_PASSWORD are set correctly")
-                        print("   - Using domain\\username format enables NTLM authentication in Docker")
-                    elif 'timeout' in error_detail.lower():
-                        print("\n   ⚠️  TROUBLESHOOTING:")
-                        print("   - Check if SQL Server is running and accessible")
-                        print("   - Verify network connectivity to the database server")
-                        print("   - Check firewall settings")
-                    elif '18456' in error_detail or 'Login failed' in error_detail:
-                        print("\n   ⚠️  TROUBLESHOOTING (Login Failed - Error 18456):")
-                        print("   - Account ADIBEG\\GRCSVC is Windows Authentication ONLY")
-                        print("   - SQL Server Authentication is NOT enabled for this account")
-                        print("   - Docker (Linux) cannot use Windows Authentication")
-                        print("\n   💡 SOLUTIONS:")
-                        print("   1. Ask bank to enable SQL Server Authentication for ADIBEG\\GRCSVC")
-                        print("      - Enable SQL Server Authentication mode on SQL Server")
-                        print("      - Create SQL Server login for ADIBEG\\GRCSVC")
-                        print("   2. Get a different account with SQL Server Authentication enabled")
-                        print("   3. Run on Windows host (not Docker):")
-                        print("      - Set DB_USE_WINDOWS_AUTH=yes")
-                        print("      - Run Python as ADIBEG\\GRCSVC user")
-                        print("      - This will use Windows Authentication (works on Windows only)")
-                    else:
-                        print("\n   ⚠️  TROUBLESHOOTING:")
-                        print("   - Verify database credentials in environment.env")
-                        print("   - Check if SQL Server is running")
-                        print("   - Ensure ODBC Driver 18 for SQL Server is installed")
-                logger.error(f"❌ Database connection failed: {message}")
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT @@VERSION")
+            version_row = cursor.fetchone()
+            sql_version = version_row[0] if version_row else "Unknown"
+            print("✅ DATABASE CONNECTION: SUCCESS")
+            print(f"   SQL Version: {sql_version[:80]}...")
+            cursor.close()
+            conn.close()
+            logger.info("✅ Database connection successful at startup")
         except Exception as e:
-            print(f"❌ DATABASE CONNECTION: ERROR - {str(e)}")
-            logger.error(f"Database connection test error: {e}")
-        
-        # Verify fonts
+            print("❌ DATABASE CONNECTION: FAILED")
+            print(f"   Error: {e}")
+            logger.error(f"❌ Database connection failed at startup: {e}")
+
+        # Verify fonts (unchanged)
         print("\n🔤 Verifying PDF Fonts...")
         try:
             from reportlab.pdfbase import pdfmetrics
             from utils.pdf_utils import ARABIC_FONT_NAME, DEFAULT_FONT_NAME
-            
+
             registered_fonts = pdfmetrics.getRegisteredFontNames()
             logger.info(f"PDF Fonts: {len(registered_fonts)} fonts registered")
             logger.info(f"PDF Fonts: ARABIC_FONT_NAME={ARABIC_FONT_NAME}, DEFAULT_FONT_NAME={DEFAULT_FONT_NAME}")
-            
-            # Verify key fonts are available
+
             if ARABIC_FONT_NAME:
                 if ARABIC_FONT_NAME in registered_fonts:
                     logger.info(f"PDF Fonts: ✓ {ARABIC_FONT_NAME} is registered and available")
                 else:
                     logger.warning(f"PDF Fonts: ✗ {ARABIC_FONT_NAME} is not in registered fonts list")
-            
+
             if DEFAULT_FONT_NAME in registered_fonts or DEFAULT_FONT_NAME == 'Helvetica':
                 logger.info(f"PDF Fonts: ✓ {DEFAULT_FONT_NAME} is available")
             else:
@@ -213,7 +162,6 @@ def create_app() -> FastAPI:
     return app
 
 
-# Create app instance - this will be imported by uvicorn
 app = create_app()
 
 if __name__ == "__main__":
@@ -222,5 +170,3 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
     print(f"DEBUG: Starting server on port {port}...")
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
-
-
