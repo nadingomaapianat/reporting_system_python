@@ -1,19 +1,18 @@
 import os
-from dotenv import load_dotenv  # NEW
+from dotenv import load_dotenv
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-# Load .env file (for local/dev; in Docker, env comes from container)
-load_dotenv()  # looks for ".env" in the project root by default
+# Load .env for local/dev; in Docker/offline, env comes from docker run
+load_dotenv()
 
-# Import API routes and middleware
 print("DEBUG: main.py - About to import routers...")
 from utils import api_routes
 from utils.csrf import CSRFMiddleware, create_csrf_token, set_csrf_cookie
 from utils.auth import JWTAuthMiddleware
-from utils.db import get_connection  # uses SQL auth via FreeTDS
+from utils.db import get_connection
 api_router = api_routes.router
 print("DEBUG: main.py - All routers imported (consolidated in api_router)")
 
@@ -121,8 +120,8 @@ def create_app() -> FastAPI:
         print("🚀 APPLICATION STARTUP")
         print("=" * 70)
 
-        # Test database connection using SQL auth via FreeTDS + pyodbc
-        print("\n📊 Testing Database Connection (SQL auth, FreeTDS + pyodbc)...")
+        # Test database connection using AD auth via FreeTDS + pyodbc
+        print("\n📊 Testing Database Connection (AD / domain auth, FreeTDS + pyodbc)...")
         try:
             conn = get_connection()
             cursor = conn.cursor()
@@ -139,7 +138,7 @@ def create_app() -> FastAPI:
             print(f"   Error: {e}")
             logger.error(f"❌ Database connection failed at startup: {e}")
 
-        # Verify fonts (same as before)
+        # Verify fonts (unchanged)
         print("\n🔤 Verifying PDF Fonts...")
         try:
             from reportlab.pdfbase import pdfmetrics
@@ -169,7 +168,6 @@ def create_app() -> FastAPI:
     return app
 
 
-# Create app instance - this will be imported by uvicorn
 app = create_app()
 
 if __name__ == "__main__":
