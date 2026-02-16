@@ -1,4 +1,11 @@
 import os
+# Load .env / environment.env so all links and config come from env
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    load_dotenv("environment.env")
+except ImportError:
+    pass
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -75,20 +82,28 @@ def create_app() -> FastAPI:
             "/redoc",
             "/openapi.json",
             "/exports",
+            # Dynamic report export / preview / execute-sql are called via trusted backends (Node/Next),
+            # which already enforce auth and CSRF. Skip Python-side CSRF here to avoid 403s.
+            "/api/reports/dynamic",
+            "/api/reports/dynamic/preview",
+            "/api/reports/execute-sql",
         ),
     )
 
     # CORS MUST be the outermost middleware so it can handle preflight (OPTIONS) before auth/CSRF
-    allowed_origins = [
-        # Production frontend
-        "https://reporting-system-frontend.pianat.ai",
-        # Localhost variants used during development
-        "https://reporting-system-frontend.pianat.ai",
-        "http://127.0.0.1:3000",
-    ]
-    extra_origin = os.getenv("FRONTEND_ORIGIN")
-    if extra_origin and extra_origin not in allowed_origins and extra_origin != "*":
-        allowed_origins.append(extra_origin)
+    # Build from .env: CORS_ORIGINS (comma-separated) or FRONTEND_ORIGIN; fallback to localhost
+    _cors_env = os.getenv("CORS_ORIGINS", "").strip()
+    if _cors_env:
+        allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+    else:
+        allowed_origins = [
+            os.getenv("FRONTEND_ORIGIN", "https://grc-reporting-uat.adib.co.eg").strip(),
+            "http://127.0.0.1:3000",
+            "https://grc-reporting-uat.adib.co.eg",
+        ]
+    _extra = os.getenv("FRONTEND_ORIGIN")
+    if _extra and _extra not in allowed_origins and _extra != "*":
+        allowed_origins.append(_extra)
 
     app.add_middleware(
         CORSMiddleware,
@@ -220,7 +235,8 @@ if __name__ == "__main__":
     import uvicorn
     print("DEBUG: About to start uvicorn server...")
     port = int(os.getenv("PORT", "8000"))
-    print(f"DEBUG: Starting server on port {port}...")
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    use_reload = os.getenv("RELOAD", "1").strip().lower() in ("1", "true", "yes")
+    print(f"DEBUG: Starting server on port {port}... (reload={use_reload})")
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=use_reload)
 
 

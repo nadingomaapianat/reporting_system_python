@@ -14,7 +14,14 @@ class APIService:
         self.node_api_url = API_CONFIG['node_api_url']
         self.timeout = API_CONFIG['timeout']
     
-    async def get_risks_data(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
+    async def get_risks_data(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Get risks data from Node.js API"""
         try:
             url = f"{self.node_api_url}/api/grc/risks"
@@ -23,6 +30,12 @@ class APIService:
                 params['startDate'] = start_date
             if end_date:
                 params['endDate'] = end_date
+            if user_id:
+                params['userId'] = user_id
+            if group_name:
+                params['groupName'] = group_name
+            if function_id:
+                params['functionId'] = function_id
             
             # Add reasonable connect/read timeouts to avoid long hangs
             timeout = aiohttp.ClientTimeout(total=self.timeout, connect=10)
@@ -44,7 +57,14 @@ class APIService:
             print(f"DEBUG: Node API error: {e}")
             return {}
     
-    async def get_controls_data(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
+    async def get_controls_data(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Get controls data from Node.js API with fallback"""
         try:
             url = f"{self.node_api_url}/api/grc/controls"
@@ -53,6 +73,12 @@ class APIService:
                 params['startDate'] = start_date
             if end_date:
                 params['endDate'] = end_date
+            if user_id:
+                params['userId'] = user_id
+            if group_name:
+                params['groupName'] = group_name
+            if function_id:
+                params['functionId'] = function_id
             
             # Increase timeout for complex queries
             timeout = aiohttp.ClientTimeout(total=self.timeout, connect=10)
@@ -74,7 +100,15 @@ class APIService:
             print(f"DEBUG: Node API error: {e}")
             return {}
     
-    async def get_risks_card_data(self, card_type: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_risks_card_data(
+        self,
+        card_type: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get specific risks card data from Node.js API"""
         try:
             url = f"{self.node_api_url}/api/grc/risks/{card_type}"
@@ -83,6 +117,12 @@ class APIService:
                 params['startDate'] = start_date
             if end_date:
                 params['endDate'] = end_date
+            if user_id:
+                params['userId'] = user_id
+            if group_name:
+                params['groupName'] = group_name
+            if function_id:
+                params['functionId'] = function_id
             
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 async with session.get(url, params=params) as response:
@@ -100,7 +140,15 @@ class APIService:
         except Exception as e:
             return []
     
-    async def get_controls_chart_data(self, chart_type: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]] | Dict[str, Any]:
+    async def get_controls_chart_data(
+        self,
+        chart_type: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]] | Dict[str, Any]:
         """Get specific controls chart data from Node.js API; returns list or dict depending on endpoint."""
         try:
             # Convert camelCase to kebab-case and map to charts endpoint
@@ -125,6 +173,12 @@ class APIService:
                 params['startDate'] = start_date
             if end_date:
                 params['endDate'] = end_date
+            if user_id:
+                params['userId'] = user_id
+            if group_name:
+                params['groupName'] = group_name
+            if function_id:
+                params['functionId'] = function_id
 
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout, connect=10)) as session:
                 async with session.get(url, params=params) as response:
@@ -141,7 +195,15 @@ class APIService:
         except Exception:
             return []
     
-    async def get_controls_card_data(self, card_type: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_controls_card_data(
+        self,
+        card_type: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get specific controls card data from Node.js API"""
         try:
             # Convert camelCase to kebab-case for endpoints
@@ -166,6 +228,12 @@ class APIService:
                 params['startDate'] = start_date
             if end_date:
                 params['endDate'] = end_date
+            if user_id:
+                params['userId'] = user_id
+            if group_name:
+                params['groupName'] = group_name
+            if function_id:
+                params['functionId'] = function_id
             
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 async with session.get(url, params=params) as response:
@@ -190,7 +258,14 @@ class APIService:
         except Exception as e:
             return []
 
-    async def get_incidents_data(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
+    async def get_incidents_data(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Get incidents dashboard data from Node.js API"""
         try:
             url = f"{self.node_api_url}/api/grc/incidents"
@@ -199,6 +274,12 @@ class APIService:
                 params['startDate'] = start_date
             if end_date:
                 params['endDate'] = end_date
+            if user_id:
+                params['userId'] = user_id
+            if group_name:
+                params['groupName'] = group_name
+            if function_id:
+                params['functionId'] = function_id
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
@@ -207,7 +288,15 @@ class APIService:
         except Exception:
             return {}
 
-    async def get_incidents_card_data(self, card_type: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_card_data(
+        self,
+        card_type: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get specific incidents card data from Node.js API (paginated-safe)"""
         try:
             url = f"{self.node_api_url}/api/grc/incidents/{card_type}"
@@ -216,6 +305,12 @@ class APIService:
                 params['startDate'] = start_date
             if end_date:
                 params['endDate'] = end_date
+            if user_id:
+                params['userId'] = user_id
+            if group_name:
+                params['groupName'] = group_name
+            if function_id:
+                params['functionId'] = function_id
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
@@ -232,7 +327,14 @@ class APIService:
         except Exception:
             return []
 
-    async def get_kris_data(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
+    async def get_kris_data(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Get KRIs dashboard data from Node.js API"""
         try:
             url = f"{self.node_api_url}/api/grc/kris"
@@ -241,6 +343,12 @@ class APIService:
                 params['startDate'] = start_date
             if end_date:
                 params['endDate'] = end_date
+            if user_id:
+                params['userId'] = user_id
+            if group_name:
+                params['groupName'] = group_name
+            if function_id:
+                params['functionId'] = function_id
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
@@ -249,7 +357,15 @@ class APIService:
         except Exception:
             return {}
 
-    async def get_kris_card_data(self, card_type: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_kris_card_data(
+        self,
+        card_type: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get specific KRIs card data from Node.js API"""
         try:
             url = f"{self.node_api_url}/api/grc/kris/{card_type}"
@@ -258,6 +374,12 @@ class APIService:
                 params['startDate'] = start_date
             if end_date:
                 params['endDate'] = end_date
+            if user_id:
+                params['userId'] = user_id
+            if group_name:
+                params['groupName'] = group_name
+            if function_id:
+                params['functionId'] = function_id
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:

@@ -1,13 +1,263 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 import pyodbc
+import json
+import logging
+import traceback
 from config import get_database_connection_string
 from utils.export_utils import get_default_header_config
 
-# Create router for dynamic report endpoints
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.post("/api/reports/dynamic")
+
+@router.get("/api/reports/dynamic/tables")
+async def list_dynamic_tables():
+    """
+    List available database tables for dynamic/transaction reports.
+    Uses INFORMATION_SCHEMA.TABLES (dbo schema, base tables only).
+    """
+    try:
+        connection_string = get_database_connection_string()
+        conn = pyodbc.connect(connection_string)
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT TABLE_NAME
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = 'dbo'
+                ORDER BY TABLE_NAME
+                """
+            )
+            rows = cursor.fetchall()
+            tables = [str(r[0]) for r in rows]
+            return {"success": True, "tables": tables}
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list tables: {str(e)}")
+
+
+@router.post("/api/reports/dynamic-dashboard/save-chart")
+async def save_dynamic_dashboard_chart(request: Request):
+    """
+    Save a chart configuration for the dynamic dashboard.
+    Persists configuration in dynamic_dashboard_charts table.
+    Expects JSON body: { title?, chartType?, tables?, joins?, columns?, ... }
+    """
+    logger.info("save-chart: request received")
+    try:
+        try:
+            body = await request.json()
+            logger.info("save-chart: body parsed ok")
+        except Exception as e:
+            logger.exception("save-chart: invalid or missing JSON body: %s", e)
+            raise HTTPException(
+                status_code=400,
+                detail="Request body must be valid JSON (e.g. { \"title\": \"...\", \"chartType\": \"bar\", ... }).",
+            )
+        if body is None or not isinstance(body, dict):
+            raise HTTPException(status_code=400, detail="Request body must be a JSON object.")
+
+        title = (body.get("title") or "Transaction Chart").strip()
+        chart_type = (body.get("chartType") or "bar").strip()
+        config = {
+            "tables": body.get("tables") or [],
+            "joins": body.get("joins") or [],
+            "columns": body.get("columns") or [],
+            "whereConditions": body.get("whereConditions") or [],
+            "timeFilter": body.get("timeFilter"),
+            "xKey": body.get("xKey"),
+            "yKey": body.get("yKey"),
+            "visibleColumns": body.get("visibleColumns") or [],
+        }
+
+        connection_string = get_database_connection_string()
+        conn = pyodbc.connect(connection_string)
+        cursor = conn.cursor()
+        try:
+            # Create table if not exists (column is chart_config to match existing DB schema)
+            cursor.execute(
+                """
+                IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='dynamic_dashboard_charts' AND xtype='U')
+                CREATE TABLE dynamic_dashboard_charts (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    title NVARCHAR(255) NOT NULL,
+                    chart_type NVARCHAR(20) NOT NULL,
+                    chart_config NVARCHAR(MAX) NOT NULL,
+                    created_at DATETIME2 DEFAULT GETDATE()
+                );
+                """
+            )
+            conn.commit()
+
+            # Ensure chart_config column exists (migrate table created by older schema with 'config')
+            cursor.execute(
+                """
+                IF EXISTS (SELECT * FROM sysobjects WHERE name='dynamic_dashboard_charts' AND xtype='U')
+                AND NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dynamic_dashboard_charts') AND name = 'chart_config')
+                ALTER TABLE dynamic_dashboard_charts ADD chart_config NVARCHAR(MAX) NOT NULL DEFAULT '{}';
+                """
+            )
+            conn.commit()
+
+            # Use whichever config column exists (chart_config preferred; fallback to config)
+            cursor.execute(
+                """
+                SELECT name FROM sys.columns
+                WHERE object_id = OBJECT_ID('dynamic_dashboard_charts') AND name IN ('chart_config', 'config')
+                """
+            )
+            config_columns = [r[0] for r in cursor.fetchall() or []]
+            config_col = "chart_config" if "chart_config" in config_columns else ("config" if "config" in config_columns else "chart_config")
+
+            config_json = json.dumps(config)
+            cursor.execute(
+                f"""
+                INSERT INTO dynamic_dashboard_charts (title, chart_type, {config_col})
+                VALUES (?, ?, ?)
+                """,
+                title,
+                chart_type,
+                config_json,
+            )
+            # Get identity in same scope as INSERT, before commit (SCOPE_IDENTITY() can be NULL after commit)
+            cursor.execute("SELECT SCOPE_IDENTITY() AS id")
+            row = cursor.fetchone()
+            conn.commit()
+
+            new_id = row[0] if row and row[0] is not None else None
+            if new_id is not None:
+                try:
+                    new_id = int(new_id) if isinstance(new_id, int) else int(float(new_id))
+                except (TypeError, ValueError):
+                    new_id = None
+            # Always return 200 when insert succeeded; id may be None if SCOPE_IDENTITY() was unavailable
+            return {"success": True, "id": new_id}
+        finally:
+            cursor.close()
+            conn.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        import sys
+        print(f"[save-chart] ERROR: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        traceback.print_exc()
+        logger.exception("save-chart: %s", e)
+        raise HTTPException(status_code=500, detail=f"Failed to save chart: {str(e)}")
+
+
+@router.post("/api/reports/execute-sql")
+async def execute_sql(request: Request):
+    """
+    Execute a read-only SQL query (SELECT only) and return columns and rows.
+    Body: { "sql": "SELECT ...", "limit": 1000 }.
+    Used by Create Chart from SQL Query in the dynamic dashboard.
+    """
+    try:
+        body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+        if not isinstance(body, dict):
+            body = {}
+        sql = (body.get("sql") or "").strip()
+        limit = int(body.get("limit") or 1000)
+        if limit <= 0 or limit > 10000:
+            limit = 1000
+
+        if not sql:
+            raise HTTPException(status_code=400, detail="SQL query is required")
+
+        # Allow only SELECT (strip comments and whitespace for check)
+        sql_upper = sql.upper().lstrip()
+        if not sql_upper.startswith("SELECT"):
+            raise HTTPException(
+                status_code=400,
+                detail="Only SELECT queries are allowed. Use CAST for datetime columns, e.g. CAST(createdAt AS VARCHAR(MAX)) AS createdAt",
+            )
+
+        connection_string = get_database_connection_string()
+        conn = pyodbc.connect(connection_string)
+        cursor = conn.cursor()
+        try:
+            cursor.execute(sql)
+            rows = cursor.fetchmany(limit) if limit > 0 else cursor.fetchall()
+            columns = [col[0] for col in cursor.description] if cursor.description else []
+
+            # Serialize rows to JSON-safe types (e.g. datetime -> str)
+            json_rows = []
+            for row in rows:
+                rec = {}
+                for idx, col_name in enumerate(columns):
+                    val = row[idx] if idx < len(row) else None
+                    if hasattr(val, "isoformat"):
+                        val = val.isoformat()
+                    elif val is not None and not isinstance(val, (str, int, float, bool, type(None))):
+                        val = str(val)
+                    rec[col_name] = val
+                json_rows.append(rec)
+
+            return {"success": True, "columns": columns, "rows": json_rows}
+        finally:
+            cursor.close()
+            conn.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("execute-sql: %s", e)
+        raise HTTPException(status_code=500, detail=f"Error executing query: {str(e)}")
+
+
+@router.post("/api/reports/dynamic/preview")
+async def preview_dynamic_report(request: Request):
+    """
+    Preview dynamic report data (transactions) without generating a file.
+    Returns JSON: { success, columns, rows } where rows is a list of dicts.
+    """
+    try:
+        body = await request.json()
+        tables = body.get('tables', [])
+        joins = body.get('joins', [])
+        columns = body.get('columns', [])
+        where_conditions = body.get('whereConditions', [])
+        time_filter = body.get('timeFilter')
+        preview_limit = int(body.get('previewLimit') or 1000)
+
+        if not tables or not columns:
+            raise HTTPException(status_code=400, detail="Tables and columns are required")
+
+        sql_query = build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter)
+
+        connection_string = get_database_connection_string()
+        conn = pyodbc.connect(connection_string)
+        cursor = conn.cursor()
+        try:
+            cursor.execute(sql_query)
+            # Fetch limited number of rows for preview
+            rows = cursor.fetchmany(preview_limit) if preview_limit > 0 else cursor.fetchall()
+
+            json_rows = []
+            for row in rows:
+                rec = {}
+                for idx, col_name in enumerate(columns):
+                    rec[col_name] = str(row[idx]) if idx < len(row) and row[idx] is not None else ''
+                json_rows.append(rec)
+
+            return {
+                "success": True,
+                "columns": columns,
+                "rows": json_rows,
+            }
+        finally:
+            cursor.close()
+            conn.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to preview dynamic report: {str(e)}")
+
+
+@router.post("/api/reports/dynamic-alt")
 async def generate_dynamic_report(request: Request):
     """Generate dynamic report based on table selection, joins, columns, and conditions"""
     try:

@@ -22,7 +22,8 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 
 class EnhancedBankCheckService:
     def __init__(self):
-        self.webhook_url = "https://n8nio.pianat.ai/webhook/ocr-check"
+        import os
+        self.webhook_url = os.getenv("OCR_WEBHOOK_URL", "https://n8nio.pianat.ai/webhook/ocr-check")
         self.exports_dir = Path("exports")
         self.exports_dir.mkdir(exist_ok=True)
 

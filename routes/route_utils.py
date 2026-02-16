@@ -51,6 +51,41 @@ def convert_to_boolean(value: Any) -> bool:
     return bool(value)
 
 
+def clean_function_id(function_id: Optional[str]) -> Optional[str]:
+    """
+    Clean function_id to handle URL-encoded spaces and trim whitespace.
+    This ensures function IDs with spaces work correctly.
+    """
+    if not function_id:
+        return None
+    # Handle URL-encoded spaces (+ signs) - decode them first, then trim
+    cleaned = str(function_id).replace('+', ' ').strip()
+    # If empty after trimming, return None
+    return cleaned if cleaned else None
+
+
+def extract_user_and_function_params(request: Any) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    Extract user_id, group_name, and function_id from request.
+    Returns: (user_id, group_name, function_id)
+    """
+    user_id = None
+    group_name = None
+    function_id = None
+    
+    # Extract user info from request.state (set by JWTAuthMiddleware)
+    if hasattr(request, 'state') and hasattr(request.state, 'user'):
+        user = request.state.user
+        user_id = str(user.get('id', '')) if user.get('id') else None
+        group_name = user.get('group') or user.get('groupName') or None
+    
+    # Extract functionId from query parameters
+    function_id = request.query_params.get('functionId') or request.query_params.get('function_id')
+    function_id = clean_function_id(function_id)
+    
+    return user_id, group_name, function_id
+
+
 # In-memory cache to prevent duplicate saves within a short time window
 _export_cache = {}  # Key: cache_key, Value: (result_dict, timestamp)
 _export_lock = {}  # Key: cache_key, Value: timestamp (for locking during save operations)
@@ -63,7 +98,8 @@ async def save_and_log_export(
     header_config: Optional[Dict[str, Any]] = None,
     created_by: Optional[str] = None,
     date_range: Optional[Dict[str, Optional[str]]] = None,
-    export_type: Optional[str] = None
+    export_type: Optional[str] = None,
+    request: Optional[Any] = None
 ) -> Dict[str, Any]:
     """
     Save export file to disk and log to database.
@@ -146,8 +182,24 @@ async def save_and_log_export(
     _export_lock[cache_key] = current_time
     write_debug(f"[Save Export] Setting lock for cache_key: {cache_key[:8]}...")
     
-    # Get user info (default to "System")
-    user_name = created_by or "System"
+    # Extract user_id from request token if available
+    user_id = None
+    if request and hasattr(request, 'state') and hasattr(request.state, 'user'):
+        user = request.state.user
+        user_id_raw = user.get('id') if user.get('id') else None
+        if user_id_raw:
+            # Trim user_id to remove any trailing/leading spaces
+            user_id = str(user_id_raw).strip()
+            if not user_id:  # If empty after trimming, set to None
+                user_id = None
+        write_debug(f"[Save Export] Extracted user_id from token: '{user_id}' (length: {len(user_id) if user_id else 0})")
+    else:
+        write_debug(f"[Save Export] No request or user state available. request={request}, has_state={hasattr(request, 'state') if request else False}")
+    
+    # Save user_id in created_by field (not the name)
+    # Use user_id if available, otherwise fallback to created_by parameter or "System"
+    created_by_value = user_id if user_id else (created_by if created_by else "System")
+    write_debug(f"[Save Export] Saving user_id in created_by field: '{created_by_value}', user_id='{user_id}'")
     
     # Build title for database check (we need this before creating filename)
     # Prioritize card_type for unique database titles, not header_config.title (which is always "Dashboard Report")
@@ -188,20 +240,21 @@ async def save_and_log_export(
             export_title_check = f"{db_title}{date_suffix_check} - {date_str_check}"
             
             # Check for recent duplicate in database (last 30 seconds)
+            # Cast title and created_by to NVARCHAR to avoid ntext/nvarchar comparison error
             cursor_check.execute(
                 """
                 SELECT TOP 1 id, src FROM dbo.report_exports 
                 WHERE dashboard = ? 
                   AND format = ?
-                  AND created_by = ?
+                  AND CAST(created_by AS NVARCHAR(MAX)) = ?
                   AND (
-                    title = ? 
-                    OR title LIKE ?
+                    CAST(title AS NVARCHAR(MAX)) = ? 
+                    OR CAST(title AS NVARCHAR(MAX)) LIKE ?
                   )
                   AND created_at >= DATEADD(SECOND, -30, GETDATE())
                 ORDER BY created_at DESC
                 """,
-                (dashboard, file_extension, user_name, export_title_check, f"{db_title}%")
+                (dashboard, file_extension, created_by_value, export_title_check, f"{db_title}%")
             )
             existing_db = cursor_check.fetchone()
             
@@ -307,13 +360,17 @@ async def save_and_log_export(
     
     # Write file (only once)
     try:
+        write_debug(f"[Save Export] Writing file to: {file_path}")
         with open(file_path, 'wb') as f:
             f.write(content)
+        write_debug(f"[Save Export] File written successfully: {file_path} (size: {len(content)} bytes)")
     except Exception as file_err:
         # Remove lock on error
         if cache_key in _export_lock:
             del _export_lock[cache_key]
         write_debug(f"[Save Export] Failed to write file: {str(file_err)}")
+        import traceback
+        write_debug(f"[Save Export] File write error traceback: {traceback.format_exc()}")
         raise
     
     # Log to database
@@ -380,6 +437,23 @@ async def save_and_log_export(
             except Exception:
                 pass
             
+            # Add created_by_user_id column if it doesn't exist
+            try:
+                cursor.execute(
+                    """
+                    IF NOT EXISTS (
+                      SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                      WHERE TABLE_NAME = 'report_exports' AND COLUMN_NAME = 'created_by_user_id'
+                    )
+                    BEGIN
+                      ALTER TABLE dbo.report_exports ADD created_by_user_id NVARCHAR(255) NULL
+                    END
+                    """
+                )
+                conn.commit()
+            except Exception:
+                pass
+            
             # Insert export record (only if not already exists)
             # Use db_title for database record (can include header config title)
             export_title = f"{db_title}{date_suffix} - {date_str}"
@@ -396,22 +470,24 @@ async def save_and_log_export(
             # Check if record already exists with same parameters within the last 30 seconds
             # Check by multiple fields to catch duplicates even with different file paths or timestamps
             # This prevents the same export from being logged 3 times
+            # CAST created_by to NVARCHAR to avoid ntext/nvarchar incompatibility
+            write_debug(f"[Save Export] Checking for duplicate: src={relative_path}, title={export_title}, dashboard={dashboard}, format={file_extension}, created_by={created_by_value}")
             cursor.execute(
                 """
                 SELECT TOP 1 id, src FROM dbo.report_exports 
                 WHERE (
                   src = ? 
                   OR (
-                    title = ? 
+                    CAST(title AS NVARCHAR(MAX)) = ? 
                     AND dashboard = ? 
                     AND format = ?
-                    AND created_by = ?
+                    AND CAST(created_by AS NVARCHAR(MAX)) = ?
                   )
                 )
                 AND created_at >= DATEADD(SECOND, -30, GETDATE())
                 ORDER BY created_at DESC
                 """,
-                (relative_path, export_title, dashboard, file_extension, user_name)
+                (relative_path, export_title, dashboard, file_extension, created_by_value)
             )
             existing = cursor.fetchone()
             
@@ -419,7 +495,7 @@ async def save_and_log_export(
                 # Use existing record ID and path (prevent duplicate database entries)
                 export_id = existing[0]
                 existing_src = existing[1]
-                write_debug(f"[Save Export] Duplicate database entry prevented. Using existing ID: {export_id}, existing src: {existing_src}")
+                write_debug(f"[Save Export] Duplicate database entry found. Using existing ID: {export_id}, existing src: {existing_src}")
                 # Update result to use existing path if different
                 if existing_src and existing_src != relative_path:
                     relative_path = existing_src
@@ -429,23 +505,33 @@ async def save_and_log_export(
                         file_path = existing_file_path
                         readable_filename = os.path.basename(existing_src)
             else:
-                # Insert new record
-                cursor.execute(
-                    """
-                    INSERT INTO dbo.report_exports (title, src, format, dashboard, type, created_by)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (export_title, relative_path, file_extension, dashboard, export_type, user_name)
-                )
-                conn.commit()
-                export_id = cursor.execute("SELECT @@IDENTITY").fetchone()[0]
-                write_debug(f"[Save Export] Created new export record ID: {export_id} for {relative_path} (type: {export_type})")
+                # Insert new record with user_id
+                write_debug(f"[Save Export] No duplicate found, proceeding with new record insertion")
+                try:
+                    write_debug(f"[Save Export] Inserting record: title={export_title}, src={relative_path}, format={file_extension}, dashboard={dashboard}, type={export_type}, created_by={created_by_value}, user_id={user_id}")
+                    cursor.execute(
+                        """
+                        INSERT INTO dbo.report_exports (title, src, format, dashboard, type, created_by, created_by_user_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (export_title, relative_path, file_extension, dashboard, export_type, created_by_value, user_id)
+                    )
+                    conn.commit()
+                    export_id = cursor.execute("SELECT @@IDENTITY").fetchone()[0]
+                    write_debug(f"[Save Export] Successfully created new export record ID: {export_id} for {relative_path} (type: {export_type}, user_id: {user_id})")
+                except Exception as insert_err:
+                    write_debug(f"[Save Export] ERROR inserting record: {str(insert_err)}")
+                    import traceback
+                    write_debug(f"[Save Export] Insert error traceback: {traceback.format_exc()}")
+                    raise  # Re-raise to be caught by outer exception handler
         finally:
             cursor.close()
             conn.close()
     except Exception as e:
         write_debug(f"[Save Export] Failed to log export: {str(e)}")
-        # Continue even if logging fails
+        import traceback
+        write_debug(f"[Save Export] Full error traceback: {traceback.format_exc()}")
+        # Continue even if logging fails - file was saved, just DB logging failed
     finally:
         # Always remove lock, even if there was an error
         if cache_key in _export_lock:
