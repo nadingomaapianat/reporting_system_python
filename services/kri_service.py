@@ -30,6 +30,67 @@ class KriService:
         database_name = DATABASE_CONFIG.get('database', 'NEWDCC-V4-UAT')
         return f"[{database_name}].dbo.[{table_name}]"
     
+    async def _get_user_function_access(self, user_id: Optional[str], group_name: Optional[str]):
+        """
+        Mirror Node UserFunctionAccessService.getUserFunctionAccess for KRIs.
+        - If user_id is None: treat as unrestricted (backward compatibility).
+        - If group_name == 'super_admin_': unrestricted.
+        - Otherwise: fetch functionIds from UserFunction + Functions.
+        """
+        if not user_id:
+            return {"is_super_admin": True, "function_ids": []}
+
+        if group_name == 'super_admin_':
+            return {"is_super_admin": True, "function_ids": []}
+
+        query = f"""
+        SELECT LTRIM(RTRIM(uf.functionId)) AS id
+        FROM {self.get_fully_qualified_table_name('UserFunction')} uf
+        JOIN {self.get_fully_qualified_table_name('Functions')} f
+          ON LTRIM(RTRIM(f.id)) = LTRIM(RTRIM(uf.functionId))
+        WHERE uf.userId = ?
+          AND uf.deletedAt IS NULL
+          AND f.isDeleted = 0
+          AND f.deletedAt IS NULL
+        """
+        rows = await self.execute_query(query, [user_id])
+        # Trim function IDs to handle spaces
+        function_ids = [str(r.get('id')).strip() if r.get('id') else None for r in rows]
+        function_ids = [fid for fid in function_ids if fid]  # Remove None values
+        return {"is_super_admin": False, "function_ids": function_ids}
+
+    def _build_kri_function_filter(
+        self,
+        table_alias: str,
+        access: dict,
+        selected_function_id: Optional[str] = None,
+    ) -> str:
+        """
+        Mirror Node buildKriFunctionFilter:
+        - Uses related_function_id column directly (not KriFunctions join).
+        - If selected_function_id: filter by that only (verify access for non-admins).
+        - If no selected_function_id: super admin sees all, normal user sees only their functions.
+        """
+        if selected_function_id is not None:
+            selected_function_id = selected_function_id.strip() or None
+
+        if selected_function_id:
+            if (not access.get("is_super_admin")) and (selected_function_id not in access.get("function_ids", [])):
+                return " AND 1 = 0"
+            # Use LTRIM(RTRIM()) to handle spaces in related_function_id column
+            return f" AND LTRIM(RTRIM({table_alias}.related_function_id)) = '{selected_function_id}'"
+
+        if access.get("is_super_admin"):
+            return ""
+
+        function_ids = access.get("function_ids") or []
+        if not function_ids:
+            return " AND 1 = 0"
+
+        ids = ",".join(f"'{fid}'" for fid in function_ids)
+        # Use LTRIM(RTRIM()) to handle spaces in related_function_id column
+        return f" AND LTRIM(RTRIM({table_alias}.related_function_id)) IN ({ids})"
+    
     async def execute_query(self, query: str, params: Optional[List] = None) -> List[Dict[str, Any]]:
         """Execute a SQL query and return results"""
         try:
@@ -71,7 +132,14 @@ class KriService:
    
  
     # KRI Database Methods
-    async def get_kris_by_status(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_kris_by_status(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return KRIs grouped by status"""
         date_filter = ""
         if start_date and end_date:
@@ -80,6 +148,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT 
@@ -95,6 +166,7 @@ class KriService:
         FROM Kris k
         WHERE k.isDeleted = 0 
           AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         GROUP BY 
             CASE 
                 WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
@@ -108,7 +180,14 @@ class KriService:
         """
         return await self.execute_query(query)
 
-    async def get_kris_by_level(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_kris_by_level(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return KRIs grouped by risk level"""
         date_filter = ""
         if start_date and end_date:
@@ -117,6 +196,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT 
@@ -125,13 +207,21 @@ class KriService:
         FROM Kris k
         WHERE k.isDeleted = 0 
           AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         AND k.kri_level IS NOT NULL
         GROUP BY k.kri_level
         ORDER BY count DESC
         """
         return await self.execute_query(query)
 
-    async def get_breached_kris_by_department(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_breached_kris_by_department(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return breached KRIs by department"""
         date_filter = ""
         if start_date and end_date:
@@ -140,6 +230,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT 
@@ -151,13 +244,21 @@ class KriService:
           AND f.deletedAt IS NULL
         WHERE k.isDeleted = 0 
           AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         AND k.status = 'Breached'
         GROUP BY f.name
         ORDER BY breached_count DESC
         """
         return await self.execute_query(query)
 
-    async def get_kri_assessment_count(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_kri_assessment_count(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return KRI assessment count by department"""
         date_filter = ""
         if start_date and end_date:
@@ -166,6 +267,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT 
@@ -177,12 +281,20 @@ class KriService:
           AND f.deletedAt IS NULL
         WHERE k.isDeleted = 0 
           AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         GROUP BY f.name
         ORDER BY assessment_count DESC
         """
         return await self.execute_query(query)
 
-    async def get_kris_list(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_kris_list(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return list of all KRIs"""
         date_filter = ""
         if start_date and end_date:
@@ -191,6 +303,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT 
@@ -209,12 +324,21 @@ class KriService:
         WHERE k.isDeleted = 0 
           AND k.deletedAt IS NULL
           {date_filter}
+          {function_filter}
         ORDER BY k.createdAt DESC
         """
         write_debug(f"Query: {query}")
         return await self.execute_query(query)
 
-    async def get_kris_by_status_detail(self, status: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_kris_by_status_detail(
+        self,
+        status: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return KRIs rows filtered by computed status label (not counts, matches incidents pattern)"""
         write_debug(f"Getting KRIS by status detail: {status}")
        
@@ -225,6 +349,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
 
         # Build query that computes the label and filters to requested status
         query = f"""
@@ -248,6 +375,7 @@ class KriService:
                 FORMAT(CONVERT(datetime, k.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
             FROM Kris k
             WHERE k.isDeleted = 0 AND k.deletedAt IS NULL {date_filter}
+            {function_filter}
         )
         SELECT *
         FROM KrisStatus
@@ -257,7 +385,14 @@ class KriService:
         write_debug(f"Query: {query}")
         return await self.execute_query(query)
 
-    async def get_kris_status_counts(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, int]:
+    async def get_kris_status_counts(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> Dict[str, int]:
         """Return KRIs status counts (independent counts, matches Node.js logic)"""
         date_filter = ""
         if start_date and end_date:
@@ -266,6 +401,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         WITH KrisStatus AS (
@@ -280,6 +418,7 @@ class KriService:
             END AS status
           FROM Kris k
           WHERE k.isDeleted = 0 AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         )
         SELECT 
           CAST(SUM(CASE WHEN status = 'pendingPreparer' THEN 1 ELSE 0 END) AS INT) AS pendingPreparer,
@@ -292,7 +431,14 @@ class KriService:
         result = await self.execute_query(query)
         return result[0] if result else {}
 
-    async def get_overall_kri_statuses(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_overall_kri_statuses(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return all KRIs with their combined status (for Overall KRI Statuses table)"""
         date_filter = ""
         if start_date and end_date:
@@ -301,6 +447,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT
@@ -327,11 +476,19 @@ class KriService:
         WHERE
           k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         ORDER BY k.kriName
         """
         return await self.execute_query(query)
 
-    async def get_kris_by_level_detailed(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_kris_by_level_detailed(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return KRIs by level with derived logic from latest values (matches Node.js)"""
         date_filter = ""
         if start_date and end_date:
@@ -340,6 +497,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         WITH LatestKV AS (
@@ -357,6 +517,7 @@ class KriService:
                  TRY_CONVERT(float, k.high_from) AS high_thr
           FROM Kris k
           WHERE k.isDeleted = 0 AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         ),
         KL AS (
           SELECT K.id, K.kri_level, K.isAscending, K.med_thr, K.high_thr,
@@ -384,7 +545,14 @@ class KriService:
         """
         return await self.execute_query(query)
 
-    async def get_breached_kris_by_department_detailed(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_breached_kris_by_department_detailed(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return count of KRIs by function (simplified - just count KRIs per function)"""
         date_filter = ""
         if start_date and end_date:
@@ -393,6 +561,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT 
@@ -409,12 +580,20 @@ class KriService:
           AND frel.deletedAt IS NULL
         WHERE k.isDeleted = 0 
           AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         GROUP BY ISNULL(COALESCE(fkf.name, frel.name), 'Unknown')
         ORDER BY breached_count DESC
         """
         return await self.execute_query(query)
 
-    async def get_kri_health(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_kri_health(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return KRI health status list"""
         date_filter = ""
         if start_date and end_date:
@@ -423,6 +602,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT
@@ -443,11 +625,19 @@ class KriService:
           AND frel.deletedAt IS NULL
         WHERE k.isDeleted = 0 
           AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         ORDER BY k.createdAt DESC
         """
         return await self.execute_query(query)
     
-    async def get_kri_assessment_count_detailed(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_kri_assessment_count_detailed(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return KRI assessment count by function (count assessments from KriValues table)"""
         date_filter = ""
         if start_date and end_date:
@@ -456,6 +646,9 @@ class KriService:
             date_filter = f"AND kv.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND kv.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT
@@ -474,12 +667,20 @@ class KriService:
           AND frel.isDeleted = 0
           AND frel.deletedAt IS NULL
         WHERE kv.deletedAt IS NULL {date_filter}
+          {function_filter}
         GROUP BY ISNULL(COALESCE(fkf.name, frel.name), 'Unknown')
         ORDER BY assessment_count DESC
         """
         return await self.execute_query(query)
 
-    async def get_kri_monthly_assessment(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_kri_monthly_assessment(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return monthly KRI counts grouped by assessment"""
         date_filter = ""
         if start_date and end_date:
@@ -488,6 +689,9 @@ class KriService:
             date_filter = f"AND kv.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND kv.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT
@@ -498,6 +702,7 @@ class KriService:
         INNER JOIN KriValues AS kv ON kv.kriId = k.id AND kv.deletedAt IS NULL
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL
+          {function_filter}
           AND kv.assessment IS NOT NULL {date_filter}
         GROUP BY
           CAST(DATEADD(month, DATEPART(month, kv.createdAt) - 1, DATEFROMPARTS(YEAR(kv.createdAt), 1, 1)) AS datetime2),
@@ -506,7 +711,14 @@ class KriService:
         """
         return await self.execute_query(query)
 
-    async def get_newly_created_kris_per_month(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_newly_created_kris_per_month(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return number of newly created KRIs per month"""
         date_filter = ""
         if start_date and end_date:
@@ -515,6 +727,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT 
@@ -523,12 +738,20 @@ class KriService:
         FROM Kris k
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         GROUP BY CAST(DATEFROMPARTS(YEAR(k.createdAt), MONTH(k.createdAt), 1) AS datetime2)
         ORDER BY createdAt ASC
         """
         return await self.execute_query(query)
 
-    async def get_deleted_kris_per_month(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_deleted_kris_per_month(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return number of deleted KRIs by month"""
         date_filter = ""
         if start_date and end_date:
@@ -537,6 +760,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT 
@@ -544,12 +770,20 @@ class KriService:
           COUNT(*) AS count
         FROM Kris k
         WHERE (k.isDeleted = 1 OR k.deletedAt IS NOT NULL) {date_filter}
+          {function_filter}
         GROUP BY YEAR(k.createdAt), MONTH(k.createdAt)
         ORDER BY YEAR(k.createdAt) ASC, MONTH(k.createdAt) ASC
         """
         return await self.execute_query(query)
 
-    async def get_kri_overdue_status_counts(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_kri_overdue_status_counts(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return KRIs overdue vs not overdue based on related Action Plans"""
         date_filter = ""
         if start_date and end_date:
@@ -558,6 +792,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         WITH classified AS (
@@ -577,6 +814,7 @@ class KriService:
           FROM Kris AS k
           WHERE k.isDeleted = 0
             AND k.deletedAt IS NULL {date_filter}
+            {function_filter}
         )
         SELECT
           KRIStatus AS status,
@@ -586,7 +824,14 @@ class KriService:
         """
         return await self.execute_query(query)
 
-    async def get_overdue_kris_by_department(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_overdue_kris_by_department(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return overdue KRIs with department from Actionplans or linked Function"""
         date_filter = ""
         if start_date and end_date:
@@ -595,6 +840,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT DISTINCT 
@@ -616,11 +864,19 @@ class KriService:
           AND frel.deletedAt IS NULL
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         ORDER BY function_name, kriName
         """
         return await self.execute_query(query)
 
-    async def get_all_kris_submitted_by_function(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_all_kris_submitted_by_function(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return all KRIs submitted by function"""
         date_filter = ""
         if start_date and end_date:
@@ -629,6 +885,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT
@@ -654,12 +913,20 @@ class KriService:
           AND frel.deletedAt IS NULL
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         GROUP BY ISNULL(COALESCE(fkf.name, frel.name), 'Unknown')
         ORDER BY ISNULL(COALESCE(fkf.name, frel.name), 'Unknown')
         """
         return await self.execute_query(query)
 
-    async def get_kri_counts_by_month_year(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_kri_counts_by_month_year(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return KRI counts by month and year"""
         date_filter = ""
         if start_date and end_date:
@@ -668,6 +935,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT  
@@ -678,12 +948,20 @@ class KriService:
         FROM Kris k 
         WHERE k.isDeleted = 0 
           AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         GROUP BY FORMAT(k.createdAt, 'MMM yyyy'), YEAR(k.createdAt), DATENAME(month, k.createdAt), MONTH(k.createdAt) 
         ORDER BY YEAR(k.createdAt), MONTH(k.createdAt)
         """
         return await self.execute_query(query)
 
-    async def get_kri_counts_by_frequency(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_kri_counts_by_frequency(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return KRI counts by frequency"""
         date_filter = ""
         if start_date and end_date:
@@ -692,6 +970,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT 
@@ -700,12 +981,20 @@ class KriService:
         FROM Kris k
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         GROUP BY ISNULL(k.frequency, 'Unknown')
         ORDER BY frequency ASC
         """
         return await self.execute_query(query)
 
-    async def get_kri_risks_by_kri_name(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_kri_risks_by_kri_name(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return risks linked to KRIs (count per KRI name)"""
         date_filter = ""
         if start_date and end_date:
@@ -714,6 +1003,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT 
@@ -725,6 +1017,7 @@ class KriService:
         INNER JOIN Kris k ON kr.kri_id = k.id
           AND k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         WHERE r.isDeleted = 0
           AND r.deletedAt IS NULL
           AND k.kriName IS NOT NULL
@@ -733,7 +1026,14 @@ class KriService:
         """
         return await self.execute_query(query)
 
-    async def get_kri_risk_relationships(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_kri_risk_relationships(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return KRI and Risk relationships (detailed list)"""
         date_filter = ""
         if start_date and end_date:
@@ -742,6 +1042,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT 
@@ -757,11 +1060,19 @@ class KriService:
           AND r.deletedAt IS NULL
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         ORDER BY k.kriName, r.name
         """
         return await self.execute_query(query)
 
-    async def get_kris_without_linked_risks(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_kris_without_linked_risks(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return KRIs without linked risks"""
         date_filter = ""
         if start_date and end_date:
@@ -770,15 +1081,18 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT  
-        k.code AS kriCode
-        k.kriName AS kriName, 
-         
+        k.code AS kriCode,
+        k.kriName AS kriName
         FROM Kris AS k
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
           AND NOT EXISTS (
             SELECT 1
             FROM KriRisks AS kr
@@ -789,7 +1103,14 @@ class KriService:
         """
         return await self.execute_query(query)
 
-    async def get_active_kris_details(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_active_kris_details(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return active KRIs details"""
         date_filter = ""
         if start_date and end_date:
@@ -798,6 +1119,9 @@ class KriService:
             date_filter = f"AND k.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
         
         query = f"""
         SELECT
@@ -831,6 +1155,7 @@ class KriService:
           AND u2.deletedAt IS NULL
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
           AND k.status = 'active'
         """
         return await self.execute_query(query)

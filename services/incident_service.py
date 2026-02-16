@@ -31,6 +31,67 @@ class IncidentService:
         database_name = DATABASE_CONFIG.get('database', 'NEWDCC-V4-UAT')
         return f"[{database_name}].dbo.[{table_name}]"
     
+    async def _get_user_function_access(self, user_id: Optional[str], group_name: Optional[str]):
+        """
+        Mirror Node UserFunctionAccessService.getUserFunctionAccess for Incidents.
+        - If user_id is None: treat as unrestricted (backward compatibility).
+        - If group_name == 'super_admin_': unrestricted.
+        - Otherwise: fetch functionIds from UserFunction + Functions.
+        """
+        if not user_id:
+            return {"is_super_admin": True, "function_ids": []}
+
+        if group_name == 'super_admin_':
+            return {"is_super_admin": True, "function_ids": []}
+
+        query = f"""
+        SELECT LTRIM(RTRIM(uf.functionId)) AS id
+        FROM {self.get_fully_qualified_table_name('UserFunction')} uf
+        JOIN {self.get_fully_qualified_table_name('Functions')} f
+          ON LTRIM(RTRIM(f.id)) = LTRIM(RTRIM(uf.functionId))
+        WHERE uf.userId = ?
+          AND uf.deletedAt IS NULL
+          AND f.isDeleted = 0
+          AND f.deletedAt IS NULL
+        """
+        rows = await self.execute_query(query, [user_id])
+        # Trim function IDs to handle spaces
+        function_ids = [str(r.get('id')).strip() if r.get('id') else None for r in rows]
+        function_ids = [fid for fid in function_ids if fid]  # Remove None values
+        return {"is_super_admin": False, "function_ids": function_ids}
+
+    def _build_incident_function_filter(
+        self,
+        table_alias: str,
+        access: dict,
+        selected_function_id: Optional[str] = None,
+    ) -> str:
+        """
+        Mirror Node buildDirectFunctionFilter for Incidents:
+        - Uses function_id column directly (not a join table).
+        - If selected_function_id: filter by that only (verify access for non-admins).
+        - If no selected_function_id: super admin sees all, normal user sees only their functions.
+        """
+        if selected_function_id is not None:
+            selected_function_id = selected_function_id.strip() or None
+
+        if selected_function_id:
+            if (not access.get("is_super_admin")) and (selected_function_id not in access.get("function_ids", [])):
+                return " AND 1 = 0"
+            # Use LTRIM(RTRIM()) to handle spaces in function_id column
+            return f" AND LTRIM(RTRIM({table_alias}.function_id)) = '{selected_function_id}'"
+
+        if access.get("is_super_admin"):
+            return ""
+
+        function_ids = access.get("function_ids") or []
+        if not function_ids:
+            return " AND 1 = 0"
+
+        ids = ",".join(f"'{fid}'" for fid in function_ids)
+        # Use LTRIM(RTRIM()) to handle spaces in function_id column
+        return f" AND LTRIM(RTRIM({table_alias}.function_id)) IN ({ids})"
+    
     async def execute_query(self, query: str, params: Optional[List] = None) -> List[Dict[str, Any]]:
         """Execute a SQL query and return results"""
         try:
@@ -71,7 +132,14 @@ class IncidentService:
 
        # ===== Incidents fallbacks =====
   
-    async def get_incidents_list(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_list(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return incidents detailed list (basic fields)"""
         date_filter = ""
         if start_date and end_date:
@@ -81,19 +149,30 @@ class IncidentService:
         elif end_date:
             date_filter = f"AND i.createdAt <= '{end_date}'"
 
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
+
         query = f"""
         SELECT 
-            code,
-            title,
-            FORMAT(CONVERT(datetime, createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
-        FROM Incidents
-        WHERE isDeleted = 0 AND deletedAt IS NULL {date_filter}
-        ORDER BY createdAt DESC
+            i.code,
+            i.title,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
+        FROM Incidents i
+        WHERE i.isDeleted = 0 AND i.deletedAt IS NULL {date_filter}
+        {function_filter}
+        ORDER BY i.createdAt DESC
         """
         write_debug(f"[INCIDENTS LIST] query: {query}")
         return await self.execute_query(query)
 
-    async def get_incidents_status_overview(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_status_overview(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return incidents status overview list with computed status (matches Node.js statusOverview)"""
         date_filter = ""
         if start_date and end_date:
@@ -102,6 +181,9 @@ class IncidentService:
             date_filter = f"AND i.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND i.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -120,11 +202,20 @@ class IncidentService:
         WHERE i.isDeleted = 0 
           AND i.deletedAt IS NULL
           {date_filter}
+          {function_filter}
         ORDER BY i.createdAt DESC
         """
         return await self.execute_query(query)
 
-    async def get_incidents_by_status(self, status: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_by_status(
+        self,
+        status: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return incidents rows filtered by computed status label (not counts)."""
         date_filter = ""
         if start_date and end_date:
@@ -133,6 +224,9 @@ class IncidentService:
             date_filter = f"AND i.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND i.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         # Build query that computes the label and filters to requested status
         query = f"""
@@ -156,6 +250,7 @@ class IncidentService:
                 FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
             FROM Incidents i
             WHERE i.isDeleted = 0 AND i.deletedAt IS NULL {date_filter}
+            {function_filter}
         )
         SELECT *
         FROM IncidentStatus
@@ -167,7 +262,14 @@ class IncidentService:
         return await self.execute_query(query)
 
    
-    async def get_incidents_by_category(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_by_category(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
        
         write_debug(f"[INCIDENTS BY CATEGORY] fetching incidents by category for {start_date} to {end_date}")
         """Return incidents count by category (excludes NULL and deleted categories)"""
@@ -178,6 +280,9 @@ class IncidentService:
             date_filter = f"AND i.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND i.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -190,13 +295,21 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
         GROUP BY ISNULL(c.name, 'Unknown')
         ORDER BY COUNT(i.id) DESC
         """
         write_debug(f"[INCIDENTS BY CATEGORY] query: {query}")
         return await self.execute_query(query)
 
-    async def get_incidents_by_status_distribution(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_by_status_distribution(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return incidents count by status (distribution for charts)"""
         date_filter = ""
         if start_date and end_date:
@@ -205,6 +318,9 @@ class IncidentService:
             date_filter = f"AND i.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND i.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
         
         query = f"""
         WITH IncidentStatus AS (
@@ -220,6 +336,7 @@ class IncidentService:
                 END AS status
             FROM Incidents i
             WHERE i.isDeleted = 0 AND i.deletedAt IS NULL {date_filter}
+            {function_filter}
         ),
         StatusCounts AS (
             SELECT 
@@ -245,7 +362,14 @@ class IncidentService:
         """
         return await self.execute_query(query)
  
-    async def get_incidents_monthly_trend(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_monthly_trend(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return incidents monthly trend counts grouped by occurrence_date"""
         date_filter = ""
         if start_date and end_date:
@@ -255,6 +379,9 @@ class IncidentService:
         elif end_date:
             date_filter = f"AND i.createdAt <= '{end_date}'"
 
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
+
         query = f"""
         SELECT 
             FORMAT(i.createdAt, 'MMM yyyy') as month_year,
@@ -263,29 +390,41 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND i.createdAt IS NOT NULL
         GROUP BY FORMAT(i.createdAt, 'MMM yyyy')
         ORDER BY MIN(i.createdAt)
         """
         return await self.execute_query(query)
     
-    async def get_incidents_time_series(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_time_series(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return incidents time series by month (matches grc-incidents.service.ts)"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
         elif start_date:
-            date_filter = f"AND createdAt >= '{start_date}'"
+            date_filter = f"AND i.createdAt >= '{start_date}'"
         elif end_date:
-            date_filter = f"AND createdAt <= '{end_date}'"
+            date_filter = f"AND i.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         WITH month_series AS (
           SELECT  
-            DATEFROMPARTS(YEAR(MIN(createdAt)), MONTH(MIN(createdAt)), 1) AS start_month, 
-            DATEFROMPARTS(YEAR(MAX(createdAt)), MONTH(MAX(createdAt)), 1) AS end_month 
-          FROM Incidents 
-          WHERE isDeleted = 0 AND deletedAt IS NULL {date_filter}
+            DATEFROMPARTS(YEAR(MIN(i.createdAt)), MONTH(MIN(i.createdAt)), 1) AS start_month, 
+            DATEFROMPARTS(YEAR(MAX(i.createdAt)), MONTH(MAX(i.createdAt)), 1) AS end_month 
+          FROM Incidents i
+          WHERE i.isDeleted = 0 AND i.deletedAt IS NULL {date_filter}
+          {function_filter}
         ), 
         months AS ( 
           SELECT start_month AS month_date 
@@ -304,6 +443,7 @@ class IncidentService:
           AND MONTH(i.createdAt) = MONTH(m.month_date)
           AND i.isDeleted = 0
           AND i.deletedAt IS NULL
+          {function_filter}
         GROUP BY  
           m.month_date 
         ORDER BY  
@@ -317,7 +457,14 @@ class IncidentService:
    
    
    
-    async def get_incidents_top_financial_impacts(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_top_financial_impacts(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return top financial impacts grouped by category with total net loss"""
         date_filter = ""
         if start_date and end_date:
@@ -326,6 +473,9 @@ class IncidentService:
             date_filter = f"AND i.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND i.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
         
         query = f"""
         SELECT 
@@ -338,6 +488,7 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND i.net_loss IS NOT NULL
             AND i.net_loss > 0
         GROUP BY fi.name
@@ -345,7 +496,14 @@ class IncidentService:
         """
         return await self.execute_query(query)
     
-    async def get_incidents_net_loss_recovery(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_net_loss_recovery(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return net loss and recovery data for incidents"""
         date_filter = ""
         if start_date and end_date:
@@ -354,6 +512,9 @@ class IncidentService:
             date_filter = f"AND i.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND i.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
         
         query = f"""
         SELECT 
@@ -364,13 +525,21 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND i.net_loss > 0
         ORDER BY i.net_loss DESC
         """
         return await self.execute_query(query)
 
    
-    async def get_incidents_by_event_type(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_by_event_type(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return incidents count by event type (excludes NULL and deleted event types)"""
         date_filter = ""
         if start_date and end_date:
@@ -379,6 +548,9 @@ class IncidentService:
             date_filter = f"AND i.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND i.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -391,12 +563,20 @@ class IncidentService:
         WHERE i.isDeleted = 0 
           AND i.deletedAt IS NULL
           {date_filter}
+          {function_filter}
         GROUP BY ISNULL(ie.name, 'Unknown')
         ORDER BY COUNT(i.id) DESC
         """
         return await self.execute_query(query)
 
-    async def get_incidents_by_financial_impact(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_by_financial_impact(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return incidents count by financial impact (excludes NULL and deleted financial impacts)"""
         date_filter = ""
         if start_date and end_date:
@@ -405,6 +585,9 @@ class IncidentService:
             date_filter = f"AND i.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND i.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -417,13 +600,21 @@ class IncidentService:
         WHERE i.isDeleted = 0 
           AND i.deletedAt IS NULL
           {date_filter}
+          {function_filter}
         GROUP BY ISNULL(fi.name, 'Unknown')
         ORDER BY COUNT(i.id) DESC
         """
         return await self.execute_query(query)
 
     
-    async def get_new_incidents_by_month(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_new_incidents_by_month(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return new incidents count per month (matches grc-incidents.service.ts)"""
         date_filter = ""
         if start_date and end_date:
@@ -432,6 +623,9 @@ class IncidentService:
             date_filter = f"AND i.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND i.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -446,6 +640,7 @@ class IncidentService:
         FROM Incidents i
         WHERE i.isDeleted = 0 {date_filter}
           AND i.deletedAt IS NULL
+          {function_filter}
         GROUP BY 
           CAST(
             DATEFROMPARTS(
@@ -458,7 +653,14 @@ class IncidentService:
         """
         return await self.execute_query(query)
 
-    async def get_incidents_with_timeframe(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_with_timeframe(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return incidents with timeframe values (matches grc-incidents.service.ts)"""
         date_filter = ""
         if start_date and end_date:
@@ -468,6 +670,9 @@ class IncidentService:
         elif end_date:
             date_filter = f"AND i.createdAt <= '{end_date}'"
 
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
+
         query = f"""
         SELECT 
           i.title AS incident_name, 
@@ -476,11 +681,19 @@ class IncidentService:
         WHERE i.isDeleted = 0 
           AND i.deletedAt IS NULL
           {date_filter}
+          {function_filter}
         ORDER BY i.timeFrame DESC
         """
         return await self.execute_query(query)
 
-    async def get_incidents_financial_details(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_financial_details(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return incidents financial details with net loss, recovery, and gross amount (matches Node.js)"""
         date_filter = ""
         if start_date and end_date:
@@ -489,6 +702,9 @@ class IncidentService:
             date_filter = f"AND i.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND i.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -514,12 +730,20 @@ class IncidentService:
         WHERE i.isDeleted = 0 
           AND i.deletedAt IS NULL
           {date_filter}
+          {function_filter}
         """
         return await self.execute_query(query)
 
     # ===== Operational Loss Metrics =====
     
-    async def get_atm_theft_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_atm_theft_incidents(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return ATM theft incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -529,6 +753,9 @@ class IncidentService:
         elif end_date:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
+
         query = f"""
         SELECT 
             i.code,
@@ -542,12 +769,20 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND sc.name = N'ATM issue'
         ORDER BY i.createdAt DESC
         """
         return await self.execute_query(query)
 
-    async def get_internal_fraud_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_internal_fraud_incidents(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return internal fraud incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -557,6 +792,9 @@ class IncidentService:
         elif end_date:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
+
         query = f"""
         SELECT 
             i.code,
@@ -570,12 +808,20 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND ie.name = N'Internal Fraud'
         ORDER BY i.createdAt DESC
         """
         return await self.execute_query(query)
 
-    async def get_external_fraud_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_external_fraud_incidents(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return external fraud incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -585,6 +831,9 @@ class IncidentService:
         elif end_date:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
+
         query = f"""
         SELECT 
             i.code,
@@ -598,12 +847,20 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND ie.name = N'External Fraud'
         ORDER BY i.createdAt DESC
         """
         return await self.execute_query(query)
 
-    async def get_physical_asset_damage_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_physical_asset_damage_incidents(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return physical asset damage incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -613,6 +870,9 @@ class IncidentService:
         elif end_date:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
+
         query = f"""
         SELECT 
             i.code,
@@ -626,12 +886,20 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND ie.name = N'Damage to Physical Assets'
         ORDER BY i.createdAt DESC
         """
         return await self.execute_query(query)
 
-    async def get_people_error_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_people_error_incidents(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return people error incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -640,6 +908,9 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
         elif end_date:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -654,12 +925,20 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND sc.name = N'Human Mistake'
         ORDER BY i.createdAt DESC
         """
         return await self.execute_query(query)
 
-    async def get_incidents_with_recognition_time(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_with_recognition_time(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return incidents with recognition time calculation (last 12 months)"""
         date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -668,6 +947,9 @@ class IncidentService:
             date_filter = f"AND i.occurrence_date >= '{start_date}'"
         elif end_date:
             date_filter = f"AND i.occurrence_date <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -681,6 +963,7 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND i.occurrence_date IS NOT NULL
             AND i.reported_date IS NOT NULL
             AND i.reported_date >= i.occurrence_date
@@ -688,7 +971,14 @@ class IncidentService:
         """
         return await self.execute_query(query)
 
-    async def get_operational_loss_value_monthly(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_operational_loss_value_monthly(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return operational loss value by month (last 12 months)"""
         date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -697,6 +987,9 @@ class IncidentService:
             date_filter = f"AND i.occurrence_date >= '{start_date}'"
         elif end_date:
             date_filter = f"AND i.occurrence_date <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -708,13 +1001,21 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND i.net_loss IS NOT NULL
         GROUP BY YEAR(i.occurrence_date), MONTH(i.occurrence_date)
         ORDER BY year, month
         """
         return await self.execute_query(query)
 
-    async def get_monthly_trend_by_incident_type(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_monthly_trend_by_incident_type(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return monthly trend analysis by incident type (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -723,6 +1024,9 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
         elif end_date:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -741,6 +1045,7 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
         GROUP BY FORMAT(COALESCE(i.occurrence_date, i.createdAt), 'yyyy-MM')
         ORDER BY Period
         """
@@ -759,7 +1064,14 @@ class IncidentService:
             for row in result
         ]
 
-    async def get_loss_by_risk_category(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_loss_by_risk_category(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return loss analysis by risk category (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -768,6 +1080,9 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
         elif end_date:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -781,13 +1096,21 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND i.net_loss IS NOT NULL
         GROUP BY c.name
         ORDER BY totalLoss DESC
         """
         return await self.execute_query(query)
 
-    async def get_comprehensive_operational_loss(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_comprehensive_operational_loss(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return comprehensive operational loss dashboard metrics (last 12 months)"""
         date_filter = "COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -796,6 +1119,9 @@ class IncidentService:
             date_filter = f"COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
         elif end_date:
             date_filter = f"COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -806,6 +1132,7 @@ class IncidentService:
         WHERE {date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
+            {function_filter}
 
         UNION ALL
 
@@ -819,6 +1146,7 @@ class IncidentService:
         WHERE {date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
+            {function_filter}
             AND sc.name = N'ATM issue'
 
         UNION ALL
@@ -833,6 +1161,7 @@ class IncidentService:
         WHERE {date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
+            {function_filter}
             AND ie.name = N'Internal Fraud'
 
         UNION ALL
@@ -847,6 +1176,7 @@ class IncidentService:
         WHERE {date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
+            {function_filter}
             AND ie.name = N'External Fraud'
 
         UNION ALL
@@ -861,6 +1191,7 @@ class IncidentService:
         WHERE {date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
+            {function_filter}
             AND sc.name = N'Human Mistake'
 
         UNION ALL
@@ -875,11 +1206,19 @@ class IncidentService:
         WHERE {date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
+            {function_filter}
             AND sc.name IN (N'System Error', N'Prime System Issue', N'Transaction system error (TRX BUG)')
         """
         return await self.execute_query(query)
 
-    async def get_incidents_with_financial_and_function(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_with_financial_and_function(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return incidents with financial impact and function details (matches grc-incidents.service.ts)"""
         date_filter = ""
         if start_date and end_date:
@@ -888,6 +1227,9 @@ class IncidentService:
             date_filter = f"AND i.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND i.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -904,12 +1246,20 @@ class IncidentService:
         WHERE i.isDeleted = 0 
           AND i.deletedAt IS NULL
           {date_filter}
+          {function_filter}
         """
         return await self.execute_query(query)
 
     # ===== Operational Loss Metrics =====
     
-    async def get_atm_theft_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_atm_theft_incidents(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return ATM theft incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -919,6 +1269,9 @@ class IncidentService:
         elif end_date:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
+
         query = f"""
         SELECT 
             i.code,
@@ -932,12 +1285,20 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND sc.name = N'ATM issue'
         ORDER BY i.createdAt DESC
         """
         return await self.execute_query(query)
 
-    async def get_internal_fraud_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_internal_fraud_incidents(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return internal fraud incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -947,6 +1308,9 @@ class IncidentService:
         elif end_date:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
+
         query = f"""
         SELECT 
             i.code,
@@ -960,12 +1324,20 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND ie.name = N'Internal Fraud'
         ORDER BY i.createdAt DESC
         """
         return await self.execute_query(query)
 
-    async def get_external_fraud_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_external_fraud_incidents(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return external fraud incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -975,6 +1347,9 @@ class IncidentService:
         elif end_date:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
+
         query = f"""
         SELECT 
             i.code,
@@ -988,12 +1363,20 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND ie.name = N'External Fraud'
         ORDER BY i.createdAt DESC
         """
         return await self.execute_query(query)
 
-    async def get_physical_asset_damage_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_physical_asset_damage_incidents(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return physical asset damage incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -1003,6 +1386,9 @@ class IncidentService:
         elif end_date:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
+
         query = f"""
         SELECT 
             i.code,
@@ -1016,12 +1402,20 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND ie.name = N'Damage to Physical Assets'
         ORDER BY i.createdAt DESC
         """
         return await self.execute_query(query)
 
-    async def get_people_error_incidents(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_people_error_incidents(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return people error incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -1030,6 +1424,9 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
         elif end_date:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -1044,12 +1441,20 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND sc.name = N'Human Mistake'
         ORDER BY i.createdAt DESC
         """
         return await self.execute_query(query)
 
-    async def get_incidents_with_recognition_time(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_incidents_with_recognition_time(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return incidents with recognition time calculation (last 12 months)"""
         date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -1058,6 +1463,9 @@ class IncidentService:
             date_filter = f"AND i.occurrence_date >= '{start_date}'"
         elif end_date:
             date_filter = f"AND i.occurrence_date <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -1071,6 +1479,7 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND i.occurrence_date IS NOT NULL
             AND i.reported_date IS NOT NULL
             AND i.reported_date >= i.occurrence_date
@@ -1078,7 +1487,14 @@ class IncidentService:
         """
         return await self.execute_query(query)
 
-    async def get_operational_loss_value_monthly(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_operational_loss_value_monthly(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return operational loss value by month (last 12 months)"""
         date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -1087,6 +1503,9 @@ class IncidentService:
             date_filter = f"AND i.occurrence_date >= '{start_date}'"
         elif end_date:
             date_filter = f"AND i.occurrence_date <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -1098,13 +1517,21 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND i.net_loss IS NOT NULL
         GROUP BY YEAR(i.occurrence_date), MONTH(i.occurrence_date)
         ORDER BY year, month
         """
         return await self.execute_query(query)
 
-    async def get_monthly_trend_by_incident_type(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_monthly_trend_by_incident_type(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return monthly trend analysis by incident type (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -1113,6 +1540,9 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
         elif end_date:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -1131,6 +1561,7 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
         GROUP BY FORMAT(COALESCE(i.occurrence_date, i.createdAt), 'yyyy-MM')
         ORDER BY Period
         """
@@ -1149,7 +1580,14 @@ class IncidentService:
             for row in result
         ]
 
-    async def get_loss_by_risk_category(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_loss_by_risk_category(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return loss analysis by risk category (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -1158,6 +1596,9 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
         elif end_date:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -1171,13 +1612,21 @@ class IncidentService:
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
+            {function_filter}
             AND i.net_loss IS NOT NULL
         GROUP BY c.name
         ORDER BY totalLoss DESC
         """
         return await self.execute_query(query)
 
-    async def get_comprehensive_operational_loss(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_comprehensive_operational_loss(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Return comprehensive operational loss dashboard metrics (last 12 months)"""
         date_filter = "COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
@@ -1186,6 +1635,9 @@ class IncidentService:
             date_filter = f"COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
         elif end_date:
             date_filter = f"COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, function_id)
 
         query = f"""
         SELECT 
@@ -1196,6 +1648,7 @@ class IncidentService:
         WHERE {date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
+            {function_filter}
 
         UNION ALL
 
@@ -1209,6 +1662,7 @@ class IncidentService:
         WHERE {date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
+            {function_filter}
             AND sc.name = N'ATM issue'
 
         UNION ALL
@@ -1223,6 +1677,7 @@ class IncidentService:
         WHERE {date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
+            {function_filter}
             AND ie.name = N'Internal Fraud'
 
         UNION ALL
@@ -1237,6 +1692,7 @@ class IncidentService:
         WHERE {date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
+            {function_filter}
             AND ie.name = N'External Fraud'
 
         UNION ALL
@@ -1251,6 +1707,7 @@ class IncidentService:
         WHERE {date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
+            {function_filter}
             AND sc.name = N'Human Mistake'
 
         UNION ALL
@@ -1265,6 +1722,7 @@ class IncidentService:
         WHERE {date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
+            {function_filter}
             AND sc.name IN (N'System Error', N'Prime System Issue', N'Transaction system error (TRX BUG)')
         """
         return await self.execute_query(query)

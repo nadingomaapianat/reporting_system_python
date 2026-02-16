@@ -22,6 +22,15 @@ PUBLIC_PATHS = [
     "/redoc",
     "/openapi.json",
     "/exports",
+    # Reporting exports & dynamic/dynamic-dashboard/execute-sql endpoints are read-only or proxied via secured backends.
+    # Allow them without JWT so the reporting frontend can load dashboards/reports in dev/embedded mode.
+    "/api/exports",
+    "/api/reports/dynamic",
+    "/api/reports/dynamic-dashboard",
+    "/api/reports/execute-sql",
+    # Bank check reports (auth handled upstream via cookies)
+    "/api/reports/bank-check",
+    "/api/reports/enhanced-bank-check",
 ]
 
 

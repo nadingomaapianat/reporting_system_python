@@ -31,6 +31,83 @@ class ControlService:
         database_name = DATABASE_CONFIG.get('database', 'NEWDCC-V4-UAT')
         return f"[{database_name}].dbo.[{table_name}]"
     
+    async def _get_user_function_access(self, user_id: Optional[str], group_name: Optional[str]):
+        """
+        Mirror Node UserFunctionAccessService.getUserFunctionAccess for Controls.
+        - If user_id is None: treat as unrestricted (backward compatibility).
+        - If group_name == 'super_admin_': unrestricted.
+        - Otherwise: fetch functionIds from UserFunction + Functions.
+        """
+        if not user_id:
+            return {"is_super_admin": True, "function_ids": []}
+
+        if group_name == 'super_admin_':
+            return {"is_super_admin": True, "function_ids": []}
+
+        query = f"""
+        SELECT LTRIM(RTRIM(uf.functionId)) AS id
+        FROM {self.get_fully_qualified_table_name('UserFunction')} uf
+        JOIN {self.get_fully_qualified_table_name('Functions')} f
+          ON LTRIM(RTRIM(f.id)) = LTRIM(RTRIM(uf.functionId))
+        WHERE uf.userId = ?
+          AND uf.deletedAt IS NULL
+          AND f.isDeleted = 0
+          AND f.deletedAt IS NULL
+        """
+        rows = await self.execute_query(query, [user_id])
+        # Trim function IDs to handle spaces
+        function_ids = [str(r.get('id')).strip() if r.get('id') else None for r in rows]
+        function_ids = [fid for fid in function_ids if fid]  # Remove None values
+        return {"is_super_admin": False, "function_ids": function_ids}
+
+    def _build_control_function_filter(
+        self,
+        table_alias: str,
+        access: dict,
+        selected_function_id: Optional[str] = None,
+    ) -> str:
+        """
+        Mirror Node buildControlFunctionFilter:
+        - Uses ControlFunctions join table to restrict controls by function.
+        - If selected_function_id: filter by that only (verify access for non-admins).
+        - If no selected_function_id: super admin sees all, normal user sees only their functions.
+        """
+        if selected_function_id is not None:
+            selected_function_id = selected_function_id.strip() or None
+
+        if selected_function_id:
+            if (not access.get("is_super_admin")) and (selected_function_id not in access.get("function_ids", [])):
+                return " AND 1 = 0"
+            # Use LTRIM(RTRIM()) to handle spaces in function_id column
+            return f"""
+            AND EXISTS (
+              SELECT 1
+              FROM {self.get_fully_qualified_table_name('ControlFunctions')} cf
+              WHERE cf.control_id = {table_alias}.id
+                AND LTRIM(RTRIM(cf.function_id)) = '{selected_function_id}'
+                AND cf.deletedAt IS NULL
+            )
+            """
+
+        if access.get("is_super_admin"):
+            return ""
+
+        function_ids = access.get("function_ids") or []
+        if not function_ids:
+            return " AND 1 = 0"
+
+        ids = ",".join(f"'{fid}'" for fid in function_ids)
+        # Use LTRIM(RTRIM()) to handle spaces in function_id column
+        return f"""
+        AND EXISTS (
+          SELECT 1
+          FROM {self.get_fully_qualified_table_name('ControlFunctions')} cf
+          WHERE cf.control_id = {table_alias}.id
+            AND LTRIM(RTRIM(cf.function_id)) IN ({ids})
+            AND cf.deletedAt IS NULL
+        )
+        """
+    
     async def execute_query(self, query: str, params: Optional[List] = None) -> List[Dict[str, Any]]:
         """Execute a SQL query and return results"""
         
@@ -84,7 +161,14 @@ class ControlService:
             write_debug(f"Offending query: {query}")
             return []
     
-    async def get_total_controls(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_total_controls(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get total controls data"""
         date_filter = ""
         if start_date and end_date:
@@ -94,6 +178,19 @@ class ControlService:
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
 
+        access = await self._get_user_function_access(user_id, group_name)
+        write_debug(f"[get_total_controls] access: is_super_admin={access.get('is_super_admin')}, function_ids={access.get('function_ids')}")
+        write_debug(f"[get_total_controls] function_id parameter: '{function_id}'")
+        
+        # Clean function_id - handle URL-encoded spaces and trim
+        if function_id:
+            # Handle URL-encoded spaces (+ signs) and trim
+            function_id = str(function_id).replace('+', ' ').strip()
+            write_debug(f"[get_total_controls] cleaned function_id: '{function_id}' (length: {len(function_id)})")
+        
+        function_filter = self._build_control_function_filter("c", access, function_id)
+        write_debug(f"[get_total_controls] function_filter: {function_filter}")
+
         query = f"""
         SELECT 
             c.name, 
@@ -101,12 +198,107 @@ class ControlService:
             CASE WHEN c.createdAt IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(c.createdAt AS DATETIME), 105) ELSE NULL END AS createdAt
         FROM {self.get_fully_qualified_table_name('Controls')} c
         WHERE c.isDeleted = 0 AND c.deletedAt IS NULL {date_filter}
+        {function_filter}
         ORDER BY c.createdAt DESC
         """
-        return await self.execute_query(query)
+        write_debug(f"[get_total_controls] SQL Query: {query}")
+        
+        # Debug: Check total controls without any filters
+        total_query = f"""
+        SELECT COUNT(*) as count
+        FROM {self.get_fully_qualified_table_name('Controls')} c
+        WHERE c.isDeleted = 0 AND c.deletedAt IS NULL
+        """
+        try:
+            total_result = await self.execute_query(total_query)
+            total_count = total_result[0].get('count', 0) if total_result and len(total_result) > 0 else 0
+            write_debug(f"[get_total_controls] Total controls in database (no filters): {total_count}")
+        except Exception as e:
+            write_debug(f"[get_total_controls] Error checking total controls: {e}")
+        
+        # Debug: Check controls with date filter only
+        if date_filter:
+            try:
+                date_only_query = f"""
+                SELECT COUNT(*) as count
+                FROM {self.get_fully_qualified_table_name('Controls')} c
+                WHERE c.isDeleted = 0 AND c.deletedAt IS NULL {date_filter}
+                """
+                date_result = await self.execute_query(date_only_query)
+                date_count = date_result[0].get('count', 0) if date_result and len(date_result) > 0 else 0
+                write_debug(f"[get_total_controls] Controls with date filter only: {date_count}")
+            except Exception as e:
+                write_debug(f"[get_total_controls] Error checking date-filtered controls: {e}")
+        
+        # Debug: Check if there are any controls linked to this function
+        if function_id:
+            try:
+                # Check with exact match first
+                debug_query_exact = f"""
+                SELECT COUNT(*) as count
+                FROM {self.get_fully_qualified_table_name('ControlFunctions')} cf
+                WHERE cf.function_id = '{function_id}'
+                  AND cf.deletedAt IS NULL
+                """
+                debug_result_exact = await self.execute_query(debug_query_exact)
+                linked_count_exact = debug_result_exact[0].get('count', 0) if debug_result_exact and len(debug_result_exact) > 0 else 0
+                
+                # Check with trimmed match
+                debug_query_trimmed = f"""
+                SELECT COUNT(*) as count
+                FROM {self.get_fully_qualified_table_name('ControlFunctions')} cf
+                WHERE LTRIM(RTRIM(cf.function_id)) = '{function_id}'
+                  AND cf.deletedAt IS NULL
+                """
+                debug_result_trimmed = await self.execute_query(debug_query_trimmed)
+                linked_count_trimmed = debug_result_trimmed[0].get('count', 0) if debug_result_trimmed and len(debug_result_trimmed) > 0 else 0
+                
+                write_debug(f"[get_total_controls] Controls linked to function '{function_id}' (exact match): {linked_count_exact}")
+                write_debug(f"[get_total_controls] Controls linked to function '{function_id}' (trimmed match): {linked_count_trimmed}")
+                
+                # Use trimmed count for the rest
+                linked_count = linked_count_trimmed
+                
+                # Also check if any of those linked controls are not deleted
+                if linked_count > 0:
+                    try:
+                        active_linked_query = f"""
+                        SELECT COUNT(*) as count
+                        FROM {self.get_fully_qualified_table_name('ControlFunctions')} cf
+                        INNER JOIN {self.get_fully_qualified_table_name('Controls')} c ON c.id = cf.control_id
+                        WHERE LTRIM(RTRIM(cf.function_id)) = '{function_id}'
+                          AND cf.deletedAt IS NULL
+                          AND c.isDeleted = 0
+                          AND c.deletedAt IS NULL
+                        """
+                        active_linked_result = await self.execute_query(active_linked_query)
+                        active_count = active_linked_result[0].get('count', 0) if active_linked_result and len(active_linked_result) > 0 else 0
+                        write_debug(f"[get_total_controls] Active (non-deleted) controls linked to function '{function_id}': {active_count}")
+                    except Exception as e:
+                        write_debug(f"[get_total_controls] Error checking active linked controls: {e}")
+            except Exception as e:
+                write_debug(f"[get_total_controls] Error checking function-linked controls: {e}")
+        
+        result = await self.execute_query(query)
+        write_debug(f"[get_total_controls] Final query returned {len(result)} rows")
+        if len(result) == 0:
+            write_debug(f"[get_total_controls] WARNING: No controls found. This could mean:")
+            write_debug(f"[get_total_controls]   1. No controls are linked to function '{function_id}' in ControlFunctions table")
+            write_debug(f"[get_total_controls]   2. All controls matching the filter are deleted (isDeleted=1 or deletedAt IS NOT NULL)")
+            write_debug(f"[get_total_controls]   3. Date filter is excluding all controls")
+            write_debug(f"[get_total_controls]   4. The function filter SQL might have an issue")
+        return result
 
    
-    async def get_pending_controls(self, role: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_pending_controls(
+        self,
+        role: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get pending controls for a given role: preparer/checker/reviewer/acceptance (using standardized sequential approval logic)"""
         date_filter = ""
         if start_date and end_date:
@@ -115,6 +307,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
 
         # Use standardized staged workflow pattern matching Node.js base-dashboard.service.ts
         if role == 'preparer':
@@ -140,12 +335,20 @@ class ControlService:
         FROM dbo.[Controls] c
         WHERE c.isDeleted = 0 AND c.deletedAt IS NULL {date_filter}
           AND {where_clause}
+        {function_filter}
         ORDER BY c.createdAt DESC, c.name
         """
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
     
-    async def get_unmapped_icofr_controls(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_unmapped_icofr_controls(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get unmapped ICOFR controls data for export"""
         date_filter = ""
         if start_date and end_date:
@@ -154,6 +357,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         query = f"""
         SELECT c.id, c.name as control_name, c.code as control_code, a.name as assertion_name, a.account_type as assertion_type,
@@ -166,11 +372,20 @@ class ControlService:
         AND ((a.C = 1 OR a.E = 1 OR a.A = 1 OR a.V = 1 OR a.O = 1 OR a.P = 1) 
              AND a.account_type IN ('Balance Sheet', 'Income Statement')) 
         AND a.isDeleted = 0 {date_filter}
+        {function_filter}
         ORDER BY c.createdAt DESC
         """
         return await self.execute_query(query)
     
-    async def get_tests_pending_controls(self, status_type: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_tests_pending_controls(
+        self,
+        status_type: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get controls with pending test status (using ControlDesignTests table like Node.js frontend)"""
         date_filter = ""
         if start_date and end_date:
@@ -179,6 +394,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         # Map status types to database columns
         status_column_map = {
@@ -218,11 +436,19 @@ class ControlService:
           AND c.deletedAt IS NULL
           AND t.deletedAt IS NULL
         {date_filter}
+        {function_filter}
         ORDER BY c.createdAt DESC, c.name
         """
         return await self.execute_query(query)
 
-    async def get_unmapped_controls(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_unmapped_controls(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get unmapped controls based on Node.js config logic"""
         date_filter = ""
         if start_date and end_date:
@@ -231,6 +457,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         # Mirror Node query: controls with no ControlCosos mapping
         query = f"""
@@ -243,11 +472,19 @@ class ControlService:
             SELECT 1 FROM {self.get_fully_qualified_table_name('ControlCosos')} ccx 
             WHERE ccx.control_id = c.id AND ccx.deletedAt IS NULL
           )
+        {function_filter}
         ORDER BY c.createdAt DESC, c.name
         """
         return await self.execute_query(query)
 
-    async def get_unmapped_non_icofr_controls(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_unmapped_non_icofr_controls(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get unmapped Non-ICOFR controls data for export"""
         date_filter = ""
         if start_date and end_date:
@@ -256,6 +493,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         query = f"""
         SELECT c.id, c.name as control_name, c.code as control_code, a.name as assertion_name, a.account_type as assertion_type,
@@ -269,11 +509,19 @@ class ControlService:
              AND (a.V IS NULL OR a.V = 0) AND (a.O IS NULL OR a.O = 0) AND (a.P IS NULL OR a.P = 0) 
              OR a.account_type NOT IN ('Balance Sheet', 'Income Statement'))) 
         AND (a.isDeleted = 0 OR a.id IS NULL) {date_filter}
+        {function_filter}
         ORDER BY c.createdAt DESC
         """
         return await self.execute_query(query)
    
-    async def get_controls_by_department(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_controls_by_department(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get controls grouped by function (many-to-many relationship via ControlFunctions table)"""
         write_debug(f"Fetching controls by function - start_date: {start_date}, end_date: {end_date}")
         
@@ -284,6 +532,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         controls_table = self.get_fully_qualified_table_name('Controls')
         functions_table = self.get_fully_qualified_table_name('Functions')
@@ -299,6 +550,7 @@ class ControlService:
         INNER JOIN {functions_table} f ON cf.function_id = f.id
         WHERE c.isDeleted = 0 
         {date_filter}
+        {function_filter}
         GROUP BY f.name
         ORDER BY control_count DESC
         """
@@ -308,7 +560,14 @@ class ControlService:
         write_debug(f"Query result: {result} (count: {len(result)})")
         return result
     
-    async def get_controls_by_risk_response(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_controls_by_risk_response(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get controls grouped by risk response"""
         write_debug(f"Fetching controls by risk response - start_date: {start_date}, end_date: {end_date}")
         
@@ -319,6 +578,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         controls_table = self.get_fully_qualified_table_name('Controls')
         
@@ -329,6 +591,7 @@ class ControlService:
         FROM {controls_table} c
         WHERE c.isDeleted = 0 
         {date_filter}
+        {function_filter}
         GROUP BY c.risk_response
         ORDER BY COUNT(c.id) DESC
         """
@@ -338,7 +601,14 @@ class ControlService:
         write_debug(f"Query result: {result} (count: {len(result)})")
         return result
     
-    async def get_quarterly_control_creation_trend(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_quarterly_control_creation_trend(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get controls created by quarter"""
         write_debug(f"Fetching quarterly control creation trend - start_date: {start_date}, end_date: {end_date}")
         
@@ -349,6 +619,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         controls_table = self.get_fully_qualified_table_name('Controls')
 
@@ -359,6 +632,7 @@ class ControlService:
         FROM {controls_table} c
         WHERE c.isDeleted = 0 
         {date_filter}
+        {function_filter}
         GROUP BY YEAR(c.createdAt), DATEPART(QUARTER, c.createdAt)
         ORDER BY YEAR(c.createdAt), DATEPART(QUARTER, c.createdAt)
         """
@@ -368,7 +642,14 @@ class ControlService:
         write_debug(f"Query result: {result} (count: {len(result)})")
         return result
     
-    async def get_controls_by_type(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_controls_by_type(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get controls grouped by type"""
         write_debug(f"Fetching controls by type - start_date: {start_date}, end_date: {end_date}")
         
@@ -379,6 +660,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         controls_table = self.get_fully_qualified_table_name('Controls')
 
@@ -392,6 +676,7 @@ class ControlService:
         FROM {controls_table} c
         WHERE c.isDeleted = 0 
         {date_filter}
+        {function_filter}
         GROUP BY c.type
         ORDER BY COUNT(c.id) DESC
         """
@@ -401,7 +686,14 @@ class ControlService:
         write_debug(f"Query result: {result} (count: {len(result)})")
         return result
     
-    async def get_anti_fraud_distribution(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_anti_fraud_distribution(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get controls by anti-fraud distribution"""
         write_debug(f"Fetching anti-fraud distribution - start_date: {start_date}, end_date: {end_date}")
         
@@ -412,6 +704,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         controls_table = self.get_fully_qualified_table_name('Controls')
 
@@ -426,6 +721,7 @@ class ControlService:
         FROM {controls_table} c
         WHERE c.isDeleted = 0 
         {date_filter}
+        {function_filter}
         GROUP BY c.AntiFraud
         ORDER BY COUNT(c.id) DESC
         """
@@ -435,7 +731,14 @@ class ControlService:
         write_debug(f"Query result: {result} (count: {len(result)})")
         return result
     
-    async def get_controls_per_level(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_controls_per_level(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get controls per control level"""
         write_debug(f"Fetching controls per level - start_date: {start_date}, end_date: {end_date}")
         
@@ -446,6 +749,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         controls_table = self.get_fully_qualified_table_name('Controls')
 
@@ -459,6 +765,7 @@ class ControlService:
         FROM {controls_table} c
         WHERE c.isDeleted = 0 
         {date_filter}
+        {function_filter}
         GROUP BY c.entityLevel
         ORDER BY COUNT(c.id) DESC
         """
@@ -468,7 +775,14 @@ class ControlService:
         write_debug(f"Query result: {result} (count: {len(result)})")
         return result
     
-    async def get_control_execution_frequency(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_control_execution_frequency(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get controls by execution frequency"""
         write_debug(f"Fetching control execution frequency - start_date: {start_date}, end_date: {end_date}")
         
@@ -479,6 +793,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         controls_table = self.get_fully_qualified_table_name('Controls')
         
@@ -499,6 +816,7 @@ class ControlService:
         FROM {controls_table} c
         WHERE c.isDeleted = 0 
         {date_filter}
+        {function_filter}
         GROUP BY c.frequency
         ORDER BY COUNT(c.id) DESC
         """
@@ -508,7 +826,14 @@ class ControlService:
         write_debug(f"Query result: {result} (count: {len(result)})")
         return result
     
-    async def get_number_of_controls_by_icofr_status(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_number_of_controls_by_icofr_status(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get number of controls by ICOFR status"""
         write_debug(f"Fetching controls by ICOFR status - start_date: {start_date}, end_date: {end_date}")
         
@@ -519,6 +844,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         controls_table = self.get_fully_qualified_table_name('Controls')
         assertions_table = self.get_fully_qualified_table_name('Assertions')
@@ -537,6 +865,7 @@ class ControlService:
         LEFT JOIN {assertions_table} a ON c.icof_id = a.id AND a.isDeleted = 0
         WHERE c.isDeleted = 0 
         {date_filter}
+        {function_filter}
         GROUP BY 
             CASE 
                 WHEN a.id IS NULL THEN 'Non-ICOFR'
@@ -619,7 +948,14 @@ class ControlService:
         write_debug(f"Query result: {result} (count: {len(result)})")
         return result
     
-    async def get_action_plans_status(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_action_plans_status(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get action plans status"""
         write_debug(f"Fetching action plans status - start_date: {start_date}, end_date: {end_date}")
         
@@ -630,8 +966,15 @@ class ControlService:
             date_filter = f"AND a.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND a.createdAt <= '{end_date}'"
+
+        # Note: ActionPlans are linked to Controls via controlDesignTest_id -> ControlDesignTests -> Controls
+        # So we filter via Controls
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         actionplans_table = self.get_fully_qualified_table_name('Actionplans')
+        controls_table = self.get_fully_qualified_table_name('Controls')
+        control_design_tests_table = self.get_fully_qualified_table_name('ControlDesignTests')
         
         query = f"""
         SELECT 
@@ -641,8 +984,11 @@ class ControlService:
             END AS name,
             COUNT(a.id) AS value
         FROM {actionplans_table} a
+        LEFT JOIN {control_design_tests_table} cdt ON a.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL
+        LEFT JOIN {controls_table} c ON cdt.control_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
         WHERE a.deletedAt IS NULL 
         {date_filter}
+        {function_filter if function_filter else ''}
         GROUP BY 
             CASE 
                 WHEN a.done = 0 AND a.implementation_date < GETDATE() THEN 'Overdue'
@@ -656,7 +1002,14 @@ class ControlService:
         write_debug(f"Query result: {result} (count: {len(result)})")
         return result
     
-    async def get_number_of_controls_per_component(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_number_of_controls_per_component(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get number of controls per component"""
         write_debug(f"Fetching controls per component - start_date: {start_date}, end_date: {end_date}")
         
@@ -667,6 +1020,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         controls_table = self.get_fully_qualified_table_name('Controls')
         control_cosos_table = self.get_fully_qualified_table_name('ControlCosos')
@@ -689,6 +1045,7 @@ class ControlService:
             AND pr.deletedAt IS NULL 
             AND cc.deletedAt IS NULL 
         {date_filter}
+        {function_filter}
         GROUP BY cc.name
         ORDER BY COUNT(DISTINCT c.id) DESC
         """
@@ -699,7 +1056,14 @@ class ControlService:
         return result
 
     
-    async def get_status_overview(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_status_overview(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Status overview table matching Node config (controls with statuses)."""
         date_filter = ""
         if start_date and end_date:
@@ -708,6 +1072,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         query = f"""
         SELECT 
@@ -720,12 +1087,20 @@ class ControlService:
         FROM {self.get_fully_qualified_table_name('Controls')} c
         WHERE c.isDeleted = 0 AND c.deletedAt IS NULL
         {date_filter}
+        {function_filter}
         ORDER BY c.createdAt DESC
         """
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
 
-    async def get_controls_by_function(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_controls_by_function(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -733,6 +1108,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         query = f"""
         SELECT 
@@ -744,12 +1122,20 @@ class ControlService:
         JOIN {self.get_fully_qualified_table_name('ControlFunctions')} cf ON c.id = cf.control_id
         JOIN {self.get_fully_qualified_table_name('Functions')} f ON cf.function_id = f.id
         WHERE c.isDeleted = 0 {date_filter}
+        {function_filter}
         ORDER BY c.createdAt DESC, f.name, c.name
         """
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
 
-    async def get_controls_testing_approval_cycle(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_controls_testing_approval_cycle(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -757,6 +1143,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         query = f"""
         SELECT 
@@ -781,12 +1170,20 @@ class ControlService:
         INNER JOIN {self.get_fully_qualified_table_name('Controls')} AS c ON t.control_id = c.id
         INNER JOIN {self.get_fully_qualified_table_name('Functions')} AS f ON t.function_id = f.id
         WHERE c.isDeleted = 0 AND (t.deletedAt IS NULL) AND t.function_id IS NOT NULL {date_filter}
+        {function_filter}
         ORDER BY c.createdAt DESC, c.name
         """
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
     
-    async def get_key_non_key_controls_per_department(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_key_non_key_controls_per_department(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -794,6 +1191,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         query = f"""
         SELECT 
@@ -804,13 +1204,21 @@ class ControlService:
         FROM {self.get_fully_qualified_table_name('Controls')} c
         LEFT JOIN {self.get_fully_qualified_table_name('JobTitles')} jt ON c.departmentId = jt.id
         WHERE c.isDeleted = 0 {date_filter}
+        {function_filter}
         GROUP BY COALESCE(jt.name, 'Unassigned Department'), c.departmentId
         ORDER BY COUNT(c.id) DESC, COALESCE(jt.name, 'Unassigned Department')
         """
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
 
-    async def get_key_non_key_controls_per_process(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_key_non_key_controls_per_process(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -818,6 +1226,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
 
         query = f"""
         SELECT 
@@ -832,6 +1243,7 @@ class ControlService:
         LEFT JOIN {self.get_fully_qualified_table_name('ControlProcesses')} cp ON c.id = cp.control_id
         LEFT JOIN {self.get_fully_qualified_table_name('Processes')} p ON cp.process_id = p.id
         WHERE c.isDeleted = 0 {date_filter}
+        {function_filter}
         GROUP BY 
             CASE 
               WHEN p.name IS NULL THEN 'Unassigned Process'
@@ -846,7 +1258,14 @@ class ControlService:
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
     
-    async def get_key_non_key_controls_per_business_unit(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_key_non_key_controls_per_business_unit(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -854,6 +1273,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         query = f"""
         SELECT 
@@ -865,13 +1287,21 @@ class ControlService:
         JOIN {self.get_fully_qualified_table_name('Functions')} f ON cf.function_id = f.id
         JOIN {self.get_fully_qualified_table_name('Controls')} c ON cf.control_id = c.id
         WHERE c.isDeleted = 0 {date_filter}
+        {function_filter}
         GROUP BY f.name
         ORDER BY COUNT(c.id) DESC, f.name
         """
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
 
-    async def get_control_count_by_assertion_name(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_control_count_by_assertion_name(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -879,6 +1309,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
         
         query = f"""
         SELECT 
@@ -888,13 +1321,21 @@ class ControlService:
         FROM {self.get_fully_qualified_table_name('Controls')} c
         LEFT JOIN {self.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id AND a.isDeleted = 0
         WHERE c.isDeleted = 0 {date_filter}
+        {function_filter}
         GROUP BY a.name, a.account_type
         ORDER BY COUNT(c.id) DESC, a.name
         """
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
     
-    async def get_icofr_control_coverage_by_coso(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_icofr_control_coverage_by_coso(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -902,6 +1343,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
 
         q = f"""
         SELECT 
@@ -926,6 +1370,7 @@ class ControlService:
         JOIN {self.get_fully_qualified_table_name('CosoPrinciples')} prin ON point.principle_id = prin.id AND prin.deletedAt IS NULL
         JOIN {self.get_fully_qualified_table_name('CosoComponents')} comp ON prin.component_id = comp.id AND comp.deletedAt IS NULL
         WHERE c.isDeleted = 0 {date_filter}
+        {function_filter}
         GROUP BY comp.name, 
             CASE 
               WHEN c.icof_id IS NOT NULL 
@@ -968,7 +1413,14 @@ class ControlService:
             write_debug(f"Query result (minimal): {len(res)} rows for actionPlanForAdequacy")
         return res
 
-    async def get_controls_not_mapped_to_principles(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_controls_not_mapped_to_principles(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Controls not mapped to any Principles (match Node SQL)."""
         date_filter = ""
         if start_date and end_date:
@@ -977,6 +1429,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
 
         query = f"""
         SELECT 
@@ -987,12 +1442,20 @@ class ControlService:
         LEFT JOIN {self.get_fully_qualified_table_name('Functions')} f ON f.id = cf.function_id 
         LEFT JOIN {self.get_fully_qualified_table_name('ControlCosos')} ccx ON ccx.control_id = c.id AND ccx.deletedAt IS NULL 
         WHERE ccx.control_id IS NULL AND c.isDeleted = 0 {date_filter}
+        {function_filter}
         ORDER BY c.createdAt DESC
         """
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
     
-    async def get_controls_not_mapped_to_assertions(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_controls_not_mapped_to_assertions(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Controls not mapped to any Assertions (ICOFR account) - matches Node SQL."""
         date_filter = ""
         if start_date and end_date:
@@ -1002,6 +1465,9 @@ class ControlService:
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
 
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
+
         query = f"""
         SELECT 
             c.name AS [Control Name], 
@@ -1010,12 +1476,20 @@ class ControlService:
         LEFT JOIN {self.get_fully_qualified_table_name('ControlFunctions')} cf ON cf.control_id = c.id 
         LEFT JOIN {self.get_fully_qualified_table_name('Functions')} f ON f.id = cf.function_id 
         WHERE c.icof_id IS NULL AND c.isDeleted = 0 {date_filter}
+        {function_filter}
         ORDER BY c.createdAt DESC
         """
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
 
-    async def get_action_plan_for_adequacy(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_action_plan_for_adequacy(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         write_debug(f"Fetching actionPlanForAdequacy for {start_date} to {end_date}")
         date_filter = ""
         if start_date and end_date:
@@ -1024,6 +1498,9 @@ class ControlService:
             date_filter = f"AND ap.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND ap.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
 
         query = f"""
         SELECT 
@@ -1045,6 +1522,7 @@ class ControlService:
         LEFT JOIN {self.get_fully_qualified_table_name('Functions')} f ON cdt.function_id = f.id AND f.deletedAt IS NULL
         WHERE ap.[from] = 'adequacy' 
             AND ap.deletedAt IS NULL AND ap.controlDesignTest_id IS NOT NULL {date_filter}
+        {function_filter}
         ORDER BY ap.createdAt DESC
         """
         write_debug(f"SQL Query: {query}")
@@ -1052,7 +1530,14 @@ class ControlService:
         write_debug(f"Query result: {len(res)} rows for actionPlanForAdequacy")
         return res
 
-    async def get_action_plan_for_effectiveness(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_action_plan_for_effectiveness(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND ap.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -1060,6 +1545,9 @@ class ControlService:
             date_filter = f"AND ap.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND ap.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
 
         q = f"""
         SELECT 
@@ -1082,12 +1570,20 @@ class ControlService:
         LEFT JOIN {self.get_fully_qualified_table_name('Functions')} f ON cf.function_id = f.id
         WHERE ap.[from] = 'effective' 
             AND ap.deletedAt IS NULL AND ap.controlDesignTest_id IS NOT NULL {date_filter}
+        {function_filter}
         ORDER BY ap.createdAt DESC
         """
         write_debug(f"SQL Query: {q}")
         return await self.execute_query(q)
 
-    async def get_control_submission_status_by_quarter_function(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_control_submission_status_by_quarter_function(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -1095,6 +1591,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
 
         q = f"""
         SELECT 
@@ -1114,12 +1613,20 @@ class ControlService:
         JOIN {self.get_fully_qualified_table_name('Controls')} c ON cdt.control_id = c.id 
         JOIN {self.get_fully_qualified_table_name('Functions')} f ON cdt.function_id = f.id 
         WHERE c.isDeleted = 0 AND cdt.deletedAt IS NULL {date_filter}
+        {function_filter}
         ORDER BY c.createdAt DESC
         """
         write_debug(f"SQL Query: {q}")
         return await self.execute_query(q)
 
-    async def get_functions_with_fully_tested_control_tests(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_functions_with_fully_tested_control_tests(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -1127,6 +1634,9 @@ class ControlService:
             date_filter = f"AND c.createdAt >= '{start_date}'"
         elif end_date:
             date_filter = f"AND c.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, function_id)
 
         q = f"""
         SELECT 
@@ -1145,6 +1655,7 @@ class ControlService:
         JOIN {self.get_fully_qualified_table_name('Controls')} AS c ON cf.control_id = c.id AND c.isDeleted = 0 
         LEFT JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} AS cdt ON cdt.control_id = c.id AND cdt.deletedAt IS NULL 
         WHERE 1=1 {date_filter}
+        {function_filter}
         GROUP BY f.name, cdt.quarter, cdt.year
         ORDER BY f.name, cdt.year, cdt.quarter
         """

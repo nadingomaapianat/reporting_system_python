@@ -26,7 +26,8 @@ from routes.route_utils import (
     build_dynamic_sql_query,
     generate_excel_report,
     generate_word_report,
-    generate_pdf_report
+    generate_pdf_report,
+    extract_user_and_function_params
 )
 
 # Initialize services
@@ -133,10 +134,14 @@ async def log_report_export(request: Request):
 
 @router.get("/api/exports/recent")
 async def list_recent_exports(request: Request, limit: int = Query(50), page: int = Query(1), search: str = Query("")):
-    """Return recent report exports (newest first) with simple pagination and dashboard filtering."""
+    """Return recent report exports (newest first) with simple pagination and dashboard filtering.
+    Filters by user_id or users in the same group."""
     try:
         import pyodbc
         from config import get_database_connection_string
+
+        # Extract user_id and group_name from token
+        user_id, group_name, _ = extract_user_and_function_params(request)
 
         connection_string = get_database_connection_string()
         conn = pyodbc.connect(connection_string)
@@ -197,11 +202,107 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
                 conn.commit()
             except Exception:
                 pass
+            
+            # Add created_by_user_id column if it doesn't exist
+            try:
+                cursor.execute(
+                    """
+                    IF NOT EXISTS (
+                      SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                      WHERE TABLE_NAME = 'report_exports' AND COLUMN_NAME = 'created_by_user_id'
+                    )
+                    BEGIN
+                      ALTER TABLE dbo.report_exports ADD created_by_user_id NVARCHAR(255) NULL
+                    END
+                    """
+                )
+                conn.commit()
+            except Exception:
+                pass
 
             # Build search condition
             search_condition = ""
             search_params = []
             conditions = []
+            
+            # Filter by user_id or users with the same functions
+            if user_id:
+                # Trim user_id to handle spaces
+                user_id = str(user_id).strip() if user_id else None
+                
+                # If user is super admin, show all reports
+                if group_name == 'super_admin_':
+                    # Super admin sees all reports - no filter needed
+                    pass
+                else:
+                    # Get current user's functions
+                    try:
+                        cursor.execute(
+                            """
+                            SELECT DISTINCT LTRIM(RTRIM(uf.functionId))
+                            FROM dbo.UserFunction uf
+                            JOIN dbo.Functions f ON LTRIM(RTRIM(f.id)) = LTRIM(RTRIM(uf.functionId))
+                            WHERE uf.userId = ? 
+                              AND uf.deletedAt IS NULL
+                              AND f.isDeleted = 0
+                              AND f.deletedAt IS NULL
+                            """,
+                            (user_id,)
+                        )
+                        user_functions = [str(row[0]).strip() for row in cursor.fetchall() if row[0] and str(row[0]).strip()]
+                        write_debug(f"[List Exports] User {user_id} has functions: {user_functions}")
+                    except Exception as e:
+                        write_debug(f"[List Exports] Error fetching user functions: {e}")
+                        import traceback
+                        write_debug(f"[List Exports] Traceback: {traceback.format_exc()}")
+                        user_functions = []
+                    
+                    # Get all user_ids that share at least one function with the current user
+                    shared_user_ids = []
+                    if user_functions:
+                        try:
+                            # Build placeholders for function IDs (safe parameterized query)
+                            func_placeholders = ','.join(['?' for _ in user_functions])
+                            query = f"""
+                                SELECT DISTINCT CAST(uf.userId AS NVARCHAR(255))
+                                FROM dbo.UserFunction uf
+                                JOIN dbo.Functions f ON LTRIM(RTRIM(f.id)) = LTRIM(RTRIM(uf.functionId))
+                                WHERE LTRIM(RTRIM(uf.functionId)) IN ({func_placeholders})
+                                  AND uf.deletedAt IS NULL
+                                  AND f.isDeleted = 0
+                                  AND f.deletedAt IS NULL
+                                  AND uf.userId IS NOT NULL
+                            """
+                            cursor.execute(query, user_functions)
+                            shared_user_ids = [str(row[0]).strip() for row in cursor.fetchall() if row[0] and str(row[0]).strip()]
+                            write_debug(f"[List Exports] Users sharing functions with {user_id}: {shared_user_ids} (total: {len(shared_user_ids)})")
+                        except Exception as e:
+                            write_debug(f"[List Exports] Error fetching shared users: {e}")
+                            import traceback
+                            write_debug(f"[List Exports] Traceback: {traceback.format_exc()}")
+                            shared_user_ids = []
+                    
+                    # Always include the current user_id (even if they have no functions or no shared users)
+                    if user_id:
+                        user_id_trimmed = str(user_id).strip()
+                        if user_id_trimmed and user_id_trimmed not in shared_user_ids:
+                            shared_user_ids.append(user_id_trimmed)
+                            write_debug(f"[List Exports] Added current user_id to shared list: {user_id_trimmed}")
+                    
+                    # Filter by user_id or users with the same functions
+                    if shared_user_ids:
+                        placeholders = ','.join(['?' for _ in shared_user_ids])
+                        conditions.append(f"created_by_user_id IN ({placeholders})")
+                        search_params.extend(shared_user_ids)
+                        write_debug(f"[List Exports] Filtering by user_ids: {shared_user_ids}")
+                    else:
+                        # If no shared users found, only show current user's reports
+                        conditions.append("created_by_user_id = ?")
+                        search_params.append(user_id)
+                        write_debug(f"[List Exports] No shared users found, filtering by current user only: {user_id}")
+            else:
+                # If no user_id, show only reports with no user_id (legacy reports)
+                conditions.append("(created_by_user_id IS NULL OR created_by_user_id = '')")
             
             # Handle title search
             if search and search.strip():
@@ -242,7 +343,7 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
             offset = (safe_page - 1) * safe_limit
             
             select_query = f"""
-                SELECT id, title, src, format, dashboard, type, created_by, created_at
+                SELECT id, title, src, format, dashboard, type, created_by, created_by_user_id, created_at
                 FROM dbo.report_exports
                 {search_condition}
                 ORDER BY created_at DESC, id DESC
@@ -259,7 +360,8 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
                     "dashboard": r[4],
                     "type": r[5] if len(r) > 5 else None,
                     "created_by": r[6] if len(r) > 6 else "System",
-                    "created_at": r[7].isoformat() if len(r) > 7 and hasattr(r[7], 'isoformat') else (str(r[7]) if len(r) > 7 else "")
+                    "created_by_user_id": r[7] if len(r) > 7 else None,
+                    "created_at": r[8].isoformat() if len(r) > 8 and hasattr(r[8], 'isoformat') else (str(r[8]) if len(r) > 8 else "")
                 }
                 for r in rows
             ]
@@ -362,36 +464,97 @@ async def generate_dynamic_report(request: Request):
             rows = cursor.fetchall()
             write_debug(f"[Dynamic Report] Query executed, fetched {len(rows)} rows")
             
-            # Convert to list of dictionaries
-            data_rows = []
+            # Convert to list of dicts keyed by column name
+            data_rows: list[dict] = []
             for row in rows:
-                data_rows.append([str(cell) if cell is not None else '' for cell in row])
+                rec = {}
+                for idx, col_name in enumerate(columns):
+                    rec[col_name] = str(row[idx]) if idx < len(row) and row[idx] is not None else ''
+                data_rows.append(rec)
             
             # Add index column at the beginning for all dynamic reports
-            # Add "#" or "Index" as the first column header
             index_column_name = "#"
             columns_with_index = [index_column_name] + columns
             
-            # Add index number (1, 2, 3, ...) to the beginning of each data row
-            data_rows_with_index = []
-            for idx, row in enumerate(data_rows, start=1):
-                data_rows_with_index.append([str(idx)] + row)
+            # Prepend index to each row
+            indexed_rows: list[dict] = []
+            for idx, rec in enumerate(data_rows, start=1):
+                new_rec = {index_column_name: str(idx)}
+                new_rec.update(rec)
+                indexed_rows.append(new_rec)
             
             # Use the modified columns and data
             columns = columns_with_index
-            data_rows = data_rows_with_index
+            data_rows = indexed_rows
             
             write_debug(f"[Dynamic Report] Added index column, total columns: {len(columns)}, total rows: {len(data_rows)}")
             
             # Get header configuration from request body
-            header_config = body.get('headerConfig', {})
-            if header_config:
-                from utils.export_utils import get_default_header_config
-                default_config = get_default_header_config("dynamic")
-                merged_config = {**default_config, **header_config}
-            else:
-                from utils.export_utils import get_default_header_config
-                merged_config = get_default_header_config("dynamic")
+            header_config = body.get('headerConfig', {}) or {}
+            from utils.export_utils import get_default_header_config
+            default_config = get_default_header_config("dynamic")
+            merged_config = {**default_config, **header_config}
+
+            # If frontend sent chartConfig, convert it to chart_data for Excel/PDF
+            chart_cfg = header_config.get('chartConfig') if isinstance(header_config, dict) else None
+            if chart_cfg:
+                x_key = chart_cfg.get('xKey')
+                y_key = chart_cfg.get('yKey')
+                chart_type = chart_cfg.get('type') or 'bar'
+                if x_key and y_key:
+                    from collections import defaultdict
+
+                    def to_float_safe(val):
+                        try:
+                            # Remove commas commonly found in formatted numbers
+                            return float(str(val).replace(',', ''))
+                        except Exception:
+                            return None
+
+                    numeric_samples = [
+                        to_float_safe(row.get(y_key))
+                        for row in data_rows
+                        if row.get(y_key) not in (None, '', ' ')
+                    ]
+                    y_is_numeric = any(v is not None for v in numeric_samples)
+
+                    labels: list[str] = []
+                    values: list[float] = []
+
+                    if chart_type == 'pie' and not y_is_numeric:
+                        # For pie with non-numeric Y, count occurrences of Y values
+                        counts: dict[str, int] = defaultdict(int)
+                        for row in data_rows:
+                            y_val = str(row.get(y_key) or '').strip()
+                            if y_val:
+                                counts[y_val] += 1
+                        labels = list(counts.keys())
+                        values = [counts[l] for l in labels]
+                    else:
+                        # Aggregate by X; sum numeric Y or count rows if non-numeric
+                        agg: dict[str, float] = defaultdict(float)
+                        for row in data_rows:
+                            x_val = str(row.get(x_key) or '').strip()
+                            y_raw = row.get(y_key)
+                            if not x_val or y_raw in (None, '', ' '):
+                                continue
+                            if y_is_numeric:
+                                y_val = to_float_safe(y_raw)
+                                if y_val is None:
+                                    continue
+                            else:
+                                y_val = 1.0
+                            agg[x_val] += y_val
+                        labels = list(agg.keys())
+                        values = [agg[l] for l in labels]
+
+                    if labels and values:
+                        merged_config['chart_type'] = chart_type
+                        merged_config['chart_data'] = {
+                            'labels': labels,
+                            'values': values,
+                        }
+                        write_debug(f"[Dynamic Report] chart_data prepared with {len(labels)} labels for chart export")
             
             # Get export type from request (transaction or dashboard)
             export_type = body.get('type')
@@ -439,7 +602,8 @@ async def generate_dynamic_report(request: Request):
                     card_type=table_names,  # Use table names as card_type for naming
                     header_config=merged_config,
                     created_by=created_by,
-                    export_type=export_type
+                    export_type=export_type,
+                    request=request
                 )
                 write_debug(f"[Dynamic Report] Export saved: {export_info.get('relative_path')}")
             except Exception as save_err:
@@ -483,6 +647,91 @@ async def generate_dynamic_report(request: Request):
         import traceback
         write_debug(f"[Dynamic Report] Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to generate dynamic report: {str(e)}")
+
+
+@router.get("/api/reports/dynamic-dashboard/charts")
+async def get_dynamic_dashboard_charts():
+    """
+    List saved dynamic dashboard charts created from Transaction Reports.
+    """
+    try:
+        import pyodbc
+        import json
+        from config import get_database_connection_string
+
+        connection_string = get_database_connection_string()
+        conn = pyodbc.connect(connection_string)
+        cursor = conn.cursor()
+        try:
+            # Ensure table exists (column chart_config to match save-chart and existing DB)
+            cursor.execute(
+                """
+                IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='dynamic_dashboard_charts' AND xtype='U')
+                CREATE TABLE dynamic_dashboard_charts (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    title NVARCHAR(255) NOT NULL,
+                    chart_type NVARCHAR(20) NOT NULL,
+                    chart_config NVARCHAR(MAX) NOT NULL,
+                    created_at DATETIME2 DEFAULT GETDATE()
+                );
+                """
+            )
+            conn.commit()
+
+            cursor.execute(
+                """
+                SELECT id, title, chart_type, chart_config, created_at
+                FROM dynamic_dashboard_charts
+                ORDER BY created_at DESC, id DESC
+                """
+            )
+            rows = cursor.fetchall()
+            charts = []
+            for r in rows:
+                cfg = {}
+                try:
+                    cfg = json.loads(r[3]) if r[3] else {}
+                except Exception:
+                    cfg = {}
+                charts.append(
+                    {
+                        "id": int(r[0]),
+                        "title": r[1],
+                        "chartType": r[2],
+                        "config": cfg,
+                        "createdAt": r[4].isoformat() if len(r) > 4 and hasattr(r[4], "isoformat") else None,
+                    }
+                )
+            return {"success": True, "charts": charts}
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        return {"success": False, "error": str(e), "charts": []}
+
+
+@router.delete("/api/reports/dynamic-dashboard/charts/{chart_id}")
+async def delete_dynamic_dashboard_chart(chart_id: int):
+    """
+    Delete a saved dynamic dashboard chart.
+    """
+    try:
+        import pyodbc
+        from config import get_database_connection_string
+
+        connection_string = get_database_connection_string()
+        conn = pyodbc.connect(connection_string)
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM dynamic_dashboard_charts WHERE id = ?", chart_id)
+            conn.commit()
+            deleted = cursor.rowcount > 0
+            return {"success": True, "deleted": deleted}
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @router.get("/api/exports/{export_id}/download")

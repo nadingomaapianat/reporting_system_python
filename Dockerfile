@@ -1,50 +1,33 @@
+# Python reporting API – same DB connection as Node (NTLM / Windows-style auth via env)
+# In Docker we use NTLM: DB_USE_WINDOWS_AUTH=0, DB_DOMAIN, DB_USERNAME, DB_PASSWORD (Trusted_Connection not available on Linux)
+
 FROM python:3.11-slim
 
 WORKDIR /app
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
-# Install system dependencies + Microsoft ODBC Driver 18
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    gnupg2 \
-    unixodbc \
-    unixodbc-dev \
-    build-essential \
-    gcc \
-    libpq-dev \
-    ca-certificates \
-    fontconfig \
-    \
-    # Microsoft GPG key & repo for Debian 12 (Bookworm)
-    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
-        | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" \
-        > /etc/apt/sources.list.d/mssql-release.list \
+# Install Microsoft ODBC Driver 18 for SQL Server (required for pyodbc)
+# python:3.11-slim is Debian Bookworm (12); use debian/11 if base is Bullseye
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl gnupg2 apt-transport-https ca-certificates \
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/microsoft.asc.gpg \
+    && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y msodbcsql18 \
-    \
-    # Cleanup
+    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 unixodbc-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+# Python env
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
+# Install dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy application
 COPY . .
 
-# Ensure directories exist
-RUN mkdir -p Disclosures template reports_export exports utils/fonts
-
-# Update font cache
-RUN fc-cache -fv
-
-# (Optional) Demo files — remove in production
-RUN echo "This is a demo file." > Disclosures/Sample_Disclosure_Report_2025.pdf && \
-    echo "This is a demo file." > template/Monthly_Report_Template.docx && \
-    echo "This is a demo export file." > reports_export/sample_export.xlsx
-
+# App listens on 8000; override with PORT env
 EXPOSE 8000
 
+# Same DB env as Node: DB_HOST, DB_PORT, DB_NAME, DB_USE_WINDOWS_AUTH=0, DB_DOMAIN, DB_USERNAME, DB_PASSWORD
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
