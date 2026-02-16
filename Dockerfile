@@ -6,10 +6,11 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install Microsoft ODBC Driver 18 for SQL Server (required for pyodbc)
-# python:3.11-slim is Debian Bookworm (12); use debian/11 if base is Bullseye
+# Microsoft repo expects key at /usr/share/keyrings/microsoft-prod.gpg (signed-by in prod.list)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl gnupg2 apt-transport-https ca-certificates \
-    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/microsoft.asc.gpg \
+    && mkdir -p /usr/share/keyrings \
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
     && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 unixodbc-dev \
