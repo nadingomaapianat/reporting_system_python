@@ -138,7 +138,15 @@ def get_db_connection():
             password=password,
             database=database,
         )
-    import pyodbc
+    # Only import pyodbc when DB_BACKEND=odbc (not used with pymssql)
+    try:
+        import pyodbc
+    except ImportError as e:
+        raise ImportError(
+            "pyodbc is required when DB_BACKEND=odbc. "
+            "Either install ODBC dependencies (unixodbc, msodbcsql18) or set DB_BACKEND=pymssql. "
+            f"Original error: {e}"
+        )
     return pyodbc.connect(get_database_connection_string())
 
 

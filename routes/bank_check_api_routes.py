@@ -448,7 +448,6 @@ async def insert_check_record(
 ):
     """Insert check record into database"""
     try:
-        import pyodbc
         from config import get_db_connection
         
         body = await request.json()
@@ -723,7 +722,6 @@ async def test_database_connection():
 async def check_table_exists(request: Request):
     """Check if a table exists in the database"""
     try:
-        import pyodbc
         from config import get_db_connection
         
         body = await request.json()
@@ -794,7 +792,6 @@ async def check_table_exists(request: Request):
 async def create_table(request: Request):
     """Create a new table in the database"""
     try:
-        import pyodbc
         from config import get_db_connection
         
         body = await request.json()
