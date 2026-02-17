@@ -117,10 +117,9 @@ async def save_and_log_export(
         Dict with file_path, relative_path, and export_id
     """
     import os
-    import pyodbc
     import hashlib
     import time
-    from config import get_database_connection_string
+    from config import get_db_connection
     global _export_cache
     
     # Ensure date_range is a dict (default to empty dict if None)
@@ -219,8 +218,7 @@ async def save_and_log_export(
     # Check database FIRST to see if a recent duplicate exists (before saving file)
     # This prevents duplicate database entries when multiple requests come in simultaneously
     try:
-        connection_string = get_database_connection_string()
-        conn_check = pyodbc.connect(connection_string)
+        conn_check = get_db_connection()
         cursor_check = conn_check.cursor()
         try:
             # Build date suffix for title matching
@@ -376,8 +374,7 @@ async def save_and_log_export(
     # Log to database
     export_id = None
     try:
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         try:
             # Ensure table exists with created_by and type

@@ -10,10 +10,13 @@ from typing import Dict, Any
 _db_host = os.getenv('DB_HOST', '')
 _db_port = os.getenv('DB_PORT', '1433')
 _db_name = os.getenv('DB_NAME', '')
-_db_domain = (os.getenv('DB_DOMAIN') or '').strip()
+# DB_Domain (adib_backend) and DB_DOMAIN (this project)
+_db_domain = (os.getenv('DB_DOMAIN') or os.getenv('DB_Domain') or '').strip()
 _db_username = os.getenv('DB_USERNAME', '')
 _db_password = os.getenv('DB_PASSWORD', '')
 _use_windows_auth = os.getenv('DB_USE_WINDOWS_AUTH', '1').strip().lower() not in ('0', 'false', 'no')
+# pymssql = NTLM via FreeTDS (no ODBC driver). odbc = pyodbc + Microsoft ODBC Driver.
+_db_backend = (os.getenv('DB_BACKEND', 'pymssql') or 'pymssql').strip().lower()
 
 DATABASE_CONFIG = {
     'server': _db_host or '206.189.57.0',
@@ -113,10 +116,36 @@ def get_database_connection_string() -> str:
     return "".join(parts)
 
 
+def get_db_connection():
+    """
+    Return an open DB connection. Uses pymssql (NTLM/FreeTDS, no ODBC) when DB_BACKEND=pymssql (default),
+    else pyodbc only when DB_BACKEND=odbc. Set DB_BACKEND=odbc only if you need ODBC/Trusted_Connection.
+    """
+    config = DATABASE_CONFIG
+    use_pymssql = _db_backend == 'pymssql'
+    if use_pymssql:
+        import pymssql
+        server = config['server']
+        port = int(config['port'])
+        user = f"{config['domain']}\\{config['username']}" if config.get('domain') else config['username']
+        password = config['password']
+        database = config['database']
+        return pymssql.connect(
+            server=server,
+            port=port,
+            user=user,
+            password=password,
+            database=database,
+        )
+    import pyodbc
+    return pyodbc.connect(get_database_connection_string())
+
+
 def test_database_connection() -> tuple[bool, str, Dict[str, Any]]:
     """
     Test database connectivity. Returns (success, message, details).
     details may include: server, database, auth_type, username, table_count, sql_version, error.
+    Uses get_db_connection() so it works with both pymssql (NTLM) and odbc.
     """
     details: Dict[str, Any] = {
         "server": DATABASE_CONFIG.get("server", "N/A"),
@@ -125,8 +154,7 @@ def test_database_connection() -> tuple[bool, str, Dict[str, Any]]:
         "username": DATABASE_CONFIG.get("username", "N/A"),
     }
     try:
-        import pyodbc
-        conn = pyodbc.connect(get_database_connection_string())
+        conn = get_db_connection()
         cursor = conn.cursor()
         try:
             cursor.execute("SELECT @@VERSION")

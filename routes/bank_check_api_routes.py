@@ -449,7 +449,7 @@ async def insert_check_record(
     """Insert check record into database"""
     try:
         import pyodbc
-        from config import get_database_connection_string
+        from config import get_db_connection
         
         body = await request.json()
         record = body.get('record', {})
@@ -462,8 +462,7 @@ async def insert_check_record(
             }
         
         # Use existing SQL Server connection
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         try:
@@ -587,15 +586,10 @@ async def insert_check_record(
 async def get_database_tables():
     """Get all tables from SQL Server database"""
     try:
-        import pyodbc
-        from config import get_database_connection_string
+        from config import get_db_connection
         
-        # Use existing SQL Server connection
-        connection_string = get_database_connection_string()
-        print(f"[EnhancedBankCheck] Connecting to SQL Server with: {connection_string[:50]}...")
-        
-        # Connect to SQL Server database
-        conn = pyodbc.connect(connection_string)
+        print(f"[EnhancedBankCheck] Connecting to SQL Server...")
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         try:
@@ -693,15 +687,10 @@ async def get_database_tables():
 async def test_database_connection():
     """Test SQL Server database connection"""
     try:
-        import pyodbc
-        from config import get_database_connection_string
+        from config import get_db_connection
         
-        # Use existing SQL Server connection
-        connection_string = get_database_connection_string()
         print(f"[DB Test] Attempting SQL Server connection...")
-        
-        # Test connection
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Test query
@@ -735,7 +724,7 @@ async def check_table_exists(request: Request):
     """Check if a table exists in the database"""
     try:
         import pyodbc
-        from config import get_database_connection_string
+        from config import get_db_connection
         
         body = await request.json()
         table_name = body.get('table_name', '').strip()
@@ -747,8 +736,7 @@ async def check_table_exists(request: Request):
             }
         
         # Use existing SQL Server connection
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         try:
@@ -807,7 +795,7 @@ async def create_table(request: Request):
     """Create a new table in the database"""
     try:
         import pyodbc
-        from config import get_database_connection_string
+        from config import get_db_connection
         
         body = await request.json()
         table_name = body.get('table_name', '').strip()
@@ -827,8 +815,7 @@ async def create_table(request: Request):
             }
         
         # Use existing SQL Server connection
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         try:

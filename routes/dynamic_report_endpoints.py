@@ -1,10 +1,9 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
-import pyodbc
 import json
 import logging
 import traceback
-from config import get_database_connection_string
+from config import get_db_connection
 from utils.export_utils import get_default_header_config
 
 logger = logging.getLogger(__name__)
@@ -18,8 +17,7 @@ async def list_dynamic_tables():
     Uses INFORMATION_SCHEMA.TABLES (dbo schema, base tables only).
     """
     try:
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         try:
             cursor.execute(
@@ -74,8 +72,7 @@ async def save_dynamic_dashboard_chart(request: Request):
             "visibleColumns": body.get("visibleColumns") or [],
         }
 
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         try:
             # Create table if not exists (column is chart_config to match existing DB schema)
@@ -176,8 +173,7 @@ async def execute_sql(request: Request):
                 detail="Only SELECT queries are allowed. Use CAST for datetime columns, e.g. CAST(createdAt AS VARCHAR(MAX)) AS createdAt",
             )
 
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         try:
             cursor.execute(sql)
@@ -228,8 +224,7 @@ async def preview_dynamic_report(request: Request):
 
         sql_query = build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter)
 
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         try:
             cursor.execute(sql_query)
@@ -291,9 +286,8 @@ async def generate_dynamic_report(request: Request):
         print(f"[DynamicReport] Tables: {tables}")
         
         # Execute query and get data
-        connection_string = get_database_connection_string()
         print(f"[DynamicReport] Connecting to database...")
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         try:
@@ -680,8 +674,7 @@ async def save_report_schedule(request: Request):
         schedule = body.get('schedule', {})
         
         # Save to database (you can create a scheduled_reports table)
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         try:

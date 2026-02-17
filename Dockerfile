@@ -1,19 +1,13 @@
-# Python reporting API – same DB connection as Node (NTLM / Windows-style auth via env)
-# In Docker we use NTLM: DB_USE_WINDOWS_AUTH=0, DB_DOMAIN, DB_USERNAME, DB_PASSWORD (Trusted_Connection not available on Linux)
+# Python reporting API – DB via pymssql (NTLM/FreeTDS, no ODBC driver required)
+# Set DB_BACKEND=pymssql and DB_DOMAIN, DB_USERNAME, DB_PASSWORD for NTLM in Docker
 
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install Microsoft ODBC Driver 18 for SQL Server (required for pyodbc)
-# Microsoft repo expects key at /usr/share/keyrings/microsoft-prod.gpg (signed-by in prod.list)
+# pymssql uses FreeTDS; install for SQL Server connectivity (no Microsoft ODBC repo)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl gnupg2 apt-transport-https ca-certificates \
-    && mkdir -p /usr/share/keyrings \
-    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
-    && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list \
-    && apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 unixodbc-dev \
+    && apt-get install -y --no-install-recommends freetds-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Python env

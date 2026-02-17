@@ -32,3 +32,4 @@ pdf2image==1.17.0
 opencv-python-headless==4.10.0.84
 asyncpg==0.29.0
 pyodbc==5.0.1
+pymssql==2.2.11

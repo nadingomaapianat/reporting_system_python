@@ -58,7 +58,7 @@ async def log_report_export(request: Request):
     """Log an export (excel/pdf/word/zip) with title and src for later download listing."""
     try:
         import pyodbc
-        from config import get_database_connection_string
+        from config import get_db_connection
 
         body = await request.json()
         title = (body.get("title") or "").strip() or "Untitled Report"
@@ -66,8 +66,7 @@ async def log_report_export(request: Request):
         fmt = (body.get("format") or "").strip().lower() or "unknown"
         dashboard = (body.get("dashboard") or "").strip() or "general"
 
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         try:
             # Ensure table exists and has created_by column
@@ -138,13 +137,12 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
     Filters by user_id or users in the same group."""
     try:
         import pyodbc
-        from config import get_database_connection_string
+        from config import get_db_connection
 
         # Extract user_id and group_name from token
         user_id, group_name, _ = extract_user_and_function_params(request)
 
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         try:
             cursor.execute(
@@ -388,9 +386,8 @@ async def delete_export(export_id: int):
     """Delete an export row and its file if present"""
     try:
         import pyodbc
-        from config import get_database_connection_string
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
+        from config import get_db_connection
+        conn = get_db_connection()
         cursor = conn.cursor()
         try:
             cursor.execute("SELECT src FROM dbo.report_exports WHERE id = ?", export_id)
@@ -449,11 +446,10 @@ async def generate_dynamic_report(request: Request):
         
         # Execute query and get data
         import pyodbc
-        from config import get_database_connection_string
+        from config import get_db_connection
         
         try:
-            connection_string = get_database_connection_string()
-            conn = pyodbc.connect(connection_string)
+            conn = get_db_connection()
             cursor = conn.cursor()
         except Exception as db_err:
             write_debug(f"[Dynamic Report] Database connection failed: {str(db_err)}")
@@ -657,10 +653,9 @@ async def get_dynamic_dashboard_charts():
     try:
         import pyodbc
         import json
-        from config import get_database_connection_string
+        from config import get_db_connection
 
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         try:
             # Ensure table exists (column chart_config to match save-chart and existing DB)
@@ -717,10 +712,9 @@ async def delete_dynamic_dashboard_chart(chart_id: int):
     """
     try:
         import pyodbc
-        from config import get_database_connection_string
+        from config import get_db_connection
 
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         try:
             cursor.execute("DELETE FROM dynamic_dashboard_charts WHERE id = ?", chart_id)
@@ -739,11 +733,10 @@ async def download_export(export_id: int):
     """Download a saved export file by ID"""
     try:
         import pyodbc
-        from config import get_database_connection_string
+        from config import get_db_connection
         import os
         
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         try:
             cursor.execute("SELECT src, format FROM dbo.report_exports WHERE id = ?", export_id)
@@ -798,10 +791,9 @@ async def save_report_schedule(request: Request):
         
         # Save to database (you can create a scheduled_reports table)
         import pyodbc
-        from config import get_database_connection_string
+        from config import get_db_connection
         
-        connection_string = get_database_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         try:
