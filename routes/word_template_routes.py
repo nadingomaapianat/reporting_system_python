@@ -15,7 +15,7 @@ import openpyxl
 import pandas as pd
 from lxml import etree
 import pyodbc
-from config import get_database_connection_string
+from config import get_db_connection
 
 router = APIRouter(prefix="/word-template", tags=["word-template"])
 logger = logging.getLogger(__name__)
@@ -829,8 +829,7 @@ def _add_schedule_table(doc, sections):
 async def get_users():
 	"""Get all active users from the database"""
 	try:
-		connection_string = get_database_connection_string()
-		conn = pyodbc.connect(connection_string)
+		conn = get_db_connection()
 		cursor = conn.cursor()
 		
 		try:
@@ -1042,7 +1041,7 @@ async def generate_report(payload: dict = Body(...)):
 					if source_type == 'database':
 						# Fetch from database
 						import pyodbc
-						from config import get_database_connection_string
+						from config import get_db_connection
 						
 						try:
 							table_name = source_config.get('table', '')
@@ -1050,8 +1049,7 @@ async def generate_report(payload: dict = Body(...)):
 							where_clause = source_config.get('where', '')
 							
 							if table_name:
-								connection_string = get_database_connection_string()
-								conn = pyodbc.connect(connection_string)
+								conn = get_db_connection()
 								cursor = conn.cursor()
 								
 								query = f"SELECT {', '.join(columns) if columns else '*'} FROM {table_name}"
@@ -1664,14 +1662,13 @@ async def fetch_data_from_source(payload: dict = Body(...)):
 		if source_type == 'database':
 			# Fetch from database table
 			import pyodbc
-			from config import get_database_connection_string
+			from config import get_db_connection
 			
 			table_name = source_config.get('table')
 			columns = source_config.get('columns', [])
 			where_clause = source_config.get('where', '')
 			
-			connection_string = get_database_connection_string()
-			conn = pyodbc.connect(connection_string)
+			conn = get_db_connection()
 			cursor = conn.cursor()
 			
 			query = f"SELECT {', '.join(columns) if columns else '*'} FROM {table_name}"

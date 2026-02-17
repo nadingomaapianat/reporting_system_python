@@ -360,7 +360,7 @@ async def generate_xbrl_from_grc(payload: dict = Body(...)):
 	import logging
 	import pyodbc
 	from datetime import datetime as dt
-	from config import get_database_connection_string
+	from config import get_db_connection
 	from fastapi.responses import Response
 	
 	logger = logging.getLogger(__name__)
@@ -378,8 +378,7 @@ async def generate_xbrl_from_grc(payload: dict = Body(...)):
 		logger.info(f"GRC XBRL generation request: format={export_format}, period={start_date} to {end_date}")
 		
 		# Connect to database
-		connection_string = get_database_connection_string()
-		conn = pyodbc.connect(connection_string)
+		conn = get_db_connection()
 		cursor = conn.cursor()
 		
 		# Fetch Incidents data (financial losses)
@@ -770,7 +769,7 @@ async def generate_word_from_grc(payload: dict = Body(...)):
 	import logging
 	import pyodbc
 	from datetime import datetime as dt
-	from config import get_database_connection_string
+	from config import get_db_connection
 	from routes.route_utils import generate_word_report
 	
 	logger = logging.getLogger(__name__)
@@ -785,8 +784,7 @@ async def generate_word_from_grc(payload: dict = Body(...)):
 		logger.info(f"GRC Word generation request: period={start_date} to {end_date}")
 		
 		# Connect to database
-		connection_string = get_database_connection_string()
-		conn = pyodbc.connect(connection_string)
+		conn = get_db_connection()
 		cursor = conn.cursor()
 		
 		# Fetch Incidents data

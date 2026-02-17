@@ -1,11 +1,10 @@
 """
 Risk service for risk operations
 """
-import pyodbc
 import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from config import get_database_connection_string
+from config import get_db_connection
 
 def write_debug(msg):
     """Write debug message to file with timestamp"""
@@ -24,7 +23,7 @@ class RiskService:
     """Service for risk operations"""
     
     def __init__(self):
-        self.connection_string = get_database_connection_string()
+        pass  # connection via get_db_connection() when needed
 
     def get_fully_qualified_table_name(self, table_name: str) -> str:
         """Get fully qualified table name using configuration"""
@@ -145,7 +144,8 @@ class RiskService:
                 write_debug(f"[RiskService] _execute_sync_query SQL: {query}")
             except Exception:
                 pass
-            with pyodbc.connect(self.connection_string) as conn:
+            conn = get_db_connection()
+            try:
                 cursor = conn.cursor()
                 if params:
                     cursor.execute(query, params)
@@ -167,6 +167,8 @@ class RiskService:
                     result.append(row_dict)
                 
                 return result
+            finally:
+                conn.close()
         except Exception as e:
             try:
                 write_debug(f"[RiskService] _execute_sync_query ERROR: {e}")

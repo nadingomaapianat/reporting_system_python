@@ -11,10 +11,13 @@ from dotenv import load_dotenv
 _db_host = os.getenv('DB_HOST', '')
 _db_port = os.getenv('DB_PORT', '1433')
 _db_name = os.getenv('DB_NAME', '')
-_db_domain = (os.getenv('DB_DOMAIN') or '').strip()
+# DB_Domain (adib_backend) and DB_DOMAIN (this project)
+_db_domain = (os.getenv('DB_DOMAIN') or os.getenv('DB_Domain') or '').strip()
 _db_username = os.getenv('DB_USERNAME', '')
 _db_password = os.getenv('DB_PASSWORD', '')
 _use_windows_auth = os.getenv('DB_USE_WINDOWS_AUTH', '1').strip().lower() not in ('0', 'false', 'no')
+# pymssql = NTLM via FreeTDS (no ODBC driver). odbc = pyodbc + Microsoft ODBC Driver.
+_db_backend = (os.getenv('DB_BACKEND', 'pymssql') or 'pymssql').strip().lower()
 
 DATABASE_CONFIG = {
     'server': _db_host or '206.189.57.0',
@@ -114,10 +117,36 @@ def get_database_connection_string() -> str:
     return "".join(parts)
 
 
+def get_db_connection():
+    """
+    Return an open DB connection. Uses pymssql (NTLM/FreeTDS, no ODBC) when DB_BACKEND=pymssql (default),
+    else pyodbc only when DB_BACKEND=odbc. Set DB_BACKEND=odbc only if you need ODBC/Trusted_Connection.
+    """
+    config = DATABASE_CONFIG
+    use_pymssql = _db_backend == 'pymssql'
+    if use_pymssql:
+        import pymssql
+        server = config['server']
+        port = int(config['port'])
+        user = f"{config['domain']}\\{config['username']}" if config.get('domain') else config['username']
+        password = config['password']
+        database = config['database']
+        return pymssql.connect(
+            server=server,
+            port=port,
+            user=user,
+            password=password,
+            database=database,
+        )
+    import pyodbc
+    return pyodbc.connect(get_database_connection_string())
+
+
 def test_database_connection() -> tuple[bool, str, Dict[str, Any]]:
     """
     Test database connectivity. Returns (success, message, details).
     details may include: server, database, auth_type, username, table_count, sql_version, error.
+    Uses get_db_connection() so it works with both pymssql (NTLM) and odbc.
     """
     details: Dict[str, Any] = {
         "server": DATABASE_CONFIG.get("server", "N/A"),
@@ -126,8 +155,7 @@ def test_database_connection() -> tuple[bool, str, Dict[str, Any]]:
         "username": DATABASE_CONFIG.get("username", "N/A"),
     }
     try:
-        import pyodbc
-        conn = pyodbc.connect(get_database_connection_string())
+        conn = get_db_connection()
         cursor = conn.cursor()
         try:
             cursor.execute("SELECT @@VERSION")
@@ -149,95 +177,3 @@ def test_database_connection() -> tuple[bool, str, Dict[str, Any]]:
 def get_default_header_config(dashboard_type: str) -> Dict[str, Any]:
     """Get default header configuration for a dashboard type"""
     return DEFAULT_HEADER_CONFIGS.get(dashboard_type, DEFAULT_HEADER_CONFIGS['risks']).copy()
-
-def test_database_connection() -> Tuple[bool, str, dict]:
-    """
-    Test database connection and return status
-    Returns: (success: bool, message: str, details: dict)
-    """
-    try:
-        import pyodbc
-        connection_string = get_database_connection_string()
-        config = DATABASE_CONFIG
-        
-        # Mask password in connection string for logging
-        safe_conn_str = connection_string
-        if 'PWD=' in safe_conn_str:
-            # Replace password with *** for security
-            parts = safe_conn_str.split('PWD=')
-            if len(parts) > 1:
-                pwd_part = parts[1].split(';')[0]
-                safe_conn_str = safe_conn_str.replace(pwd_part, '***')
-        
-        # Attempt connection
-        conn = pyodbc.connect(connection_string, timeout=10)
-        cursor = conn.cursor()
-        
-        # Test query
-        cursor.execute("SELECT @@VERSION")
-        version = cursor.fetchone()[0]
-        
-        # Get database info
-        cursor.execute("SELECT DB_NAME()")
-        db_name = cursor.fetchone()[0]
-        
-        # Get the Windows user that is connected (VERIFY Windows Authentication)
-        cursor.execute("SELECT SUSER_SNAME(), SYSTEM_USER, USER_NAME()")
-        auth_info = cursor.fetchone()
-        connected_windows_user = auth_info[0] if auth_info[0] else "Unknown"
-        system_user = auth_info[1] if auth_info[1] else "Unknown"
-        database_user = auth_info[2] if auth_info[2] else "Unknown"
-        
-        # Get table count
-        cursor.execute("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'")
-        table_count = cursor.fetchone()[0]
-        
-        cursor.close()
-        conn.close()
-        
-        # Determine authentication type for display
-        if config['use_windows_auth']:
-            auth_type = "Windows Authentication (NTLM/Kerberos)"
-            username_display = "Current Windows User"
-        elif config.get('domain'):
-            auth_type = "SQL Server Authentication (NTLM)"
-            username_display = f"{config['domain']}\\{config.get('username', 'N/A')}"
-        else:
-            auth_type = "SQL Server Authentication"
-            username_display = config.get('username', 'N/A')
-        
-        details = {
-            "server": f"{config['server']}:{config['port']}",
-            "database": db_name,
-            "auth_type": auth_type,
-            "username": username_display,
-            "connected_windows_user": connected_windows_user,  # The actual Windows user connected
-            "system_user": system_user,
-            "database_user": database_user,
-            "table_count": table_count,
-            "sql_version": version.split('\n')[0] if version else "Unknown"
-        }
-        
-        return True, "Database connection successful", details
-        
-    except ImportError:
-        return False, "pyodbc module not installed", {}
-    except Exception as e:
-        error_msg = str(e)
-        config = DATABASE_CONFIG
-        # Determine authentication type for display
-        if config['use_windows_auth']:
-            auth_type = "Windows Authentication (NTLM/Kerberos)"
-        elif config.get('domain'):
-            auth_type = "SQL Server Authentication (NTLM)"
-        else:
-            auth_type = "SQL Server Authentication"
-        
-        details = {
-            "server": f"{config['server']}:{config['port']}",
-            "database": config['database'],
-            "auth_type": auth_type,
-            "error": error_msg
-        }
-        
-        return False, f"Database connection failed: {error_msg}", details

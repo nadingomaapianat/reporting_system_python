@@ -1,10 +1,9 @@
 """
 KRI service for KRI operations
 """
-import pyodbc
 import asyncio
 from typing import List, Dict, Any, Optional
-from config import get_database_connection_string
+from config import get_db_connection
 
 def write_debug(msg):
     """Write debug message to file with timestamp"""
@@ -22,7 +21,7 @@ class KriService:
     """Service for kri operations"""
 
     def __init__(self):
-        self.connection_string = get_database_connection_string()
+        pass  # connection via get_db_connection() when needed
     
     def get_fully_qualified_table_name(self, table_name: str) -> str:
         """Get fully qualified table name using configuration"""
@@ -104,7 +103,8 @@ class KriService:
     def _execute_sync_query(self, query: str, params: Optional[List] = None) -> List[Dict[str, Any]]:
         """Execute synchronous database query"""
         try:
-            with pyodbc.connect(self.connection_string) as conn:
+            conn = get_db_connection()
+            try:
                 cursor = conn.cursor()
                 if params:
                     cursor.execute(query, params)
@@ -126,6 +126,8 @@ class KriService:
                     result.append(row_dict)
                 
                 return result
+            finally:
+                conn.close()
         except Exception as e:
             return []
     
