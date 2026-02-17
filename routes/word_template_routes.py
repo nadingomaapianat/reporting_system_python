@@ -14,7 +14,6 @@ import base64
 import openpyxl
 import pandas as pd
 from lxml import etree
-import pyodbc
 from config import get_db_connection
 
 router = APIRouter(prefix="/word-template", tags=["word-template"])
@@ -1040,7 +1039,6 @@ async def generate_report(payload: dict = Body(...)):
 					
 					if source_type == 'database':
 						# Fetch from database
-						import pyodbc
 						from config import get_db_connection
 						
 						try:
@@ -1661,7 +1659,6 @@ async def fetch_data_from_source(payload: dict = Body(...)):
 		
 		if source_type == 'database':
 			# Fetch from database table
-			import pyodbc
 			from config import get_db_connection
 			
 			table_name = source_config.get('table')
