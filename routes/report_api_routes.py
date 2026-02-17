@@ -57,7 +57,6 @@ router = APIRouter()
 async def log_report_export(request: Request):
     """Log an export (excel/pdf/word/zip) with title and src for later download listing."""
     try:
-        import pyodbc
         from config import get_db_connection
 
         body = await request.json()
@@ -136,7 +135,6 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
     """Return recent report exports (newest first) with simple pagination and dashboard filtering.
     Filters by user_id or users in the same group."""
     try:
-        import pyodbc
         from config import get_db_connection
 
         # Extract user_id and group_name from token
@@ -385,7 +383,6 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
 async def delete_export(export_id: int):
     """Delete an export row and its file if present"""
     try:
-        import pyodbc
         from config import get_db_connection
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -445,7 +442,6 @@ async def generate_dynamic_report(request: Request):
             raise HTTPException(status_code=400, detail=f"Failed to build SQL query: {str(sql_err)}")
         
         # Execute query and get data
-        import pyodbc
         from config import get_db_connection
         
         try:
@@ -651,7 +647,6 @@ async def get_dynamic_dashboard_charts():
     List saved dynamic dashboard charts created from Transaction Reports.
     """
     try:
-        import pyodbc
         import json
         from config import get_db_connection
 
@@ -711,7 +706,6 @@ async def delete_dynamic_dashboard_chart(chart_id: int):
     Delete a saved dynamic dashboard chart.
     """
     try:
-        import pyodbc
         from config import get_db_connection
 
         conn = get_db_connection()
@@ -732,7 +726,6 @@ async def delete_dynamic_dashboard_chart(chart_id: int):
 async def download_export(export_id: int):
     """Download a saved export file by ID"""
     try:
-        import pyodbc
         from config import get_db_connection
         import os
         
@@ -790,7 +783,6 @@ async def save_report_schedule(request: Request):
         schedule = body.get('schedule', {})
         
         # Save to database (you can create a scheduled_reports table)
-        import pyodbc
         from config import get_db_connection
         
         conn = get_db_connection()

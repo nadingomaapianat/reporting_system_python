@@ -358,7 +358,6 @@ async def generate_xbrl_from_grc(payload: dict = Body(...)):
 	"""Generate XBRL/iXBRL/PDF/Excel/Word from GRC database data"""
 	import traceback
 	import logging
-	import pyodbc
 	from datetime import datetime as dt
 	from config import get_db_connection
 	from fastapi.responses import Response
@@ -767,7 +766,6 @@ async def generate_word_from_grc(payload: dict = Body(...)):
 	"""Generate Word document from GRC database data"""
 	import traceback
 	import logging
-	import pyodbc
 	from datetime import datetime as dt
 	from config import get_db_connection
 	from routes.route_utils import generate_word_report
