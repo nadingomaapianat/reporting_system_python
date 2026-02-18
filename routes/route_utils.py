@@ -613,6 +613,17 @@ def hex_to_color_for_pdf(hex_color: str):
 
 def build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter):
     """Build SQL query from dynamic report configuration"""
+    # Helper function to qualify table name with schema if needed
+    def qualify_table_name(table_name):
+        """Add schema qualification if table name doesn't already have one"""
+        if not table_name:
+            return table_name
+        # Check if table already has schema qualification (contains a dot)
+        if '.' in table_name:
+            return table_name
+        # Add dbo schema by default
+        return f"dbo.{table_name}"
+    
     # Start with SELECT clause
     select_columns = ', '.join(columns) if columns else '*'
     sql = f"SELECT {select_columns}"
@@ -621,13 +632,16 @@ def build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filte
     if not tables:
         raise ValueError("At least one table is required")
     
-    sql += f" FROM {tables[0]}"
+    qualified_table = qualify_table_name(tables[0])
+    sql += f" FROM {qualified_table}"
     
     # Add JOINs
     for join in joins:
         if join.get('leftTable') and join.get('rightTable') and join.get('leftColumn') and join.get('rightColumn'):
             join_type = join.get('type', 'INNER')
-            sql += f" {join_type} JOIN {join['rightTable']} ON {join['leftTable']}.{join['leftColumn']} = {join['rightTable']}.{join['rightColumn']}"
+            qualified_left = qualify_table_name(join['leftTable'])
+            qualified_right = qualify_table_name(join['rightTable'])
+            sql += f" {join_type} JOIN {qualified_right} ON {qualified_left}.{join['leftColumn']} = {qualified_right}.{join['rightColumn']}"
     
     # Add WHERE clause
     where_clauses = []

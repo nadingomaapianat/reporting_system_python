@@ -345,7 +345,7 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
                 ORDER BY created_at DESC, id DESC
                 OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
             """
-            cursor.execute(select_query, search_params + [offset, safe_limit])
+            cursor.execute(select_query, tuple(search_params + [offset, safe_limit]))
             rows = cursor.fetchall()
             exports = [
                 {
