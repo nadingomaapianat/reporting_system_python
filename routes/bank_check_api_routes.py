@@ -624,7 +624,7 @@ async def get_database_tables():
                     ORDER BY ORDINAL_POSITION;
                 """
                 
-                cursor.execute(columns_query, schema_name, table_name)
+                cursor.execute(columns_query, (schema_name, table_name))
                 columns_result = cursor.fetchall()
                 column_names = [col[0] for col in columns_result]  # COLUMN_NAME
                 
