@@ -469,10 +469,10 @@ async def insert_check_record(
             columns_query = """
                 SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
                 FROM INFORMATION_SCHEMA.COLUMNS 
-                WHERE TABLE_NAME = ? AND COLUMN_NAME != 'id'
+                WHERE TABLE_NAME = %s AND COLUMN_NAME != 'id'
                 ORDER BY ORDINAL_POSITION
             """
-            cursor.execute(columns_query, table_name)
+            cursor.execute(columns_query, (table_name,))
             columns = cursor.fetchall()
             
             if not columns:
@@ -620,7 +620,7 @@ async def get_database_tables():
                         IS_NULLABLE,
                         COLUMN_DEFAULT
                     FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
                     ORDER BY ORDINAL_POSITION;
                 """
                 
@@ -742,10 +742,10 @@ async def check_table_exists(request: Request):
             check_query = """
                 SELECT COUNT(*) 
                 FROM INFORMATION_SCHEMA.TABLES 
-                WHERE TABLE_NAME = ? AND TABLE_TYPE = 'BASE TABLE'
+                WHERE TABLE_NAME = %s AND TABLE_TYPE = 'BASE TABLE'
             """
             
-            cursor.execute(check_query, table_name)
+            cursor.execute(check_query, (table_name,))
             exists = cursor.fetchone()[0] > 0
             
             if exists:
@@ -757,9 +757,9 @@ async def check_table_exists(request: Request):
                         (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
                          WHERE TABLE_SCHEMA = t.TABLE_SCHEMA AND TABLE_NAME = t.TABLE_NAME) as COLUMN_COUNT
                     FROM INFORMATION_SCHEMA.TABLES t
-                    WHERE TABLE_NAME = ? AND TABLE_TYPE = 'BASE TABLE'
+                    WHERE TABLE_NAME = %s AND TABLE_TYPE = 'BASE TABLE'
                 """
-                cursor.execute(info_query, table_name)
+                cursor.execute(info_query, (table_name,))
                 table_info = cursor.fetchone()
                 
                 return {
@@ -820,10 +820,10 @@ async def create_table(request: Request):
             check_query = """
                 SELECT COUNT(*) 
                 FROM INFORMATION_SCHEMA.TABLES 
-                WHERE TABLE_NAME = ? AND TABLE_TYPE = 'BASE TABLE'
+                WHERE TABLE_NAME = %s AND TABLE_TYPE = 'BASE TABLE'
             """
             
-            cursor.execute(check_query, table_name)
+            cursor.execute(check_query, (table_name,))
             exists = cursor.fetchone()[0] > 0
             
             if exists:
@@ -872,16 +872,16 @@ async def create_table(request: Request):
                     columns_query = """
                         SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
                         FROM INFORMATION_SCHEMA.COLUMNS 
-                        WHERE TABLE_NAME = ? AND COLUMN_NAME != 'id'
+                        WHERE TABLE_NAME = %s AND COLUMN_NAME != 'id'
                         ORDER BY ORDINAL_POSITION
                     """
-                    cursor.execute(columns_query, table_name)
+                    cursor.execute(columns_query, (table_name,))
                     columns = cursor.fetchall()
                     
                     if columns:
-                        # Prepare insert statement
+                        # Prepare insert statement (use %s for pymssql)
                         column_names = [col[0] for col in columns]
-                        placeholders = ', '.join(['?' for _ in column_names])
+                        placeholders = ', '.join(['%s' for _ in column_names])
                         column_list = ', '.join([f'[{col}]' for col in column_names])
                         
                         insert_query = f"""

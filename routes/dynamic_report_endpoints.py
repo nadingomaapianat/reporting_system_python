@@ -114,11 +114,9 @@ async def save_dynamic_dashboard_chart(request: Request):
             cursor.execute(
                 f"""
                 INSERT INTO dynamic_dashboard_charts (title, chart_type, {config_col})
-                VALUES (?, ?, ?)
+                VALUES (%s, %s, %s)
                 """,
-                title,
-                chart_type,
-                config_json,
+                (title, chart_type, config_json),
             )
             # Get identity in same scope as INSERT, before commit (SCOPE_IDENTITY() can be NULL after commit)
             cursor.execute("SELECT SCOPE_IDENTITY() AS id")
@@ -695,8 +693,8 @@ async def save_report_schedule(request: Request):
             import json
             cursor.execute("""
                 INSERT INTO scheduled_reports (report_config, schedule_config)
-                VALUES (?, ?)
-            """, json.dumps(report_config), json.dumps(schedule))
+                VALUES (%s, %s)
+            """, (json.dumps(report_config), json.dumps(schedule)))
             conn.commit()
             
             return {"success": True, "message": "Schedule saved successfully"}

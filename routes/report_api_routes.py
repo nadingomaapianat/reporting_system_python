@@ -116,7 +116,7 @@ async def log_report_export(request: Request):
             cursor.execute(
                 """
                 INSERT INTO dbo.report_exports (title, src, format, dashboard, type, created_by)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """,
                 (title, src, fmt, dashboard, export_type, created_by)
             )
@@ -238,7 +238,7 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
                             SELECT DISTINCT LTRIM(RTRIM(uf.functionId))
                             FROM dbo.UserFunction uf
                             JOIN dbo.Functions f ON LTRIM(RTRIM(f.id)) = LTRIM(RTRIM(uf.functionId))
-                            WHERE uf.userId = ? 
+                            WHERE uf.userId = %s 
                               AND uf.deletedAt IS NULL
                               AND f.isDeleted = 0
                               AND f.deletedAt IS NULL
@@ -257,8 +257,8 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
                     shared_user_ids = []
                     if user_functions:
                         try:
-                            # Build placeholders for function IDs (safe parameterized query)
-                            func_placeholders = ','.join(['?' for _ in user_functions])
+                            # Build placeholders for function IDs (safe parameterized query; use %s for pymssql)
+                            func_placeholders = ','.join(['%s' for _ in user_functions])
                             query = f"""
                                 SELECT DISTINCT CAST(uf.userId AS NVARCHAR(255))
                                 FROM dbo.UserFunction uf
@@ -287,13 +287,13 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
                     
                     # Filter by user_id or users with the same functions
                     if shared_user_ids:
-                        placeholders = ','.join(['?' for _ in shared_user_ids])
+                        placeholders = ','.join(['%s' for _ in shared_user_ids])
                         conditions.append(f"created_by_user_id IN ({placeholders})")
                         search_params.extend(shared_user_ids)
                         write_debug(f"[List Exports] Filtering by user_ids: {shared_user_ids}")
                     else:
                         # If no shared users found, only show current user's reports
-                        conditions.append("created_by_user_id = ?")
+                        conditions.append("created_by_user_id = %s")
                         search_params.append(user_id)
                         write_debug(f"[List Exports] No shared users found, filtering by current user only: {user_id}")
             else:
@@ -302,7 +302,7 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
             
             # Handle title search
             if search and search.strip():
-                conditions.append("title LIKE ?")
+                conditions.append("title LIKE %s")
                 search_params.append(f"%{search.strip()}%")
             
             # Handle type filter (prefer type over dashboard filter)
@@ -343,7 +343,7 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
                 FROM dbo.report_exports
                 {search_condition}
                 ORDER BY created_at DESC, id DESC
-                OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+                OFFSET %s ROWS FETCH NEXT %s ROWS ONLY
             """
             cursor.execute(select_query, tuple(search_params + [offset, safe_limit]))
             rows = cursor.fetchall()
@@ -387,14 +387,14 @@ async def delete_export(export_id: int):
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT src FROM dbo.report_exports WHERE id = ?", export_id)
+            cursor.execute("SELECT src FROM dbo.report_exports WHERE id = %s", (export_id,))
             row = cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Export not found")
             src = row[0]
 
             # Delete DB row
-            cursor.execute("DELETE FROM dbo.report_exports WHERE id = ?", export_id)
+            cursor.execute("DELETE FROM dbo.report_exports WHERE id = %s", (export_id,))
             conn.commit()
 
             # Delete file if exists
@@ -711,7 +711,7 @@ async def delete_dynamic_dashboard_chart(chart_id: int):
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("DELETE FROM dynamic_dashboard_charts WHERE id = ?", chart_id)
+            cursor.execute("DELETE FROM dynamic_dashboard_charts WHERE id = %s", (chart_id,))
             conn.commit()
             deleted = cursor.rowcount > 0
             return {"success": True, "deleted": deleted}
@@ -732,7 +732,7 @@ async def download_export(export_id: int):
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT src, format FROM dbo.report_exports WHERE id = ?", export_id)
+            cursor.execute("SELECT src, format FROM dbo.report_exports WHERE id = %s", (export_id,))
             row = cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Export not found")
@@ -806,8 +806,8 @@ async def save_report_schedule(request: Request):
             import json
             cursor.execute("""
                 INSERT INTO scheduled_reports (report_config, schedule_config)
-                VALUES (?, ?)
-            """, json.dumps(report_config), json.dumps(schedule))
+                VALUES (%s, %s)
+            """, (json.dumps(report_config), json.dumps(schedule)))
             conn.commit()
             
             return {"success": True, "message": "Schedule saved successfully"}
