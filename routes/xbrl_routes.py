@@ -389,8 +389,8 @@ async def generate_xbrl_from_grc(payload: dict = Body(...)):
 				COUNT(*) as incident_count
 			FROM Incidents
 			WHERE deletedAt IS NULL
-				AND occurrence_date >= ? 
-				AND occurrence_date <= ?
+				AND occurrence_date >= %s 
+				AND occurrence_date <= %s 
 		"""
 		cursor.execute(incidents_query, (start_date, end_date))
 		incidents_row = cursor.fetchone()
@@ -412,7 +412,7 @@ async def generate_xbrl_from_grc(payload: dict = Body(...)):
 				SUM(ISNULL(residual_financial_value, 0)) as total_residual_financial_value
 			FROM Residualrisks
 			WHERE deletedAt IS NULL
-				AND year = ?
+				AND year = %s 
 				AND quarter IN ('quarterOne', 'quarterTwo', 'quarterThree', 'quarterFour')
 		"""
 		cursor.execute(residualrisks_query, (end_year,))
@@ -425,8 +425,8 @@ async def generate_xbrl_from_grc(payload: dict = Body(...)):
 				SUM(CAST(ISNULL(expected_cost, '0') AS FLOAT)) as total_expected_cost
 			FROM Actionplans
 			WHERE deletedAt IS NULL
-				AND year = ?
-				AND implementation_date <= ?
+				AND year = %s 
+				AND implementation_date <= %s 
 		"""
 		cursor.execute(actionplans_query, (end_year, end_date))
 		actionplans_row = cursor.fetchone()
@@ -794,8 +794,8 @@ async def generate_word_from_grc(payload: dict = Body(...)):
 				COUNT(*) as incident_count
 			FROM Incidents
 			WHERE deletedAt IS NULL
-				AND occurrence_date >= ? 
-				AND occurrence_date <= ?
+				AND occurrence_date >= %s 
+				AND occurrence_date <= %s 
 		"""
 		cursor.execute(incidents_query, (start_date, end_date))
 		incidents_row = cursor.fetchone()
@@ -815,7 +815,7 @@ async def generate_word_from_grc(payload: dict = Body(...)):
 				SUM(ISNULL(residual_financial_value, 0)) as total_residual_financial_value
 			FROM Residualrisks
 			WHERE deletedAt IS NULL
-				AND year = ?
+				AND year = %s 
 				AND quarter IN ('quarterOne', 'quarterTwo', 'quarterThree', 'quarterFour')
 		"""
 		cursor.execute(residualrisks_query, (end_year,))
@@ -828,8 +828,8 @@ async def generate_word_from_grc(payload: dict = Body(...)):
 				SUM(CAST(ISNULL(expected_cost, '0') AS FLOAT)) as total_expected_cost
 			FROM Actionplans
 			WHERE deletedAt IS NULL
-				AND year = ?
-				AND implementation_date <= ?
+				AND year = %s 
+				AND implementation_date <= %s 
 		"""
 		cursor.execute(actionplans_query, (end_year, end_date))
 		actionplans_row = cursor.fetchone()

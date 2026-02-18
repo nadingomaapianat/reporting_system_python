@@ -239,15 +239,16 @@ async def save_and_log_export(
             
             # Check for recent duplicate in database (last 30 seconds)
             # Cast title and created_by to NVARCHAR to avoid ntext/nvarchar comparison error
+            # Use %s placeholders for pymssql (default DB backend)
             cursor_check.execute(
                 """
                 SELECT TOP 1 id, src FROM dbo.report_exports 
-                WHERE dashboard = ? 
-                  AND format = ?
-                  AND CAST(created_by AS NVARCHAR(MAX)) = ?
+                WHERE dashboard = %s 
+                  AND format = %s 
+                  AND CAST(created_by AS NVARCHAR(MAX)) = %s 
                   AND (
-                    CAST(title AS NVARCHAR(MAX)) = ? 
-                    OR CAST(title AS NVARCHAR(MAX)) LIKE ?
+                    CAST(title AS NVARCHAR(MAX)) = %s 
+                    OR CAST(title AS NVARCHAR(MAX)) LIKE %s 
                   )
                   AND created_at >= DATEADD(SECOND, -30, GETDATE())
                 ORDER BY created_at DESC
@@ -473,12 +474,12 @@ async def save_and_log_export(
                 """
                 SELECT TOP 1 id, src FROM dbo.report_exports 
                 WHERE (
-                  src = ? 
+                  src = %s 
                   OR (
-                    CAST(title AS NVARCHAR(MAX)) = ? 
-                    AND dashboard = ? 
-                    AND format = ?
-                    AND CAST(created_by AS NVARCHAR(MAX)) = ?
+                    CAST(title AS NVARCHAR(MAX)) = %s 
+                    AND dashboard = %s 
+                    AND format = %s 
+                    AND CAST(created_by AS NVARCHAR(MAX)) = %s 
                   )
                 )
                 AND created_at >= DATEADD(SECOND, -30, GETDATE())
@@ -509,7 +510,7 @@ async def save_and_log_export(
                     cursor.execute(
                         """
                         INSERT INTO dbo.report_exports (title, src, format, dashboard, type, created_by, created_by_user_id)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
                         """,
                         (export_title, relative_path, file_extension, dashboard, export_type, created_by_value, user_id)
                     )

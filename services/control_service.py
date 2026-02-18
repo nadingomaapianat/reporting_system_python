@@ -48,7 +48,7 @@ class ControlService:
         FROM {self.get_fully_qualified_table_name('UserFunction')} uf
         JOIN {self.get_fully_qualified_table_name('Functions')} f
           ON LTRIM(RTRIM(f.id)) = LTRIM(RTRIM(uf.functionId))
-        WHERE uf.userId = ?
+        WHERE uf.userId = %s
           AND uf.deletedAt IS NULL
           AND f.isDeleted = 0
           AND f.deletedAt IS NULL

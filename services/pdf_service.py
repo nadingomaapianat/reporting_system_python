@@ -304,7 +304,7 @@ class PDFService:
 
             # Merge header config for incidents
             from utils.export_utils import merge_header_config
-            final_config = merge_header_config(header_config, "incidents")
+            final_config = merge_header_config("incidents", header_config)
             write_debug(f"DEBUG: Using PDF config (incidents): {final_config}")
 
             result = generate_pdf_report(columns, data_rows, final_config)
@@ -554,7 +554,7 @@ class PDFService:
 
             # Merge header config for kris
             from utils.export_utils import merge_header_config
-            final_config = merge_header_config(header_config, "kris")
+            final_config = merge_header_config("kris", header_config)
             write_debug(f"DEBUG: Using PDF config (kris): {final_config}")
 
             result = generate_pdf_report(columns, data_rows, final_config)
@@ -819,7 +819,7 @@ class PDFService:
             from utils.export_utils import merge_header_config
             
             # Merge user config with centralized defaults
-            final_config = merge_header_config(header_config, "controls")
+            final_config = merge_header_config("controls", header_config)
             
             write_debug(f"DEBUG: Using PDF config: {final_config}")
             
@@ -1027,7 +1027,7 @@ class PDFService:
             # Merge header config for risks
             from utils.export_utils import merge_header_config
             write_debug(f"  - header_config tableHeaderBgColor (before merge_header_config): {header_config.get('tableHeaderBgColor', 'NOT SET')}")
-            final_config = merge_header_config(header_config, "risks")
+            final_config = merge_header_config("risks", header_config)
             write_debug(f"  - final_config tableHeaderBgColor: {final_config.get('tableHeaderBgColor', 'NOT SET')}")
             write_debug(f"DEBUG: Using PDF config (risks): {final_config}")
 
