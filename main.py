@@ -97,9 +97,9 @@ def create_app() -> FastAPI:
         allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
     else:
         allowed_origins = [
-            os.getenv("FRONTEND_ORIGIN", "https://grc-reporting-uat.adib.co.eg").strip(),
+            os.getenv("FRONTEND_ORIGIN", "https://reporting-system-frontend.pianat.ai").strip(),
             "http://127.0.0.1:3000",
-            "https://grc-reporting-uat.adib.co.eg",
+            "https://reporting-system-frontend.pianat.ai",
         ]
     _extra = os.getenv("FRONTEND_ORIGIN")
     if _extra and _extra not in allowed_origins and _extra != "*":

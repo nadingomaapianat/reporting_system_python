@@ -35,8 +35,8 @@ DATABASE_CONFIG = {
 
 # API Configuration (from .env: NODE_API_URL, PYTHON_API_URL, API_TIMEOUT)
 API_CONFIG = {
-    'node_api_url': os.getenv('NODE_API_URL', os.getenv('NODE_BACKEND_URL', 'https://grc-reporting-node-uat.adib.co.eg')),
-    'python_api_url': os.getenv('PYTHON_API_URL', os.getenv('PYTHON_API_BASE', 'https://grc-reporting-py-uat.adib.co.eg')),
+    'node_api_url': os.getenv('NODE_API_URL', os.getenv('NODE_BACKEND_URL', 'https://reporting-system-backend.pianat.ai')),
+    'python_api_url': os.getenv('PYTHON_API_URL', os.getenv('PYTHON_API_BASE', 'https://reporting-system-python.pianat.ai')),
     'timeout': int(os.getenv('API_TIMEOUT', '60')),
 }
 
