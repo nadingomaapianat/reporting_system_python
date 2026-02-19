@@ -1,13 +1,13 @@
 """
 Configuration settings for the reporting system.
-Database: same as Node – from env (DB_HOST, DB_PORT, DB_NAME, DB_DOMAIN, DB_USERNAME, DB_PASSWORD).
-Supports Windows integrated auth (Trusted_Connection) or NTLM/SQL auth (domain\\user + password).
+Database: same as Node – from env (DB_HOST or DB_SERVER, DB_PORT, DB_NAME, DB_DOMAIN, DB_USERNAME, DB_PASSWORD).
+Supports Windows auth: Trusted_Connection (pyodbc only, DB_BACKEND=odbc) or NTLM with domain\\user + password (pymssql or odbc).
 """
 import os
 from typing import Dict, Any
 
-# Database: read from env (same vars as Node). In Docker use NTLM: DB_USE_WINDOWS_AUTH=0, DB_DOMAIN, DB_USERNAME, DB_PASSWORD.
-_db_host = os.getenv('DB_HOST', '')
+# Database: read from env (same vars as Node). DB_SERVER used if DB_HOST not set (e.g. Windows auth .env).
+_db_host = (os.getenv('DB_HOST') or os.getenv('DB_SERVER') or '').strip()
 _db_port = os.getenv('DB_PORT', '1433')
 _db_name = os.getenv('DB_NAME', '')
 # DB_Domain (adib_backend) and DB_DOMAIN (this project)
@@ -17,6 +17,8 @@ _db_password = os.getenv('DB_PASSWORD', '')
 _use_windows_auth = os.getenv('DB_USE_WINDOWS_AUTH', '1').strip().lower() not in ('0', 'false', 'no')
 # pymssql = NTLM via FreeTDS (no ODBC driver). odbc = pyodbc + Microsoft ODBC Driver.
 _db_backend = (os.getenv('DB_BACKEND', 'pymssql') or 'pymssql').strip().lower()
+# Connection timeout in seconds; when DB is unreachable, fail fast to avoid long waits and 504s (default 10s).
+_db_connect_timeout = max(5, min(120, int(os.getenv('DB_CONNECT_TIMEOUT', '10'))))
 
 DATABASE_CONFIG = {
     'server': _db_host or '206.189.57.0',
@@ -136,6 +138,7 @@ def get_db_connection():
             user=user,
             password=password,
             database=database,
+            timeout=_db_connect_timeout,
         )
     # Only import pyodbc when DB_BACKEND=odbc (not used with pymssql)
     try:
@@ -146,7 +149,7 @@ def get_db_connection():
             "Either install ODBC dependencies (unixodbc, msodbcsql18) or set DB_BACKEND=pymssql. "
             f"Original error: {e}"
         )
-    return pyodbc.connect(get_database_connection_string())
+    return pyodbc.connect(get_database_connection_string(), timeout=_db_connect_timeout)
 
 
 def test_database_connection() -> tuple[bool, str, Dict[str, Any]]:
