@@ -734,6 +734,7 @@ def generate_excel_report(columns, data_rows, header_config=None):
     # Color and styling settings
     font_color = header_config.get("fontColor", "#1F4E79")
     table_header_bg_color = header_config.get("tableHeaderBgColor", "#1F4E79")
+    table_header_font_color = header_config.get("tableHeaderFontColor", "#000000")
     table_body_bg_color = header_config.get("tableBodyBgColor", "#FFFFFF")
     background_color = header_config.get("backgroundColor", "#FFFFFF")
     border_style = header_config.get("borderStyle", "solid")
@@ -775,6 +776,7 @@ def generate_excel_report(columns, data_rows, header_config=None):
     
     font_color_rgb = hex_to_rgb(font_color)
     header_bg_rgb = hex_to_rgb(table_header_bg_color)
+    header_font_rgb = hex_to_rgb(table_header_font_color)
     body_bg_rgb = hex_to_rgb(table_body_bg_color)
     background_rgb = hex_to_rgb(background_color)
     border_rgb = hex_to_rgb(border_color)
@@ -891,7 +893,7 @@ def generate_excel_report(columns, data_rows, header_config=None):
     header_row = current_row
     for idx, col in enumerate(columns, start=1):
         cell = ws.cell(row=header_row, column=idx, value=col)
-        cell.font = Font(bold=True, color='FFFFFF')
+        cell.font = Font(bold=True, color=header_font_rgb)
         cell.fill = PatternFill(start_color=header_bg_rgb, end_color=header_bg_rgb, fill_type='solid')
         cell.alignment = Alignment(horizontal='center', vertical='center', wrapText=True)
     
@@ -937,7 +939,7 @@ def generate_excel_report(columns, data_rows, header_config=None):
                 cell.alignment = Alignment(horizontal='right', vertical='center')
             # Style totals row
             cell.fill = PatternFill(start_color=header_bg_rgb, end_color=header_bg_rgb, fill_type='solid')
-            cell.font = Font(bold=True, color='FFFFFF')
+            cell.font = Font(bold=True, color=header_font_rgb)
     
     # Freeze top row if enabled
     if excel_freeze_top_row:
@@ -1236,6 +1238,7 @@ def generate_word_report(columns, data_rows, header_config=None):
     # Color and styling settings
     font_color = header_config.get("fontColor", "#1F4E79")
     table_header_bg_color = header_config.get("tableHeaderBgColor", "#1F4E79")
+    table_header_font_color = header_config.get("tableHeaderFontColor", "#000000")
     table_body_bg_color = header_config.get("tableBodyBgColor", "#FFFFFF")
     background_color = header_config.get("backgroundColor", "#FFFFFF")
     border_style = header_config.get("borderStyle", "solid")
@@ -1277,6 +1280,7 @@ def generate_word_report(columns, data_rows, header_config=None):
     
     font_color_rgb = hex_to_rgb(font_color)
     header_bg_color_rgb = hex_to_rgb(table_header_bg_color)
+    header_font_color_rgb = hex_to_rgb(table_header_font_color)
     body_bg_color_rgb = hex_to_rgb(table_body_bg_color)
     background_color_rgb = hex_to_rgb(background_color)
     border_color_rgb = hex_to_rgb(border_color)
@@ -1417,7 +1421,7 @@ def generate_word_report(columns, data_rows, header_config=None):
         for paragraph in hdr_cells[i].paragraphs:
             for run in paragraph.runs:
                 run.font.bold = True
-                run.font.color.rgb = RGBColor(255, 255, 255)  # White text
+                run.font.color.rgb = header_font_color_rgb
             paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
         hdr_cells[i].vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         # Apply header background color
@@ -2575,6 +2579,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     # Color and styling settings
     font_color = header_config.get("fontColor", "#1F4E79")
     table_header_bg_color = header_config.get("tableHeaderBgColor", "#1F4E79")
+    table_header_font_color = header_config.get("tableHeaderFontColor", "#000000")
     table_body_bg_color = header_config.get("tableBodyBgColor", "#FFFFFF")
     background_color = header_config.get("backgroundColor", "#FFFFFF")
     border_style = header_config.get("borderStyle", "solid")
@@ -2616,6 +2621,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     
     font_color_rl = hex_to_color(font_color)
     header_bg_color_rl = hex_to_color(table_header_bg_color)
+    header_font_color_rl = hex_to_color(table_header_font_color)
     body_bg_color_rl = hex_to_color(table_body_bg_color)
     background_color_rl = hex_to_color(background_color)
     border_color_rl = hex_to_color(border_color)
@@ -2857,7 +2863,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     table_style = [
         # Header row styling
         ('BACKGROUND', (0, 0), (-1, 0), header_bg_color_rl),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('TEXTCOLOR', (0, 0), (-1, 0), header_font_color_rl),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('FONTNAME', (0, 0), (-1, 0), ARABIC_FONT_NAME or (DEFAULT_FONT_NAME + '-Bold' if DEFAULT_FONT_NAME != 'Helvetica' else 'Helvetica-Bold')),
         ('FONTSIZE', (0, 0), (-1, 0), 12),
@@ -2883,7 +2889,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
         last_row_index = len(table_data) - 1
         table_style += [
             ('BACKGROUND', (0, last_row_index), (-1, last_row_index), header_bg_color_rl),
-            ('TEXTCOLOR', (0, last_row_index), (-1, last_row_index), colors.whitesmoke),
+            ('TEXTCOLOR', (0, last_row_index), (-1, last_row_index), header_font_color_rl),
             ('FONTNAME', (0, last_row_index), (-1, last_row_index), DEFAULT_FONT_NAME + '-Bold' if DEFAULT_FONT_NAME != 'Helvetica' else 'Helvetica-Bold'),
         ]
     

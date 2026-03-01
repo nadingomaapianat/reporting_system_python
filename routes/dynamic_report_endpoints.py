@@ -446,9 +446,12 @@ def generate_excel_report(columns, data, header_config=None):
     start_data_row = info_row + 1
 
     # --- Table Header ---
+    table_header_font = (header_config or {}).get("tableHeaderFontColor", "#000000")
+    if table_header_font.startswith("#"):
+        table_header_font = table_header_font[1:]
     for col_index, col_name in enumerate(columns, start=1):
         cell = ws.cell(row=start_data_row, column=col_index, value=col_name)
-        cell.font = Font(bold=True, color="FFFFFF")
+        cell.font = Font(bold=True, color=table_header_font)
         cell.fill = PatternFill(start_color="1F4E79", fill_type="solid")
         cell.alignment = Alignment(horizontal="center")
 
