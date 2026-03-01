@@ -232,6 +232,7 @@ def generate_pdf_report(
     # Debug: log the actual tableHeaderBgColor being used
     write_debug(f"PDF generate_pdf_report: tableHeaderBgColor from header_config = {header_config.get('tableHeaderBgColor', 'NOT SET')}")
     table_header_bg_color = header_config.get("tableHeaderBgColor", "#1F4E79")
+    table_header_font_color = header_config.get("tableHeaderFontColor", "#000000")
     table_body_bg_color = header_config.get("tableBodyBgColor", "#FFFFFF")
     border_color = header_config.get("borderColor", "#000000")
     
@@ -252,6 +253,7 @@ def generate_pdf_report(
     # Convert colors
     font_color_rl = hex_to_color(font_color)
     header_bg_color_rl = hex_to_color(table_header_bg_color)
+    header_font_color_rl = hex_to_color(table_header_font_color)
     body_bg_color_rl = hex_to_color(table_body_bg_color)
     border_color_rl = hex_to_color(border_color)
     
@@ -536,7 +538,7 @@ def generate_pdf_report(
             parent=styles['Normal'],
             fontSize=12,
             alignment=TA_CENTER,
-            textColor=colors.whitesmoke,
+            textColor=header_font_color_rl,
             leading=14,
             fontName=ARABIC_FONT_NAME or 'Helvetica-Bold'
         )
@@ -603,7 +605,7 @@ def generate_pdf_report(
             table = Table(table_data, colWidths=col_widths, repeatRows=1)
             table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), header_bg_color_rl),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('TEXTCOLOR', (0, 0), (-1, 0), header_font_color_rl),
                 ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
                 ('FONTNAME', (0, 0), (-1, 0), ARABIC_FONT_NAME or (DEFAULT_FONT_NAME + '-Bold' if DEFAULT_FONT_NAME != 'Helvetica' else 'Helvetica-Bold')),
                 ('FONTSIZE', (0, 0), (-1, 0), 12),
