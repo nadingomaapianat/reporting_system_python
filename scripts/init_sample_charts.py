@@ -152,8 +152,8 @@ def main():
     print("""
 🚀 Next steps:
 1. Start your backend: python main.py
-2. Visit: https://reporting-system-backend.pianat.ai/api/charts/dashboard
-3. Or use the frontend: https://reporting-system-backend.pianat.ai/auto-dashboard
+2. Visit: https://reporting-demo-system-backend.pianat.ai/api/charts/dashboard
+3. Or use the frontend: https://reporting-demo-system-backend.pianat.ai/auto-dashboard
     """)
 
 if __name__ == "__main__":

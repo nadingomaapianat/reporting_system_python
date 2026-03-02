@@ -1,11 +1,15 @@
 import os
 # Load .env / environment.env so all links and config come from env
+# Load from project root (where main.py lives) so config is found regardless of cwd
+_root = os.path.dirname(os.path.abspath(__file__))
 try:
     from dotenv import load_dotenv
-    load_dotenv()
-    load_dotenv("environment.env")
+    load_dotenv(os.path.join(_root, "environment.env"))
+    load_dotenv(os.path.join(_root, ".env"))  # .env overrides
 except ImportError:
     pass
+# Ensure process cwd is project root so relative paths (debug_log, reports_export) and env are consistent
+os.chdir(_root)
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -14,6 +18,8 @@ from fastapi.staticfiles import StaticFiles
 print("DEBUG: main.py - About to import routers...")
 # Import directly from api_routes to avoid circular dependency via utils/__init__.py
 from utils import api_routes
+from config.settings import log_database_config
+log_database_config()
 from utils.csrf import CSRFMiddleware, create_csrf_token, set_csrf_cookie
 from utils.auth import JWTAuthMiddleware
 api_router = api_routes.router
@@ -97,9 +103,9 @@ def create_app() -> FastAPI:
         allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
     else:
         allowed_origins = [
-            os.getenv("FRONTEND_ORIGIN", "https://reporting-system-frontend.pianat.ai").strip(),
+            os.getenv("FRONTEND_ORIGIN", "https://reporting-demo-system-frontend.pianat.ai").strip(),
             "http://127.0.0.1:3000",
-            "https://reporting-system-frontend.pianat.ai",
+            "https://reporting-demo-system-frontend.pianat.ai",
         ]
     _extra = os.getenv("FRONTEND_ORIGIN")
     if _extra and _extra not in allowed_origins and _extra != "*":
