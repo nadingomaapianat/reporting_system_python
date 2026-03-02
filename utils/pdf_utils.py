@@ -655,7 +655,8 @@ def generate_pdf_report(
             parent=styles['Normal'],
             fontSize=8,
             textColor=colors.grey,
-            alignment=TA_CENTER
+            alignment=TA_CENTER,
+            fontName=ARABIC_FONT_NAME or DEFAULT_FONT_NAME,
         )
         story.append(Paragraph(" | ".join(footer_items), footer_style))
     
