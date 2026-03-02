@@ -6,8 +6,12 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # pymssql uses FreeTDS; install for SQL Server connectivity (no Microsoft ODBC repo)
+# Install fonts so PDFs render correctly (avoid hollow squares for text on live)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends freetds-dev pkg-config \
+    && apt-get install -y --no-install-recommends \
+        freetds-dev pkg-config \
+        fonts-dejavu-core \
+        fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 # Python env
