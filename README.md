@@ -105,13 +105,13 @@ All export endpoints support:
 
 ```bash
 # Export all risks as PDF
-curl "https://reporting-madinetmasr-system-python.pianat.ai/api/grc/risks/export-pdf"
+curl "https://reporting-madinetmasr-system-python.comply.now/api/grc/risks/export-pdf"
 
 # Export specific risk card as Excel
-curl "https://reporting-madinetmasr-system-python.pianat.ai/api/grc/risks/export-excel?cardType=totalRisks&onlyCard=true"
+curl "https://reporting-madinetmasr-system-python.comply.now/api/grc/risks/export-excel?cardType=totalRisks&onlyCard=true"
 
 # Export with date range
-curl "https://reporting-madinetmasr-system-python.pianat.ai/api/grc/controls/export-pdf?startDate=2024-01-01&endDate=2024-12-31"
+curl "https://reporting-madinetmasr-system-python.comply.now/api/grc/controls/export-pdf?startDate=2024-01-01&endDate=2024-12-31"
 ```
 
 ## 🔧 Configuration
@@ -132,8 +132,8 @@ DATABASE_CONFIG = {
 ### API Configuration
 ```python
 API_CONFIG = {
-    'node_api_url': 'https://reporting-madinetmasr-system-backend.pianat.ai',
-    'python_api_url': 'https://reporting-madinetmasr-system-python.pianat.ai',
+    'node_api_url': 'https://reporting-madinetmasr-system-backend.comply.now',
+    'python_api_url': 'https://reporting-madinetmasr-system-python.comply.now',
     'timeout': 30
 }
 ```

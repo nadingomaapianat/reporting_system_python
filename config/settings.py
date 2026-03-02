@@ -46,8 +46,8 @@ DATABASE_CONFIG = {
 
 # API Configuration (from .env: NODE_API_URL, PYTHON_API_URL, API_TIMEOUT, GRC_BACKEND_URL)
 API_CONFIG = {
-    'node_api_url': os.getenv('NODE_API_URL', os.getenv('NODE_BACKEND_URL', 'https://reporting-madinetmasr-system-python.pianat.ai')),
-    'python_api_url': os.getenv('PYTHON_API_URL', os.getenv('PYTHON_API_BASE', 'https://reporting-madinetmasr-system-python.pianat.ai')),
+    'node_api_url': os.getenv('NODE_API_URL', os.getenv('NODE_BACKEND_URL', 'https://reporting-madinetmasr-system-python.comply.now')),
+    'python_api_url': os.getenv('PYTHON_API_URL', os.getenv('PYTHON_API_BASE', 'https://reporting-madinetmasr-system-python.comply.now')),
     'timeout': int(os.getenv('API_TIMEOUT', '60')),
     'grc_backend_url': (os.getenv('GRC_BACKEND_URL') or os.getenv('NODE_API_URL') or os.getenv('NODE_BACKEND_URL') or 'https://backend-madinetmasr-compliance.comply.now').rstrip('/'),
 }

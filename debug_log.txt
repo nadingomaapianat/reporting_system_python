@@ -520,3 +520,9 @@ AttributeError: 'NoneType' object has no attribute 'fetchone'
 [00:06:59.021] [DB config] server=206.189.57.0, port=1433, database=GRCDB, domain=, username=SA, password=***, trusted_connection=no, backend=pymssql, connect_timeout=10
 [00:23:56.565] [DB config] server=206.189.57.0, port=1433, database=GRCDB, domain=, username=SA, password=***, trusted_connection=no, backend=pymssql, connect_timeout=10
 [00:24:07.425] [DB config] server=206.189.57.0, port=1433, database=GRCDB, domain=, username=SA, password=***, trusted_connection=no, backend=pymssql, connect_timeout=10
+[04:52:41.941] [DB config] server=206.189.57.0, port=1433, database=GRCDB, domain=, username=SA, password=***, trusted_connection=no, backend=pymssql, connect_timeout=10
+[04:52:42.402] [DB config] server=206.189.57.0, port=1433, database=GRCDB, domain=, username=SA, password=***, trusted_connection=no, backend=pymssql, connect_timeout=10
+[05:04:22.521] [DB config] server=206.189.57.0, port=1433, database=GRCDB, domain=, username=SA, password=***, trusted_connection=no, backend=pymssql, connect_timeout=10
+[05:04:22.759] [DB config] server=206.189.57.0, port=1433, database=GRCDB, domain=, username=SA, password=***, trusted_connection=no, backend=pymssql, connect_timeout=10
+[05:09:27.225] [DB config] server=206.189.57.0, port=1433, database=GRCDB, domain=, username=SA, password=***, trusted_connection=no, backend=pymssql, connect_timeout=10
+[05:09:27.426] [DB config] server=206.189.57.0, port=1433, database=GRCDB, domain=, username=SA, password=***, trusted_connection=no, backend=pymssql, connect_timeout=10
