@@ -146,10 +146,6 @@ class IncidentService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, function_id)
@@ -158,8 +154,12 @@ class IncidentService:
         SELECT 
             i.code,
             i.title,
+            f.name AS function_name,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
+        LEFT JOIN Functions f ON i.function_id = f.id
+          AND f.isDeleted = 0
+          AND f.deletedAt IS NULL
         WHERE i.isDeleted = 0 AND i.deletedAt IS NULL {date_filter}
         {function_filter}
         ORDER BY i.createdAt DESC
@@ -179,10 +179,6 @@ class IncidentService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, function_id)
@@ -191,6 +187,7 @@ class IncidentService:
         SELECT 
           i.code,
           i.title,
+          f.name AS function_name,
           CASE 
             WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
             WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
@@ -201,6 +198,9 @@ class IncidentService:
           END as status,
           FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
+        LEFT JOIN Functions f ON i.function_id = f.id
+          AND f.isDeleted = 0
+          AND f.deletedAt IS NULL
         WHERE i.isDeleted = 0 
           AND i.deletedAt IS NULL
           {date_filter}
@@ -521,9 +521,13 @@ class IncidentService:
         query = f"""
         SELECT 
             i.title as incident_title,
+            f.name AS function_name,
             ISNULL(i.net_loss, 0) as net_loss,
             ISNULL(i.recovery_amount, 0) as recovery_amount
         FROM Incidents i
+        LEFT JOIN Functions f ON i.function_id = f.id
+          AND f.isDeleted = 0
+          AND f.deletedAt IS NULL
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
@@ -678,15 +682,27 @@ class IncidentService:
         query = f"""
         SELECT 
           i.title AS incident_name, 
-          i.timeFrame AS time_frame 
+          i.timeFrame AS time_frame,
+          f.name AS function_name
         FROM Incidents i
+        LEFT JOIN Functions f ON i.function_id = f.id
+          AND f.isDeleted = 0
+          AND f.deletedAt IS NULL
         WHERE i.isDeleted = 0 
           AND i.deletedAt IS NULL
           {date_filter}
           {function_filter}
         ORDER BY i.timeFrame DESC
         """
-        return await self.execute_query(query)
+        rows = await self.execute_query(query)
+        return [
+            {
+                "incident_name": r.get("incident_name") or "Unknown",
+                "time_frame": r.get("time_frame") or "",
+                "function_name": r.get("function_name") or "Unknown",
+            }
+            for r in rows
+        ]
 
     async def get_incidents_financial_details(
         self,

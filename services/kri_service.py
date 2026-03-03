@@ -1051,10 +1051,14 @@ class KriService:
         query = f"""
         SELECT 
           k.code AS kri_code,
-          k.kriName AS kri_name, 
+          k.kriName AS kri_name,
+          ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name,
           r.code AS risk_code,
           r.name AS risk_name
         FROM Kris k
+        LEFT JOIN KriFunctions kf ON k.id = kf.kri_id AND kf.deletedAt IS NULL
+        LEFT JOIN Functions fkf ON fkf.id = kf.function_id AND fkf.isDeleted = 0 AND fkf.deletedAt IS NULL
+        LEFT JOIN Functions frel ON frel.id = k.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
         INNER JOIN KriRisks kr ON kr.kri_id = k.id
           AND kr.deletedAt IS NULL
         INNER JOIN Risks r ON r.id = kr.risk_id
@@ -1090,8 +1094,12 @@ class KriService:
         query = f"""
         SELECT  
         k.code AS kriCode,
-        k.kriName AS kriName
+        k.kriName AS kriName,
+        ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name
         FROM Kris AS k
+        LEFT JOIN KriFunctions kf ON k.id = kf.kri_id AND kf.deletedAt IS NULL
+        LEFT JOIN Functions fkf ON fkf.id = kf.function_id AND fkf.isDeleted = 0 AND fkf.deletedAt IS NULL
+        LEFT JOIN Functions frel ON frel.id = k.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
           {function_filter}
