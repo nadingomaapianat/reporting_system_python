@@ -119,6 +119,12 @@ class RiskService:
         )
         """
     
+    def _risk_function_name_subquery(self, risk_alias: str = "r") -> str:
+        """SQL fragment for risk function name(s), comma-separated. Matches Node riskFunctionNameSubquery."""
+        rf = "rf"
+        f = "f"
+        return f"""(SELECT STRING_AGG({f}.name, ', ') WITHIN GROUP (ORDER BY {f}.name) FROM dbo.[RiskFunctions] {rf} INNER JOIN dbo.[Functions] {f} ON {f}.id = {rf}.function_id WHERE {rf}.risk_id = {risk_alias}.id AND {rf}.deletedAt IS NULL)"""
+    
     async def execute_query(self, query: str, params: Optional[List] = None) -> List[Dict[str, Any]]:
         """Execute a SQL query and return results"""
         try:
@@ -275,7 +281,8 @@ class RiskService:
           r.description,
           r.inherent_value,
           r.residual_value,
-          r.createdAt
+          r.createdAt,
+          ISNULL({self._risk_function_name_subquery('r')}, 'Unknown') AS function_name
         FROM {self.get_fully_qualified_table_name('Risks')} r
         WHERE r.isDeleted = 0 AND r.inherent_value = '{level}' {date_filter}
         {function_filter}
@@ -310,7 +317,8 @@ class RiskService:
           r.description,
           r.inherent_value,
           r.residual_value,
-          r.createdAt
+          r.createdAt,
+          ISNULL({self._risk_function_name_subquery('r')}, 'Unknown') AS function_name
         FROM {self.get_fully_qualified_table_name('Risks')} r
         WHERE r.isDeleted = 0 {date_filter}
         {function_filter}
@@ -903,6 +911,7 @@ class RiskService:
         query = f"""
         SELECT 
           risk_name AS [Risk Name], 
+          function_name AS [function_name],
           residual_level AS [Residual Level], 
           inherent_value AS [Inherent Value], 
           inherent_frequency_label AS [Inherent Frequency], 
@@ -914,6 +923,7 @@ class RiskService:
         FROM ( 
           SELECT 
             r.name AS risk_name, 
+            ISNULL({self._risk_function_name_subquery('r')}, 'Unknown') AS function_name,
             rr.residual_value AS residual_level, 
             r.inherent_value AS inherent_value,
             r.inherent_frequency AS inherent_frequency,
@@ -991,13 +1001,14 @@ class RiskService:
         query = f"""
         SELECT 
           r.name AS risk_name, 
+          ISNULL({self._risk_function_name_subquery('r')}, 'Unknown') AS function_name,
           COUNT(DISTINCT rc.control_id) AS control_count 
         FROM {self.get_fully_qualified_table_name('Risks')} r 
         LEFT JOIN dbo.[RiskControls] rc ON r.id = rc.risk_id 
         LEFT JOIN dbo.[Controls] c ON rc.control_id = c.id 
         WHERE r.isDeleted = 0 AND r.deletedAt IS NULL AND c.isDeleted = 0 AND c.deletedAt IS NULL {date_filter}
         {function_filter}
-        GROUP BY r.name 
+        GROUP BY r.id, r.name 
         ORDER BY control_count DESC
         """
         
@@ -1028,13 +1039,14 @@ class RiskService:
         query = f"""
         SELECT 
           c.name AS [Controls__name], 
+          (SELECT STRING_AGG(f.name, ', ') WITHIN GROUP (ORDER BY f.name) FROM dbo.[ControlFunctions] cf INNER JOIN dbo.[Functions] f ON f.id = cf.function_id WHERE cf.control_id = c.id AND cf.deletedAt IS NULL) AS function_name,
           COUNT(DISTINCT rc.risk_id) AS [count] 
         FROM dbo.[Controls] c
         LEFT JOIN dbo.[RiskControls] rc ON c.id = rc.control_id 
         LEFT JOIN {self.get_fully_qualified_table_name('Risks')} r ON rc.risk_id = r.id AND r.isDeleted = 0
         WHERE c.isDeleted = 0 {date_filter}
         {function_filter}
-        GROUP BY c.name 
+        GROUP BY c.id, c.name 
         ORDER BY [count] DESC, c.name ASC
         """
         
@@ -1067,7 +1079,8 @@ class RiskService:
           ISNULL(et.name, 'Unknown') AS [RiskEventName], 
           r.inherent_value AS [InherentValue], 
           r.inherent_frequency AS [InherentFrequency], 
-          r.inherent_financial_value AS [InherentFinancialValue]
+          r.inherent_financial_value AS [InherentFinancialValue],
+          ISNULL({self._risk_function_name_subquery('r')}, 'Unknown') AS function_name
         FROM {self.get_fully_qualified_table_name('Risks')} r 
         LEFT JOIN dbo.[EventTypes] et ON et.id = r.event 
         WHERE r.isDeleted = 0 {date_filter}

@@ -172,13 +172,10 @@ class ControlService:
         function_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get total controls data"""
+        # Date filter only when both start_date and end_date are provided (match Node base-dashboard: no filter by default)
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         write_debug(f"[get_total_controls] access: is_super_admin={access.get('is_super_admin')}, function_ids={access.get('function_ids')}")
@@ -305,10 +302,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -355,10 +348,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -392,10 +381,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -455,10 +440,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -491,10 +472,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -530,10 +507,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -576,10 +549,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -617,10 +586,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -658,10 +623,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -702,10 +663,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -747,10 +704,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -791,10 +744,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -842,10 +791,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -891,10 +836,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND prin.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND prin.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND prin.createdAt <= '{end_date}'"
         
         principles_table = self.get_fully_qualified_table_name('CosoPrinciples')
         points_table = self.get_fully_qualified_table_name('CosoPoints')
@@ -923,10 +864,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND comp.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND comp.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND comp.createdAt <= '{end_date}'"
         
         components_table = self.get_fully_qualified_table_name('CosoComponents')
         principles_table = self.get_fully_qualified_table_name('CosoPrinciples')
@@ -964,10 +901,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND a.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND a.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND a.createdAt <= '{end_date}'"
 
         # Note: ActionPlans are linked to Controls via controlDesignTest_id -> ControlDesignTests -> Controls
         # So we filter via Controls
@@ -1018,10 +951,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -1070,10 +999,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -1106,10 +1031,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -1141,10 +1062,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -1189,10 +1106,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -1224,10 +1137,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -1271,10 +1180,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -1307,10 +1212,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -1341,10 +1242,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -1427,10 +1324,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -1462,10 +1355,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -1496,10 +1385,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND ap.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND ap.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND ap.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -1543,10 +1428,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND ap.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND ap.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND ap.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -1589,10 +1470,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
@@ -1632,10 +1509,6 @@ class ControlService:
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, function_id)
