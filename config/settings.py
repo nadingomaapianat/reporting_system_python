@@ -6,38 +6,50 @@ Supports Windows auth: Trusted_Connection (pyodbc only, DB_BACKEND=odbc) or NTLM
 import os
 from typing import Dict, Any
 
+# Load .env from project root (parent of config/) so DB_* is correct regardless of entry point or cwd
+_config_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_config_dir)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(_project_root, "environment.env"))
+    load_dotenv(os.path.join(_project_root, ".env"))  # .env overrides
+except ImportError:
+    pass
+
 # Database: read from env (same vars as Node). DB_SERVER used if DB_HOST not set (e.g. Windows auth .env).
-_db_host = (os.getenv('DB_HOST') or os.getenv('DB_SERVER') or '').strip()
+# Prefer DB_SERVER then DB_HOST so Python can use the same .env as the reporting node (Node often uses DB_HOST or DB_SERVER).
+_db_host = (os.getenv('DB_SERVER') or os.getenv('DB_HOST') or '').strip()
 _db_port = os.getenv('DB_PORT', '1433')
 _db_name = os.getenv('DB_NAME', '')
 # DB_Domain (adib_backend) and DB_DOMAIN (this project)
 _db_domain = (os.getenv('DB_DOMAIN') or os.getenv('DB_Domain') or '').strip()
 _db_username = os.getenv('DB_USERNAME', '')
 _db_password = os.getenv('DB_PASSWORD', '')
-_use_windows_auth = os.getenv('DB_USE_WINDOWS_AUTH', '1').strip().lower() not in ('0', 'false', 'no')
+_use_windows_auth = os.getenv('DB_USE_WINDOWS_AUTH', '0').strip().lower() not in ('0', 'false', 'no')
 # pymssql = NTLM via FreeTDS (no ODBC driver). odbc = pyodbc + Microsoft ODBC Driver.
 _db_backend = (os.getenv('DB_BACKEND', 'pymssql') or 'pymssql').strip().lower()
 # Connection timeout in seconds; when DB is unreachable, fail fast to avoid long waits and 504s (default 10s).
 _db_connect_timeout = max(5, min(120, int(os.getenv('DB_CONNECT_TIMEOUT', '10'))))
 
 DATABASE_CONFIG = {
-    'server': _db_host or '206.189.57.0',
+    'server': _db_host or 'localhost',
     'port': _db_port or '1433',
-    'database': _db_name or 'NEWDCC-V4-UAT',
+    'database': _db_name or '',
     'domain': _db_domain,
-    'username': _db_username or 'SA',
-    'password': _db_password or 'Nothing_159',
+    'username': _db_username or '',
+    'password': _db_password or '',
     'driver': os.getenv('DB_DRIVER', 'ODBC Driver 18 for SQL Server'),
     'trusted_connection': 'yes' if _use_windows_auth else 'no',
     'encrypt': 'yes',
     'trust_server_certificate': 'yes',
 }
 
-# API Configuration (from .env: NODE_API_URL, PYTHON_API_URL, API_TIMEOUT)
+# API Configuration (from .env: NODE_API_URL, PYTHON_API_URL, API_TIMEOUT, GRC_BACKEND_URL)
 API_CONFIG = {
-    'node_api_url': os.getenv('NODE_API_URL', os.getenv('NODE_BACKEND_URL', 'https://reporting-system-backend.pianat.ai')),
-    'python_api_url': os.getenv('PYTHON_API_URL', os.getenv('PYTHON_API_BASE', 'https://reporting-system-python.pianat.ai')),
+    'node_api_url': os.getenv('NODE_API_URL', os.getenv('NODE_BACKEND_URL', 'http://localhost:3002')),
+    'python_api_url': os.getenv('PYTHON_API_URL', os.getenv('PYTHON_API_BASE', 'http://localhost:8000')),
     'timeout': int(os.getenv('API_TIMEOUT', '60')),
+    'grc_backend_url': (os.getenv('GRC_BACKEND_URL') or os.getenv('NODE_API_URL') or os.getenv('NODE_BACKEND_URL') or 'http://localhost:5040').rstrip('/'),
 }
 
 # Export Configuration
@@ -76,6 +88,7 @@ DEFAULT_HEADER_CONFIGS = {
         'watermarkText': 'CONFIDENTIAL',
         'fontColor': '#1F4E79',
         'tableHeaderBgColor': '#E3F2FD',
+        'tableHeaderFontColor': '#000000',
         'tableBodyBgColor': '#F5F5F5'
     },
     'controls': {
@@ -91,6 +104,7 @@ DEFAULT_HEADER_CONFIGS = {
         'watermarkText': 'CONFIDENTIAL',
         'fontColor': '#1F4E79',
         'tableHeaderBgColor': '#E3F2FD',
+        'tableHeaderFontColor': '#000000',
         'tableBodyBgColor': '#F5F5F5'
     }
 }
@@ -112,9 +126,11 @@ def get_database_connection_string() -> str:
     if config['trusted_connection'] == 'yes':
         parts.append("Trusted_Connection=yes;")
     else:
-        uid = f"{config['domain']}\\{config['username']}" if config.get('domain') else config['username']
-        parts.append(f"UID={uid};")
-        parts.append(f"PWD={config['password']};")
+        # SQL Server auth: UID = username only (no domain)
+        uid = config['username'] or ''
+        if uid:
+            parts.append(f"UID={uid};")
+            parts.append(f"PWD={config['password']};")
     return "".join(parts)
 
 
@@ -129,7 +145,11 @@ def get_db_connection():
         import pymssql
         server = config['server']
         port = int(config['port'])
-        user = f"{config['domain']}\\{config['username']}" if config.get('domain') else config['username']
+        # SQL Server auth (normal): user + password only. Windows/NTLM: domain\user + password.
+        if config['trusted_connection'] == 'yes' and config.get('domain'):
+            user = f"{config['domain']}\\{config['username']}"
+        else:
+            user = config['username'] or ''
         password = config['password']
         database = config['database']
         return pymssql.connect(
@@ -152,6 +172,22 @@ def get_db_connection():
     return pyodbc.connect(get_database_connection_string(), timeout=_db_connect_timeout)
 
 
+def log_database_config():
+    """Write current database connection info to debug log (password masked). Call after load_dotenv."""
+    try:
+        from routes.route_utils import write_debug
+        c = DATABASE_CONFIG
+        pwd = c.get('password') or ''
+        mask = '***' if pwd else '(not set)'
+        write_debug(
+            f"[DB config] server={c.get('server')}, port={c.get('port')}, database={c.get('database')}, "
+            f"domain={c.get('domain')}, username={c.get('username')}, password={mask}, "
+            f"trusted_connection={c.get('trusted_connection')}, backend={_db_backend}, connect_timeout={_db_connect_timeout}"
+        )
+    except Exception:
+        pass
+
+
 def test_database_connection() -> tuple[bool, str, Dict[str, Any]]:
     """
     Test database connectivity. Returns (success, message, details).
@@ -161,7 +197,7 @@ def test_database_connection() -> tuple[bool, str, Dict[str, Any]]:
     details: Dict[str, Any] = {
         "server": DATABASE_CONFIG.get("server", "N/A"),
         "database": DATABASE_CONFIG.get("database", "N/A"),
-        "auth_type": "Windows (Trusted_Connection)" if DATABASE_CONFIG.get("trusted_connection") == "yes" else "NTLM/SQL (domain\\user + password)",
+        "auth_type": "Windows (Trusted_Connection)" if DATABASE_CONFIG.get("trusted_connection") == "yes" else "SQL (username + password)",
         "username": DATABASE_CONFIG.get("username", "N/A"),
     }
     try:
