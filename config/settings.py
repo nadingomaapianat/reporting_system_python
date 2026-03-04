@@ -6,15 +6,26 @@ Supports Windows auth: Trusted_Connection (pyodbc only, DB_BACKEND=odbc) or NTLM
 import os
 from typing import Dict, Any
 
+# Load .env from project root (parent of config/) so DB_* is correct regardless of entry point or cwd
+_config_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_config_dir)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(_project_root, "environment.env"))
+    load_dotenv(os.path.join(_project_root, ".env"))  # .env overrides
+except ImportError:
+    pass
+
 # Database: read from env (same vars as Node). DB_SERVER used if DB_HOST not set (e.g. Windows auth .env).
-_db_host = (os.getenv('DB_HOST') or os.getenv('DB_SERVER') or '').strip()
+
+_db_host = (os.getenv('DB_SERVER') or os.getenv('DB_HOST') or '').strip()
 _db_port = os.getenv('DB_PORT', '1433')
 _db_name = os.getenv('DB_NAME', '')
 # DB_Domain (adib_backend) and DB_DOMAIN (this project)
 _db_domain = (os.getenv('DB_DOMAIN') or os.getenv('DB_Domain') or '').strip()
 _db_username = os.getenv('DB_USERNAME', '')
 _db_password = os.getenv('DB_PASSWORD', '')
-_use_windows_auth = os.getenv('DB_USE_WINDOWS_AUTH', '1').strip().lower() not in ('0', 'false', 'no')
+_use_windows_auth = os.getenv('DB_USE_WINDOWS_AUTH', '0').strip().lower() not in ('0', 'false', 'no')
 # pymssql = NTLM via FreeTDS (no ODBC driver). odbc = pyodbc + Microsoft ODBC Driver.
 _db_backend = (os.getenv('DB_BACKEND', 'pymssql') or 'pymssql').strip().lower()
 # Connection timeout in seconds; when DB is unreachable, fail fast to avoid long waits and 504s (default 10s).
