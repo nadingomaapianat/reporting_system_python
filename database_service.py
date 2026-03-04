@@ -26,9 +26,9 @@ from config.settings import (
 
 def main():
     backend = os.getenv("DB_BACKEND", "pymssql").strip().lower()
-    auth_type = "Windows (Trusted_Connection)" if DATABASE_CONFIG.get("trusted_connection") == "yes" else "SQL/NTLM (username+password)"
-    print(f"Backend: {backend} (NTLM when pymssql)")
-    print(f"Auth mode: {auth_type}")
+    auth_type = "SQL (user & password)"
+    print(f"Backend: {backend}")
+    print(f"Auth: {auth_type}")
     print(f"Server: {DATABASE_CONFIG.get('server')}:{DATABASE_CONFIG.get('port')}, Database: {DATABASE_CONFIG.get('database')}")
     print()
 
