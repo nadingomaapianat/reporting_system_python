@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional, List
 from pathlib import Path
 
 # ReportLab imports
-from reportlab.lib.pagesizes import A4, letter
+from reportlab.lib.pagesizes import A4, letter, landscape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage, PageBreak
 from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -259,7 +259,17 @@ def generate_pdf_report(
     
     # Create document
     buffer = BytesIO()
-    page_size = A4 if len(columns) <= 6 else letter
+    num_columns = len(columns)
+    is_wide_table = num_columns > 12
+    if is_wide_table:
+        page_size = landscape(letter)  # ~792 x 612: much more width so columns fit and headers don't wrap
+        # Tighter margins to use more of the page for the table
+        left_margin = min(left_margin, 20)
+        right_margin = min(right_margin, 20)
+    elif num_columns <= 6:
+        page_size = A4
+    else:
+        page_size = letter
     
     # Use BaseDocTemplate so we can draw watermark at page end (over content)
     doc = BaseDocTemplate(
@@ -533,22 +543,38 @@ def generate_pdf_report(
             column_headers = columns if columns else ['Data']
         
         # Create styles for table cells with Arabic support
+        num_cols = len(column_headers)
+        # Wide tables: use landscape (set above), larger font than before, and more chars so content fits
+        is_wide_table = num_cols > 12
+        if is_wide_table:
+            max_cell_chars = min(int(header_config.get('maxCellChars', 300)), 120)
+            cell_font_size = 7
+            header_font_size = 9
+            cell_leading = 8
+            header_leading = 10
+        else:
+            max_cell_chars = int(header_config.get('maxCellChars', 300))
+            cell_font_size = 9
+            header_font_size = 12
+            cell_leading = 11
+            header_leading = 14
+
         header_style = ParagraphStyle(
             'TableHeader',
             parent=styles['Normal'],
-            fontSize=12,
+            fontSize=header_font_size,
             alignment=TA_CENTER,
             textColor=header_font_color_rl,
-            leading=14,
+            leading=header_leading,
             fontName=ARABIC_FONT_NAME or 'Helvetica-Bold'
         )
         
         cell_style = ParagraphStyle(
             'TableCell',
             parent=styles['Normal'],
-            fontSize=9,
+            fontSize=cell_font_size,
             alignment=TA_LEFT,
-            leading=11,
+            leading=cell_leading,
             fontName=ARABIC_FONT_NAME or 'Helvetica'
         )
         
@@ -559,30 +585,46 @@ def generate_pdf_report(
         ]
         
         # Process data rows with defensive truncation for extremely long cells
-        max_cell_chars = int(header_config.get('maxCellChars', 300))
         processed_rows = []
         for row in data_rows:
+            # Ensure row length matches column count to avoid Table layout errors
+            cells = list(row) if row else []
+            if len(cells) < num_cols:
+                cells.extend([''] * (num_cols - len(cells)))
+            elif len(cells) > num_cols:
+                cells = cells[:num_cols]
             out_row = []
-            for cell in row:
+            for cell in cells:
                 text = '' if cell is None else str(cell)
                 if len(text) > max_cell_chars:
-                    text = text[:max_cell_chars] + '…'
+                    text = text[:max_cell_chars]
+                    # Truncate at word boundary to avoid cutting words (e.g. "busines" -> "business")
+                    last_space = text.rfind(' ')
+                    if last_space > max_cell_chars // 2:
+                        text = text[:last_space]
+                    text = text + '…'
                 out_row.append(Paragraph(shape_text_for_arabic(text), cell_style))
             processed_rows.append(out_row)
         
         # Calculate column widths (full width with margins)
         # Add small buffer to compensate for any internal reportlab padding
         available_width = page_size[0] - (left_margin + right_margin) + 20
-        num_cols = len(column_headers)
-        # Weighted widths: give any column with 'name' more width; '#' minimal
+        # Weighted widths: give more space to title/description/content columns so they don't wrap badly
         weights: List[float] = []
         for label in column_headers:
             label_str = str(label)
             lower = label_str.lower().strip()
             if lower == '#':
-                weights.append(0.6)
-            elif 'name' in lower:
-                weights.append(2.0)
+                weights.append(0.5)
+            elif 'title' in lower:
+                weights.append(4.0)
+            elif 'description' in lower:
+                weights.append(3.5)
+            elif 'name' in lower or 'control name' in lower or 'procedure' in lower:
+                w = 6.0 if num_cols <= 5 else (3.0 if is_wide_table else 2.0)
+                weights.append(w)
+            elif 'root cause' in lower or 'cause' in lower or 'event type' in lower:
+                weights.append(2.5 if is_wide_table else 1.0)
             else:
                 weights.append(1.0)
         total_weight = sum(weights) if sum(weights) > 0 else float(num_cols)
@@ -608,13 +650,13 @@ def generate_pdf_report(
                 ('TEXTCOLOR', (0, 0), (-1, 0), header_font_color_rl),
                 ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
                 ('FONTNAME', (0, 0), (-1, 0), ARABIC_FONT_NAME or (DEFAULT_FONT_NAME + '-Bold' if DEFAULT_FONT_NAME != 'Helvetica' else 'Helvetica-Bold')),
-                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('FONTSIZE', (0, 0), (-1, 0), header_font_size),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 5),  # Reduced from 10 to 5
                 ('TOPPADDING', (0, 0), (-1, 0), 5),  # Reduced from 10 to 5
                 ('BACKGROUND', (0, 1), (-1, -1), body_bg_color_rl),
                 ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
                 ('FONTNAME', (0, 1), (-1, -1), ARABIC_FONT_NAME or DEFAULT_FONT_NAME),
-                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('FONTSIZE', (0, 1), (-1, -1), cell_font_size),
                 ('TOPPADDING', (0, 1), (-1, -1), 2),  # Reduced from 4 to 2
                 ('BOTTOMPADDING', (0, 1), (-1, -1), 2),  # Reduced from 4 to 2
                 ('LEFTPADDING', (0, 0), (-1, -1), 2),  # Reduced from 3 to 2
@@ -660,26 +702,9 @@ def generate_pdf_report(
         )
         story.append(Paragraph(" | ".join(footer_items), footer_style))
     
-    # WATERMARK (if enabled) — draw after content to overlay tables/charts
+    # WATERMARK — disabled (was drawn when watermarkEnabled=True)
     def _on_page_end(canv, _doc):
-        if not header_config.get('watermarkEnabled', False):
-            return
-        try:
-            wm_text = shape_text_for_arabic(header_config.get('watermarkText', 'CONFIDENTIAL'))
-            canv.saveState()
-            opacity = max(0.05, min(0.3, header_config.get('watermarkOpacity', 10) / 100.0))
-            gray = 0.6 + (0.4 * (1 - opacity))
-            canv.setFillColorRGB(gray, gray, gray)
-            font_name = ARABIC_FONT_NAME if ARABIC_FONT_NAME else DEFAULT_FONT_NAME
-            canv.setFont(font_name, 48)
-            page_width, page_height = page_size
-            canv.translate(page_width / 2.0, page_height / 2.0)
-            if header_config.get('watermarkDiagonal', True):
-                canv.rotate(45)
-            canv.drawCentredString(0, 0, wm_text)
-            canv.restoreState()
-        except Exception:
-            pass
+        return  # Watermark disabled; no-op
 
     doc.addPageTemplates([
         PageTemplate(id='with-watermark', frames=[frame], onPageEnd=_on_page_end)

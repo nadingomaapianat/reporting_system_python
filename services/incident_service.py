@@ -130,6 +130,7 @@ class IncidentService:
             finally:
                 conn.close()
         except Exception as e:
+            write_debug(f"[INCIDENT SERVICE] Query failed: {e}")
             return []
 
        # ===== Incidents fallbacks =====
@@ -142,7 +143,7 @@ class IncidentService:
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return incidents detailed list (basic fields)"""
+        """Return incidents detailed list with extended columns for Total Incidents card and export."""
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -150,16 +151,59 @@ class IncidentService:
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, function_id)
 
+        Incidents = self.get_fully_qualified_table_name("Incidents")
+        Categories = self.get_fully_qualified_table_name("Categories")
+        Functions = self.get_fully_qualified_table_name("Functions")
+        IncidentEvents = self.get_fully_qualified_table_name("IncidentEvents")
+        IncidentSubCategories = self.get_fully_qualified_table_name("IncidentSubCategories")
+        RootCauses = self.get_fully_qualified_table_name("RootCauses")
+        FinancialImpacts = self.get_fully_qualified_table_name("FinancialImpacts")
+        Currencies = self.get_fully_qualified_table_name("Currencies")
+        Users = self.get_fully_qualified_table_name("Users")
+
         query = f"""
         SELECT 
             i.code,
             i.title,
-            f.name AS function_name,
-            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
-        FROM Incidents i
-        LEFT JOIN Functions f ON i.function_id = f.id
-          AND f.isDeleted = 0
-          AND f.deletedAt IS NULL
+            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') as description,
+            CASE 
+                WHEN i.acceptanceStatus = 'approved' THEN 'approved'
+                WHEN i.reviewerStatus = 'sent' THEN 'sent'
+                WHEN i.checkerStatus = 'approved' THEN 'approved'
+                ELSE ISNULL(i.preparerStatus, i.acceptanceStatus)
+            END as status,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            ISNULL(c.name, '') as categoryName,
+            ISNULL(f.name, '') as functionName,
+            CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') ELSE '' END as occurrenceDate,
+            CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') ELSE '' END as reportedDate,
+            ISNULL(i.net_loss, 0) as netLoss,
+            ISNULL(i.recovery_amount, 0) as recoveryAmount,
+            ISNULL(i.total_loss, 0) as totalLoss,
+            ISNULL(ie.name, '') as eventType,
+            ISNULL(i.importance, '') as importance,
+            ISNULL(i.timeFrame, '') as timeFrame,
+            ISNULL(u.name, '') as owner,
+            ISNULL(sc.name, '') as subCategoryName,
+            ISNULL(CAST(i.rootCause AS NVARCHAR(MAX)), '') as rootCause,
+            ISNULL(rc.name, '') as causeName,
+            ISNULL(fi.name, '') as financialImpactName,
+            ISNULL(cu.name, '') as currencyName,
+            ISNULL(i.exchange_rate, 0) as exchangeRate,
+            ISNULL(i.status, '') as recoveryStatus,
+            ISNULL(i.preparerStatus, '') as preparerStatus,
+            ISNULL(i.reviewerStatus, '') as reviewerStatus,
+            ISNULL(i.checkerStatus, '') as checkerStatus,
+            ISNULL(i.acceptanceStatus, '') as acceptanceStatus
+        FROM {Incidents} i
+        LEFT JOIN {Categories} c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN {Functions} f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
+        LEFT JOIN {IncidentEvents} ie ON i.event_type_id = ie.id AND ie.isDeleted = 0 AND ie.deletedAt IS NULL
+        LEFT JOIN {IncidentSubCategories} sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
+        LEFT JOIN {RootCauses} rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN {FinancialImpacts} fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN {Currencies} cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN {Users} u ON i.created_by = u.id AND u.deletedAt IS NULL
         WHERE i.isDeleted = 0 AND i.deletedAt IS NULL {date_filter}
         {function_filter}
         ORDER BY i.createdAt DESC

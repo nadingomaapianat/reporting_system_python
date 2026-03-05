@@ -516,14 +516,16 @@ class ControlService:
         control_functions_table = self.get_fully_qualified_table_name('ControlFunctions')
         
         # Use ControlFunctions junction table for many-to-many relationship
+        # Match Node: c.deletedAt IS NULL and cf.deletedAt IS NULL for same control count
         query = f"""
         SELECT 
             f.name as function_name,
             COUNT(DISTINCT c.id) as control_count
         FROM {controls_table} c
-        INNER JOIN {control_functions_table} cf ON c.id = cf.control_id
+        INNER JOIN {control_functions_table} cf ON c.id = cf.control_id AND cf.deletedAt IS NULL
         INNER JOIN {functions_table} f ON cf.function_id = f.id
-        WHERE c.isDeleted = 0 
+        WHERE c.isDeleted = 0
+          AND c.deletedAt IS NULL
         {date_filter}
         {function_filter}
         GROUP BY f.name

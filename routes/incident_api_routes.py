@@ -344,7 +344,11 @@ async def export_incidents_excel(
         data = None
         
         if cardType == 'totalIncidents':
-            data = await incident_service.get_incidents_list(startDate, endDate)
+            user_id, group_name, function_id = extract_user_and_function_params(request)
+            if request.query_params.get('functionId'):
+                from routes.route_utils import clean_function_id
+                function_id = clean_function_id(request.query_params.get('functionId'))
+            data = await incident_service.get_incidents_list(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'pendingPreparer':
             write_debug(f"[INCIDENTS PDF] fetching pending preparer incidents for {startDate} to {endDate}")
             data = await incident_service.get_incidents_by_status('pendingPreparer', startDate, endDate)

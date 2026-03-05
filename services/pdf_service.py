@@ -271,6 +271,73 @@ class PDFService:
                                     str(item.get('createdAt', 'N/A'))
                                 ])
                             write_debug(f"DEBUG: Created {len(data_rows)} rows with columns: {columns}")
+                        elif card_type == 'totalIncidents':
+                            write_debug("DEBUG: Creating columns for totalIncidents (extended)")
+                            columns = ["#", "Code", "Title", "Status", "Category", "Function", "Sub Category", "Owner", "Importance", "Time Frame", "Occurrence Date", "Reported Date", "Description", "Root Cause", "Cause", "Total Loss", "Recoveries Amount", "Net Loss", "Financial Impact", "Currency", "Exchange Rate", "Recovery Status", "Event Type", "Incident Status", "Review", "First Approval", "Second Approval", "Created At"]
+                            data_rows = []
+                            for idx, item in enumerate(data, 1):
+                                net_loss = item.get('netLoss') if item.get('netLoss') is not None else item.get('net_loss', '')
+                                rec = item.get('recoveryAmount') if item.get('recoveryAmount') is not None else item.get('recovery_amount', '')
+                                total_loss = item.get('totalLoss') if item.get('totalLoss') is not None else item.get('total_loss', '')
+                                ex_rate = item.get('exchangeRate') if item.get('exchangeRate') is not None else item.get('exchange_rate', '')
+                                if net_loss != '' and net_loss is not None:
+                                    try:
+                                        net_loss = f"{float(net_loss):,.2f}"
+                                    except (TypeError, ValueError):
+                                        net_loss = str(net_loss)
+                                if rec != '' and rec is not None:
+                                    try:
+                                        rec = f"{float(rec):,.2f}"
+                                    except (TypeError, ValueError):
+                                        rec = str(rec)
+                                if total_loss != '' and total_loss is not None:
+                                    try:
+                                        total_loss = f"{float(total_loss):,.2f}"
+                                    except (TypeError, ValueError):
+                                        total_loss = str(total_loss)
+                                prep = item.get('preparerStatus', '')
+                                rev = item.get('reviewerStatus', '')
+                                chk = item.get('checkerStatus', '')
+                                acc = item.get('acceptanceStatus', '')
+                                incident_status = 'Draft' if prep != 'sent' else 'Sent'
+                                review_status = 'Sent' if rev == 'sent' else 'Pending'
+                                first_app = 'Approved' if chk == 'approved' else ('Refused' if chk == 'refused' else 'Pending')
+                                second_app = 'Approved' if acc == 'approved' else ('Refused' if acc == 'refused' else 'Pending')
+                                desc_raw = item.get('description') or ''
+                                desc = (str(desc_raw)[:200] + ('...' if len(str(desc_raw)) > 200 else '')) or 'N/A'
+                                root_cause_val = item.get('rootCause', 'N/A') or 'N/A'
+                                root_cause_str = str(root_cause_val)[:100] if root_cause_val else 'N/A'
+                                data_rows.append([
+                                    str(idx),
+                                    str(item.get('code') or 'N/A'),
+                                    str(item.get('title') or 'N/A'),
+                                    str(item.get('status') or 'N/A'),
+                                    str(item.get('categoryName') or 'N/A'),
+                                    str(item.get('functionName') or 'N/A'),
+                                    str(item.get('subCategoryName') or 'N/A'),
+                                    str(item.get('owner') or 'N/A'),
+                                    str(item.get('importance') or 'N/A'),
+                                    str(item.get('timeFrame') or 'N/A'),
+                                    str(item.get('occurrenceDate') or 'N/A'),
+                                    str(item.get('reportedDate') or 'N/A'),
+                                    desc,
+                                    root_cause_str,
+                                    str(item.get('causeName') or 'N/A'),
+                                    str(total_loss) if total_loss != '' else 'N/A',
+                                    str(rec) if rec != '' else 'N/A',
+                                    str(net_loss) if net_loss != '' else 'N/A',
+                                    str(item.get('financialImpactName') or 'N/A'),
+                                    str(item.get('currencyName') or 'N/A'),
+                                    str(ex_rate) if ex_rate != '' and ex_rate is not None else 'N/A',
+                                    str(item.get('recoveryStatus') or 'N/A'),
+                                    str(item.get('eventType') or 'N/A'),
+                                    incident_status,
+                                    review_status,
+                                    first_app,
+                                    second_app,
+                                    str(item.get('createdAt') or 'N/A')
+                                ])
+                            write_debug(f"DEBUG: Created {len(data_rows)} rows for totalIncidents")
                         else:
                             # Generic handling for other card types
                             def nice(k: str) -> str:
@@ -317,13 +384,25 @@ class PDFService:
             write_debug(f"ERROR: Failed to generate incidents PDF for {card_type} - {str(e)}")
             import traceback
             traceback.print_exc()
-            # Fallback simple PDF
-            buffer = io.BytesIO()
-            doc = SimpleDocTemplate(buffer, pagesize=A4)
-            content = [Paragraph("Error generating incidents report", getSampleStyleSheet()['Normal'])]
-            doc.build(content)
-            buffer.seek(0)
-            return buffer.getvalue()
+            # Fallback simple PDF with actual error message for debugging
+            try:
+                buffer = io.BytesIO()
+                doc = SimpleDocTemplate(buffer, pagesize=A4)
+                err_msg = str(e).replace('<', ' ').replace('>', ' ')  # avoid invalid XML in Paragraph
+                content = [
+                    Paragraph("Error generating incidents report", getSampleStyleSheet()['Normal']),
+                    Paragraph(f"Details: {err_msg[:500]}", getSampleStyleSheet()['Normal'])
+                ]
+                doc.build(content)
+                buffer.seek(0)
+                return buffer.getvalue()
+            except Exception as fallback_err:
+                write_debug(f"ERROR: Fallback PDF also failed: {fallback_err}")
+                buffer = io.BytesIO()
+                doc = SimpleDocTemplate(buffer, pagesize=A4)
+                doc.build([Paragraph("Error generating incidents report", getSampleStyleSheet()['Normal'])])
+                buffer.seek(0)
+                return buffer.getvalue()
 
     async def generate_kris_pdf(self, data: Dict[str, Any], start_date: str, end_date: str, header_config: Dict[str, Any], card_type: str = None, only_card: bool = False, only_overall_table: bool = False, only_chart: bool = False) -> bytes:
         """Generate KRI PDF report mirroring incidents behavior."""
@@ -525,11 +604,37 @@ class PDFService:
                         if isinstance(first_item, dict):
                             def nice(k: str) -> str:
                                 return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
-                            raw_keys = list(first_item.keys())
-                            columns = ['#'] + [nice(k) for k in raw_keys]
-                            for i, item in enumerate(kris_data, 1):
-                                values = [str(item.get(k, 'N/A')) for k in raw_keys]
-                                data_rows.append([str(i)] + values)
+                            # Total KRIs: use catalog columns (same as ADIB /kris_catalog except Deleted)
+                            if card_type == 'totalKris':
+                                columns = ['#', 'Code', 'KRI', 'Function', 'Frequency', 'Defining Threshold', 'Added By', 'Assigned Person', 'Type', 'Measurable Unit', 'RCM Functions', 'Risk Mapping', 'Status', 'Created By', 'KRI Status', 'First Approval', 'Review', 'Second Approval', 'Created At']
+                                for i, item in enumerate(kris_data, 1):
+                                    data_rows.append([
+                                        str(i),
+                                        str(item.get('code') or 'N/A'),
+                                        str(item.get('kri_name') or 'N/A'),
+                                        str(item.get('function_name') or 'N/A'),
+                                        str(item.get('frequency') or 'N/A'),
+                                        str(item.get('threshold') or 'N/A'),
+                                        str(item.get('added_by_name') or 'N/A'),
+                                        str(item.get('assigned_person_name') or 'N/A'),
+                                        str(item.get('type') or 'N/A'),
+                                        str(item.get('type_percentage_or_figure') or 'N/A'),
+                                        (lambda x: (x[:200] + '…') if len(x) > 200 else x)(str(item.get('rcm_functions') or 'N/A')),
+                                        (lambda x: (x[:200] + '…') if len(x) > 200 else x)(str(item.get('risk_mapping') or 'N/A')),
+                                        str(item.get('status') or 'N/A'),
+                                        str(item.get('created_by_name') or 'N/A'),
+                                        str(item.get('kri_status') or 'N/A'),
+                                        str(item.get('first_approval') or 'N/A'),
+                                        str(item.get('review') or 'N/A'),
+                                        str(item.get('second_approval') or 'N/A'),
+                                        str(item.get('createdAt') or 'N/A')
+                                    ])
+                            else:
+                                raw_keys = list(first_item.keys())
+                                columns = ['#'] + [nice(k) for k in raw_keys]
+                                for i, item in enumerate(kris_data, 1):
+                                    values = [str(item.get(k, 'N/A')) for k in raw_keys]
+                                    data_rows.append([str(i)] + values)
                         else:
                             columns = ['#', 'Value']
                             data_rows = [["1", str(first_item)]]
@@ -778,33 +883,22 @@ class PDFService:
                             ])
                         write_debug(f"  - Created {len(data_rows)} rows")
                     elif isinstance(first_item, dict):
-                        # Data is list of dicts
-                        write_debug(f"  - Data is list of dicts")
-                        write_debug(f"  - first_item keys: {list(first_item.keys())}")
-                        # Determine columns based on cardType
-                        if cardType in ['pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance', 'testsPendingPreparer', 'testsPendingChecker', 'testsPendingReviewer', 'testsPendingAcceptance','unmappedControls','unmappedIcofrControls','unmappedNonIcofrControls','totalControls']:
-                            write_debug(f"  - Creating columns: ['#', 'Control Code', 'Control Name']")
-                            columns = ["#", "Control Code", "Control Name"]
-                            data_rows = []
-                            for i, item in enumerate(data, 1):
-                                data_rows.append([
-                                    str(i),
-                                    item.get('control_code', item.get('code', 'N/A')),
-                                    item.get('control_name', item.get('name', 'N/A'))
-                                ])
-                            write_debug(f"  - Created {len(data_rows)} rows with columns: {columns}")
-                        else:
-                            # Generic handling for other card types
-                            write_debug(f"  - Generic handling")
-                            columns = ["#", "Code", "Name"]
-                            data_rows = []
-                            for i, item in enumerate(data, 1):
-                                data_rows.append([
-                                    str(i),
-                                    item.get('code', 'N/A'),
-                                    item.get('name', 'N/A')
-                                ])
-                            write_debug(f"  - Created {len(data_rows)} rows with columns: {columns}")
+                        # Data is list of dicts: show all fields (Code, Name, Created At, and any others)
+                        raw_keys = list(first_item.keys())
+                        def nice(k: str) -> str:
+                            kstr = str(k)
+                            if kstr in ('code',): return 'Control Code'
+                            if kstr in ('name',): return 'Control Name'
+                            return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', kstr).title()
+                        columns = ['#'] + [nice(k) for k in raw_keys]
+                        data_rows = []
+                        for i, item in enumerate(data, 1):
+                            if isinstance(item, dict):
+                                values = [str(item.get(k, '') or '') for k in raw_keys]
+                                data_rows.append([str(i)] + values)
+                            else:
+                                data_rows.append([str(i)] + ['N/A'] * len(raw_keys))
+                        write_debug(f"  - Created {len(data_rows)} rows with columns: {columns}")
                 elif isinstance(data, dict):
                     columns = ["Metric", "Value"]
                     data_rows = [[key, str(value)] for key, value in data.items()]

@@ -53,7 +53,8 @@ async def export_controls_pdf(
     tableType: str = Query(None),
     onlyOverallTable: str = Query("False"),
     source: str = Query(None, description="Set to 'db' to force database source"),
-    functionId: str = Query(None)
+    functionId: str = Query(None),
+    department: str = Query(None, description="Filter Controls by Department chart/export by department name")
 ):
     """Export controls report in PDF format"""
     
@@ -138,6 +139,12 @@ async def export_controls_pdf(
             
             elif cardType == 'department':
                 card_data = await control_service.get_controls_by_department(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
+                if department and card_data and isinstance(card_data, list):
+                    dept_trim = (department or '').strip()
+                    card_data = [
+                        x for x in card_data
+                        if (x.get('function_name') or x.get('name') or x.get('Name') or '').strip() == dept_trim
+                    ]
             elif cardType == 'risk':
                 card_data = await control_service.get_controls_by_risk_response(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
             elif cardType == 'quarterlyControlCreationTrend':
@@ -270,7 +277,9 @@ async def export_controls_excel(
     chartType: str = Query(None),
     renderType: str = Query(None),
     onlyOverallTable: str = Query("False"),
-    tableType: str = Query(None)
+    tableType: str = Query(None),
+    functionId: str = Query(None),
+    department: str = Query(None, description="Filter Controls by Department chart/export by department name")
 ):
     """Export controls report in Excel format"""
     try:
@@ -349,6 +358,12 @@ async def export_controls_excel(
             
             elif cardType == 'department':
                card_data = await control_service.get_controls_by_department(startDate, endDate)
+               if department and card_data and isinstance(card_data, list):
+                   dept_trim = (department or '').strip()
+                   card_data = [
+                       x for x in card_data
+                       if (x.get('function_name') or x.get('name') or x.get('Name') or '').strip() == dept_trim
+                   ]
             elif cardType == 'risk':
                 card_data = await control_service.get_controls_by_risk_response(startDate, endDate)
             elif cardType == 'quarterlyControlCreationTrend':

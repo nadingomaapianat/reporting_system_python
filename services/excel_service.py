@@ -419,11 +419,75 @@ class ExcelService:
                 if isinstance(data, list) and data:
                     first_item = data[0]
                     if isinstance(first_item, dict):
-                        raw_keys = list(first_item.keys())
-                        columns = ['#'] + [format_column_name(k) for k in raw_keys]
-                        for i, item in enumerate(data, 1):
-                            values = [str(item.get(k, 'N/A')) for k in raw_keys]
-                            data_rows.append([str(i)] + values)
+                        # Total Incidents: extended columns for export
+                        if card_type == 'totalIncidents':
+                            columns = ['#', 'Code', 'Title', 'Status', 'Category', 'Function', 'Sub Category', 'Owner', 'Importance', 'Time Frame', 'Occurrence Date', 'Reported Date', 'Description', 'Root Cause', 'Cause', 'Total Loss', 'Recoveries Amount', 'Net Loss', 'Financial Impact', 'Currency', 'Exchange Rate', 'Recovery Status', 'Event Type', 'Incident Status', 'Review', 'First Approval', 'Second Approval', 'Created At']
+                            data_rows = []
+                            for idx, item in enumerate(data, 1):
+                                net_loss = item.get('netLoss') if item.get('netLoss') is not None else item.get('net_loss', '')
+                                rec = item.get('recoveryAmount') if item.get('recoveryAmount') is not None else item.get('recovery_amount', '')
+                                total_loss = item.get('totalLoss') if item.get('totalLoss') is not None else item.get('total_loss', '')
+                                ex_rate = item.get('exchangeRate') if item.get('exchangeRate') is not None else item.get('exchange_rate', '')
+                                if net_loss != '' and net_loss is not None:
+                                    try:
+                                        net_loss = f"{float(net_loss):,.2f}"
+                                    except (TypeError, ValueError):
+                                        net_loss = str(net_loss)
+                                if rec != '' and rec is not None:
+                                    try:
+                                        rec = f"{float(rec):,.2f}"
+                                    except (TypeError, ValueError):
+                                        rec = str(rec)
+                                if total_loss != '' and total_loss is not None:
+                                    try:
+                                        total_loss = f"{float(total_loss):,.2f}"
+                                    except (TypeError, ValueError):
+                                        total_loss = str(total_loss)
+                                prep = item.get('preparerStatus', '')
+                                rev = item.get('reviewerStatus', '')
+                                chk = item.get('checkerStatus', '')
+                                acc = item.get('acceptanceStatus', '')
+                                incident_status = 'Draft' if prep != 'sent' else 'Sent'
+                                review_status = 'Sent' if rev == 'sent' else 'Pending'
+                                first_app = 'Approved' if chk == 'approved' else ('Refused' if chk == 'refused' else 'Pending')
+                                second_app = 'Approved' if acc == 'approved' else ('Refused' if acc == 'refused' else 'Pending')
+                                desc = (item.get('description') or '')[:200] + ('...' if len((item.get('description') or '')) > 200 else '')
+                                data_rows.append([
+                                    str(idx),
+                                    str(item.get('code', 'N/A')),
+                                    str(item.get('title', 'N/A')),
+                                    str(item.get('status', 'N/A')),
+                                    str(item.get('categoryName', 'N/A')),
+                                    str(item.get('functionName', 'N/A')),
+                                    str(item.get('subCategoryName', 'N/A')),
+                                    str(item.get('owner', 'N/A')),
+                                    str(item.get('importance', 'N/A')),
+                                    str(item.get('timeFrame', 'N/A')),
+                                    str(item.get('occurrenceDate', 'N/A')),
+                                    str(item.get('reportedDate', 'N/A')),
+                                    str(desc or 'N/A'),
+                                    str((item.get('rootCause') or '')[:100]),
+                                    str(item.get('causeName', 'N/A')),
+                                    str(total_loss) if total_loss != '' else 'N/A',
+                                    str(rec) if rec != '' else 'N/A',
+                                    str(net_loss) if net_loss != '' else 'N/A',
+                                    str(item.get('financialImpactName', 'N/A')),
+                                    str(item.get('currencyName', 'N/A')),
+                                    str(ex_rate) if ex_rate != '' and ex_rate is not None else 'N/A',
+                                    str(item.get('recoveryStatus', 'N/A')),
+                                    str(item.get('eventType', 'N/A')),
+                                    incident_status,
+                                    review_status,
+                                    first_app,
+                                    second_app,
+                                    str(item.get('createdAt', 'N/A'))
+                                ])
+                        else:
+                            raw_keys = list(first_item.keys())
+                            columns = ['#'] + [format_column_name(k) for k in raw_keys]
+                            for i, item in enumerate(data, 1):
+                                values = [str(item.get(k, 'N/A')) for k in raw_keys]
+                                data_rows.append([str(i)] + values)
                     else:
                         columns = ['#', 'Value']
                         data_rows = [["1", str(first_item)]]
@@ -643,11 +707,39 @@ class ExcelService:
                     if data:  # Non-empty list
                         first_item = data[0]
                         if isinstance(first_item, dict):
-                            raw_keys = list(first_item.keys())
-                            columns = ['#'] + [format_column_name(k) for k in raw_keys]
-                            for i, item in enumerate(data, 1):
-                                values = [str(item.get(k, 'N/A')) for k in raw_keys]
-                                data_rows.append([str(i)] + values)
+                            # Total KRIs: use catalog columns (same as ADIB /kris_catalog except Deleted)
+                            if card_type == 'totalKris':
+                                columns = ['#', 'Code', 'KRI', 'Function', 'Frequency', 'Defining Threshold', 'Added By', 'Assigned Person', 'Type', 'Measurable Unit', 'RCM Functions', 'Risk Mapping', 'Status', 'Created By', 'KRI Status', 'First Approval', 'Review', 'Second Approval', 'Created At']
+                                for i, item in enumerate(data, 1):
+                                    rcm = str(item.get('rcm_functions') or 'N/A')
+                                    risk = str(item.get('risk_mapping') or 'N/A')
+                                    data_rows.append([
+                                        str(i),
+                                        str(item.get('code') or 'N/A'),
+                                        str(item.get('kri_name') or 'N/A'),
+                                        str(item.get('function_name') or 'N/A'),
+                                        str(item.get('frequency') or 'N/A'),
+                                        str(item.get('threshold') or 'N/A'),
+                                        str(item.get('added_by_name') or 'N/A'),
+                                        str(item.get('assigned_person_name') or 'N/A'),
+                                        str(item.get('type') or 'N/A'),
+                                        str(item.get('type_percentage_or_figure') or 'N/A'),
+                                        rcm[:500] + ('…' if len(rcm) > 500 else ''),
+                                        risk[:500] + ('…' if len(risk) > 500 else ''),
+                                        str(item.get('status') or 'N/A'),
+                                        str(item.get('created_by_name') or 'N/A'),
+                                        str(item.get('kri_status') or 'N/A'),
+                                        str(item.get('first_approval') or 'N/A'),
+                                        str(item.get('review') or 'N/A'),
+                                        str(item.get('second_approval') or 'N/A'),
+                                        str(item.get('createdAt') or 'N/A')
+                                    ])
+                            else:
+                                raw_keys = list(first_item.keys())
+                                columns = ['#'] + [format_column_name(k) for k in raw_keys]
+                                for i, item in enumerate(data, 1):
+                                    values = [str(item.get(k, 'N/A')) for k in raw_keys]
+                                    data_rows.append([str(i)] + values)
                         else:
                             columns = ['#', 'Value']
                             data_rows = [[str(i+1), str(v)] for i, v in enumerate(data)]
