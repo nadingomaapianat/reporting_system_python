@@ -90,7 +90,160 @@ class IncidentService:
         ids = ",".join(f"'{fid}'" for fid in function_ids)
         # Use LTRIM(RTRIM()) to handle spaces in function_id column
         return f" AND LTRIM(RTRIM({table_alias}.function_id)) IN ({ids})"
-    
+
+    async def get_incident_action_plans(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Return incident action plans (Actionplans.[from] = 'incident') with incident and function context.
+
+        Mirrors Node getIncidentsDashboard incidentActionPlan:
+        - Function filter is applied on Actionplans.actionOwner (responsible function), not incident.function_id.
+        - Applies date range on incident createdAt.
+        """
+        date_filter = ""
+        if start_date and end_date:
+            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND i.createdAt >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND i.createdAt <= '{end_date}'"
+
+        actionplans_table = self.get_fully_qualified_table_name("Actionplans")
+        incidents_table = self.get_fully_qualified_table_name("Incidents")
+        functions_table = self.get_fully_qualified_table_name("Functions")
+
+        access = await self._get_user_function_access(user_id, group_name)
+        # Function filter is based on Actionplans.actionOwner (function responsible for the action plan),
+        # not the incident's function_id.
+        # When function_id is explicitly provided (e.g. from export/dashboard filter), always apply it
+        # so export reflects the selected filter even when user is not in request (super_admin).
+        if function_id and str(function_id).strip():
+            selected = str(function_id).strip()
+            if (not access.get("is_super_admin")) and (selected not in (access.get("function_ids") or [])):
+                action_owner_filter = " AND 1 = 0"
+            else:
+                # Escape single quotes for SQL
+                escaped = selected.replace("'", "''")
+                action_owner_filter = f" AND LTRIM(RTRIM(a.actionOwner)) = N'{escaped}'"
+        elif access.get("is_super_admin"):
+            action_owner_filter = ""
+        else:
+            function_ids = access.get("function_ids") or []
+            if not function_ids:
+                action_owner_filter = " AND 1 = 0"
+            else:
+                ids = ",".join(f"N'{fid.replace(chr(39), chr(39)+chr(39))}'" for fid in function_ids)
+                action_owner_filter = f" AND LTRIM(RTRIM(a.actionOwner)) IN ({ids})"
+
+        query = f"""
+        SELECT 
+            i.title AS incident_title,
+            f_inc.name AS incident_function_name,
+            a.control_procedure AS action_taken,
+            f_owner.name AS action_owner_name,
+            a.business_unit AS business_unit_status,
+            a.implementation_date AS expected_implementation_date
+        FROM {actionplans_table} a
+        INNER JOIN {incidents_table} i ON a.incident_id = i.id
+        LEFT JOIN {functions_table} f_inc ON i.function_id = f_inc.id
+          AND f_inc.isDeleted = 0
+          AND f_inc.deletedAt IS NULL
+        LEFT JOIN {functions_table} f_owner ON a.actionOwner = f_owner.id
+          AND f_owner.isDeleted = 0
+          AND f_owner.deletedAt IS NULL
+        WHERE a.deletedAt IS NULL
+          AND a.[from] = 'incident'
+          AND i.isDeleted = 0
+          AND i.deletedAt IS NULL
+          {date_filter}
+          {action_owner_filter}
+        ORDER BY a.createdAt DESC
+        """
+        rows = await self.execute_query(query)
+        return [
+            {
+                "incident_name": r.get("incident_title") or "N/A",
+                "incident_department": r.get("incident_function_name") or "N/A",
+                "action_taken": r.get("action_taken") or r.get("control_procedure") or "",
+                "action_owner": r.get("action_owner_name") or "",
+                "status": r.get("business_unit_status") or "",
+                "expected_implementation_date": r.get("expected_implementation_date"),
+            }
+            for r in rows
+        ]
+
+    async def get_incident_action_plan_by_status(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Return incident action plan counts by business_unit (status) for the pie chart.
+        Same filters as get_incident_action_plans (date, action owner). Returns [{ status_name, count }].
+        """
+        date_filter = ""
+        if start_date and end_date:
+            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND i.createdAt >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND i.createdAt <= '{end_date}'"
+
+        actionplans_table = self.get_fully_qualified_table_name("Actionplans")
+        incidents_table = self.get_fully_qualified_table_name("Incidents")
+        functions_table = self.get_fully_qualified_table_name("Functions")
+
+        access = await self._get_user_function_access(user_id, group_name)
+        # When function_id is explicitly provided (e.g. from export/dashboard filter), always apply it.
+        if function_id and str(function_id).strip():
+            selected = str(function_id).strip()
+            if (not access.get("is_super_admin")) and (selected not in (access.get("function_ids") or [])):
+                action_owner_filter = " AND 1 = 0"
+            else:
+                escaped = selected.replace("'", "''")
+                action_owner_filter = f" AND LTRIM(RTRIM(a.actionOwner)) = N'{escaped}'"
+        elif access.get("is_super_admin"):
+            action_owner_filter = ""
+        else:
+            function_ids = access.get("function_ids") or []
+            if not function_ids:
+                action_owner_filter = " AND 1 = 0"
+            else:
+                ids = ",".join(f"N'{fid.replace(chr(39), chr(39)+chr(39))}'" for fid in function_ids)
+                action_owner_filter = f" AND LTRIM(RTRIM(a.actionOwner)) IN ({ids})"
+
+        query = f"""
+        SELECT 
+            ISNULL(a.business_unit, 'N/A') AS status_name,
+            COUNT(*) AS count
+        FROM {actionplans_table} a
+        INNER JOIN {incidents_table} i ON a.incident_id = i.id
+        LEFT JOIN {functions_table} f_inc ON i.function_id = f_inc.id
+          AND f_inc.isDeleted = 0
+          AND f_inc.deletedAt IS NULL
+        LEFT JOIN {functions_table} f_owner ON a.actionOwner = f_owner.id
+          AND f_owner.isDeleted = 0
+          AND f_owner.deletedAt IS NULL
+        WHERE a.deletedAt IS NULL
+          AND a.[from] = 'incident'
+          AND i.isDeleted = 0
+          AND i.deletedAt IS NULL
+          {date_filter}
+          {action_owner_filter}
+        GROUP BY ISNULL(a.business_unit, 'N/A')
+        ORDER BY count DESC
+        """
+        return await self.execute_query(query)
+
     async def execute_query(self, query: str, params: Optional[List] = None) -> List[Dict[str, Any]]:
         """Execute a SQL query and return results"""
         try:

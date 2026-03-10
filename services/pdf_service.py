@@ -491,7 +491,59 @@ class PDFService:
                 write_debug("DEBUG: ===== kris only_overall_table START =====")
                 table_rows = data.get(card_type) or []
 
-                if isinstance(table_rows, list) and table_rows:
+                # KRI Details & Action Plans: platform-style columns and Values & Action Plans as formatted text
+                if card_type == 'kriDetailsWithActionPlans' and isinstance(table_rows, list):
+                    month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+                    def format_values_by_period(item):
+                        periods = item.get('valuesByPeriod') or []
+                        lines = []
+                        for p in periods:
+                            month_year = f"{month_names[int(p.get('month', 1)) - 1]} {p.get('year', '')}" if p.get('month') and p.get('year') else 'N/A'
+                            val = p.get('value')
+                            val_str = f"{val}" if val is not None else 'N/A'
+                            if item.get('measurable_unit') == 'percentage':
+                                val_str += '%'
+                            assessment = f" — {p.get('assessment')}" if p.get('assessment') else ''
+                            ap_list = p.get('actionPlans') or []
+                            if ap_list:
+                                ap_parts = []
+                                for ap in ap_list:
+                                    impl = ap.get('implementation_date')
+                                    impl_str = ''
+                                    if impl:
+                                        try:
+                                            from datetime import datetime
+                                            d = impl if hasattr(impl, 'strftime') else datetime.fromisoformat(str(impl).replace('Z', '+00:00'))
+                                            impl_str = d.strftime('%d %b %Y') if hasattr(d, 'strftime') else str(impl)
+                                        except Exception:
+                                            impl_str = str(impl)
+                                    ap_parts.append(f"• {ap.get('control_procedure') or 'N/A'} · {impl_str} · {ap.get('business_unit') or 'N/A'}")
+                                lines.append(f"{month_year} — Value: {val_str}{assessment}\n" + "\n".join(ap_parts))
+                            else:
+                                lines.append(f"{month_year} — Value: {val_str}{assessment}\nNo action plan")
+                        return "\n\n".join(lines) if lines else "No values"
+
+                    columns = ['#', 'KRI Code', 'KRI Name', 'Function', 'Assigned Person', 'Type', 'Added By', 'KRI Status', 'Frequency', 'Measurable Unit', 'Low', 'Medium', 'High', 'Defining Threshold', 'Values & Action Plans']
+                    for i, row in enumerate(table_rows, 1):
+                        data_rows.append([
+                            str(i),
+                            str(row.get('kri_code') or 'N/A'),
+                            str(row.get('kri_name') or 'N/A'),
+                            str(row.get('function_name') or 'N/A'),
+                            str(row.get('assigned_person_name') or 'N/A'),
+                            str(row.get('kri_type') or 'N/A'),
+                            str(row.get('added_by_name') or 'N/A'),
+                            str(row.get('kri_status') or 'N/A'),
+                            str(row.get('kri_frequency') or 'N/A'),
+                            str(row.get('measurable_unit') or 'N/A'),
+                            str(row.get('low_from')) if row.get('low_from') is not None else 'N/A',
+                            str(row.get('medium_from')) if row.get('medium_from') is not None else 'N/A',
+                            str(row.get('high_from')) if row.get('high_from') is not None else 'N/A',
+                            str(row.get('defining_threshold') or 'N/A'),
+                            format_values_by_period(row),
+                        ])
+                elif isinstance(table_rows, list) and table_rows:
                     first_item = table_rows[0]
                     if isinstance(first_item, dict):
                         raw_keys = list(first_item.keys())
@@ -511,8 +563,9 @@ class PDFService:
                         columns = ['#', 'Value']
                         data_rows = [["1", str(first_item)]]
                 else:
-                    columns = ['#', 'Value']
-                    data_rows = [["1", 'No data available']]
+                    if card_type != 'kriDetailsWithActionPlans':
+                        columns = ['#', 'Value']
+                        data_rows = [["1", 'No data available']]
 
             # CARD SUMMARY EXPORT
             elif only_card and card_type:

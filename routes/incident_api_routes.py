@@ -165,6 +165,11 @@ async def export_incidents_pdf(
             data = await incident_service.get_incidents_with_timeframe(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'incidentsWithFinancialAndFunction':
             data = await incident_service.get_incidents_with_financial_and_function(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
+        elif cardType == 'incidentActionPlan':
+            data = await incident_service.get_incident_action_plans(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
+        
+        elif cardType == 'incidentActionPlanByStatus':
+            data = await incident_service.get_incident_action_plan_by_status(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         
         # Operational Loss Metrics - Cards
         elif cardType == 'atmTheftCount':
@@ -283,7 +288,8 @@ async def export_incidents_excel(
     onlyChart: str = Query("False"),
     chartType: str = Query(None),
     onlyOverallTable: str = Query("False"),
-    tableType: str = Query(None)
+    tableType: str = Query(None),
+    functionId: str = Query(None)
 ):
     """Export incidents report in Excel format (service-backed like controls)."""
    
@@ -337,6 +343,12 @@ async def export_incidents_excel(
         if not cardType:
             raise HTTPException(status_code=400, detail="cardType or chartType is required for exports")
 
+        # Extract user and function parameters (same as PDF) so function filter is applied on export
+        user_id, group_name, function_id = extract_user_and_function_params(request)
+        if functionId:
+            from routes.route_utils import clean_function_id
+            function_id = clean_function_id(functionId)
+        write_debug(f"[INCIDENTS EXCEL] user_id={user_id}, group_name={group_name}, function_id={function_id}")
         
         if not incident_service:
             raise HTTPException(status_code=500, detail="Incident service not available")
@@ -344,7 +356,7 @@ async def export_incidents_excel(
         data = None
         
         if cardType == 'totalIncidents':
-            data = await incident_service.get_incidents_list(startDate, endDate)
+            data = await incident_service.get_incidents_list(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'pendingPreparer':
             write_debug(f"[INCIDENTS PDF] fetching pending preparer incidents for {startDate} to {endDate}")
             data = await incident_service.get_incidents_by_status('pendingPreparer', startDate, endDate)
@@ -385,6 +397,11 @@ async def export_incidents_excel(
             data = await incident_service.get_incidents_with_timeframe(startDate, endDate)
         elif cardType == 'incidentsWithFinancialAndFunction':
             data = await incident_service.get_incidents_with_financial_and_function(startDate, endDate)
+        elif cardType == 'incidentActionPlan':
+            data = await incident_service.get_incident_action_plans(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
+        
+        elif cardType == 'incidentActionPlanByStatus':
+            data = await incident_service.get_incident_action_plan_by_status(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         
         # Operational Loss Metrics - Cards
         elif cardType == 'atmTheftCount':
@@ -474,9 +491,6 @@ async def export_incidents_excel(
             }
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
-
-
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
 
 

@@ -1169,3 +1169,170 @@ class KriService:
           AND k.status = 'active'
         """
         return await self.execute_query(query)
+
+    async def get_kri_details_with_action_plans(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Return KRI Details & Action Plans: same query and grouping as Node.js grc-kris.service.
+        One row per KRI with valuesByPeriod (each period has value, assessment, actionPlans list).
+        Filters by function and by KRI value period (year/month) within start_date..end_date when provided.
+        """
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, function_id)
+
+        # Filter KriValues by period (year/month) within start_date..end_date (same logic as Node)
+        date_filter_parts = []
+        date_params = []
+        if start_date:
+            date_filter_parts.append(
+                " AND CONVERT(datetime, CONCAT(kv.[year], '-', kv.[month], '-01')) >= %s"
+            )
+            date_params.append(start_date)
+        if end_date:
+            date_filter_parts.append(
+                " AND CONVERT(datetime, CONCAT(kv.[year], '-', kv.[month], '-01')) <= %s"
+            )
+            date_params.append(end_date)
+        date_filter_sql = "".join(date_filter_parts)
+
+        # function_name from k.related_function_id (frel) only, to match platform/Node; do not use KriFunctions (fkf)
+        query = f"""
+        SELECT
+          k.id AS kri_id,
+          k.code AS kri_code,
+          k.kriName AS kri_name,
+          k.createdAt AS kri_created_at,
+          ISNULL(frel.name, 'Unknown') AS function_name,
+          u_assigned.name AS assigned_person_name,
+          k.type AS kri_type,
+          u_added.name AS added_by_name,
+          k.status AS kri_status,
+          k.frequency AS kri_frequency,
+          CASE WHEN k.typePercentageOrFigure = '%' THEN 'percentage' ELSE ISNULL(k.typePercentageOrFigure, 'N/A') END AS measurable_unit,
+          k.low_from,
+          k.medium_from,
+          k.high_from,
+          k.threshold AS defining_threshold,
+          kv.[month] AS value_month,
+          kv.[year] AS value_year,
+          kv.value AS value_value,
+          kv.assessment AS value_assessment,
+          a.control_procedure AS action_taken,
+          f_owner.name AS action_owner_name,
+          a.business_unit AS action_plan_status,
+          a.implementation_date AS expected_implementation_date,
+          a.[year] AS action_year,
+          a.[month] AS action_month
+        FROM Kris k
+        INNER JOIN KriValues kv ON kv.kriId = k.id AND kv.deletedAt IS NULL
+        LEFT JOIN Actionplans a ON a.kri_id = k.id AND a.deletedAt IS NULL
+          AND LTRIM(RTRIM(ISNULL(a.[from], ''))) IN (N'kri', N'KRI', N'Kri')
+        LEFT JOIN KriFunctions kf ON k.id = kf.kri_id AND kf.deletedAt IS NULL
+        LEFT JOIN Functions fkf ON fkf.id = kf.function_id AND fkf.isDeleted = 0 AND fkf.deletedAt IS NULL
+        LEFT JOIN Functions frel ON frel.id = k.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
+        LEFT JOIN users u_assigned ON k.assignedPersonId = u_assigned.id AND u_assigned.deletedAt IS NULL
+        LEFT JOIN users u_added ON k.addedBy = u_added.id AND u_added.deletedAt IS NULL
+        LEFT JOIN Functions f_owner ON a.actionOwner = f_owner.id
+          AND f_owner.isDeleted = 0
+          AND f_owner.deletedAt IS NULL
+        WHERE k.isDeleted = 0 AND k.deletedAt IS NULL
+          {date_filter_sql}
+          {function_filter}
+        ORDER BY k.id, kv.[year] DESC, kv.[month] DESC, a.createdAt DESC
+        """
+        rows = await self.execute_query(query, date_params if date_params else None)
+        if not rows:
+            return []
+
+        # Group flat rows into one row per KRI with valuesByPeriod (same logic as Node)
+        kri_details_map = {}
+        month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+        for row in rows:
+            kri_id = str(row.get('kri_id') or '')
+            if not kri_id:
+                continue
+            if kri_id not in kri_details_map:
+                kri_details_map[kri_id] = {
+                    'kri_code': row.get('kri_code') or 'N/A',
+                    'kri_name': row.get('kri_name') or 'N/A',
+                    'kri_created_at': row.get('kri_created_at'),
+                    'function_name': row.get('function_name') or 'N/A',
+                    'assigned_person_name': row.get('assigned_person_name') or 'N/A',
+                    'kri_type': row.get('kri_type') or 'N/A',
+                    'added_by_name': row.get('added_by_name') or 'N/A',
+                    'kri_status': row.get('kri_status') or 'N/A',
+                    'kri_frequency': row.get('kri_frequency') or 'N/A',
+                    'measurable_unit': row.get('measurable_unit') or 'N/A',
+                    'low_from': row.get('low_from'),
+                    'medium_from': row.get('medium_from'),
+                    'high_from': row.get('high_from'),
+                    'defining_threshold': row.get('defining_threshold') or 'N/A',
+                    'valuesByPeriod': [],
+                }
+            rec = kri_details_map[kri_id]
+            value_month = int(row['value_month']) if row.get('value_month') is not None else 0
+            value_year = int(row['value_year']) if row.get('value_year') is not None else 0
+            action_month = int(row['action_month']) if row.get('action_month') is not None else None
+            action_year = int(row['action_year']) if row.get('action_year') is not None else None
+
+            value_period = next((p for p in rec['valuesByPeriod'] if p['year'] == value_year and p['month'] == value_month), None)
+            if not value_period:
+                value_period = {
+                    'month': value_month,
+                    'year': value_year,
+                    'value': float(row['value_value']) if row.get('value_value') is not None else None,
+                    'assessment': row.get('value_assessment'),
+                    'actionPlans': [],
+                }
+                rec['valuesByPeriod'].append(value_period)
+            else:
+                if row.get('value_value') is not None:
+                    value_period['value'] = float(row['value_value'])
+                if row.get('value_assessment') is not None:
+                    value_period['assessment'] = row['value_assessment']
+
+            has_action = row.get('action_taken') and str(row.get('action_taken', '')).strip()
+            if has_action:
+                target_year = action_year if action_year is not None else value_year
+                target_month = action_month if action_month is not None else value_month
+                action_period = next((p for p in rec['valuesByPeriod'] if p['year'] == target_year and p['month'] == target_month), None)
+                if not action_period:
+                    action_period = {
+                        'month': target_month,
+                        'year': target_year,
+                        'value': value_period['value'] if (target_year == value_year and target_month == value_month) else None,
+                        'assessment': value_period['assessment'] if (target_year == value_year and target_month == value_month) else None,
+                        'actionPlans': [],
+                    }
+                    rec['valuesByPeriod'].append(action_period)
+                action_period['actionPlans'].append({
+                    'control_procedure': row.get('action_taken') or 'N/A',
+                    'implementation_date': row.get('expected_implementation_date'),
+                    'business_unit': row.get('action_plan_status') or 'N/A',
+                })
+
+        # Dedupe action plans
+        for rec in kri_details_map.values():
+            for period in rec['valuesByPeriod']:
+                seen = set()
+                new_plans = []
+                for ap in period['actionPlans']:
+                    key = f"{ap.get('control_procedure')}|{ap.get('implementation_date')}|{ap.get('business_unit')}"
+                    if key not in seen:
+                        seen.add(key)
+                        new_plans.append(ap)
+                period['actionPlans'] = new_plans
+
+        # Sort periods descending by year then month and return list
+        result = []
+        for rec in kri_details_map.values():
+            rec['valuesByPeriod'] = sorted(rec['valuesByPeriod'], key=lambda p: (p['year'], p['month']), reverse=True)
+            result.append(rec)
+        return result
