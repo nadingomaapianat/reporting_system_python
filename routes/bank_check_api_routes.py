@@ -708,14 +708,14 @@ async def test_database_connection():
             "message": "SQL Server connection successful",
             "version": result,
             "table_count": table_count,
-            "database": "NEWDCC-V4-UAT"
+            "database": "new_madinetmasr"
         }
         
     except Exception as e:
         return {
             "success": False,
             "error": str(e),
-            "database": "NEWDCC-V4-UAT"
+            "database": "new_madinetmasr"
         }
 
 @router.post("/api/reports/enhanced-bank-check/check-table")

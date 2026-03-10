@@ -26,7 +26,7 @@ class KriService:
     def get_fully_qualified_table_name(self, table_name: str) -> str:
         """Get fully qualified table name using configuration"""
         from config import DATABASE_CONFIG
-        database_name = DATABASE_CONFIG.get('database', 'NEWDCC-V4-UAT')
+        database_name = DATABASE_CONFIG.get('database', 'new_madinetmasr')
         return f"[{database_name}].dbo.[{table_name}]"
     
     async def _get_user_function_access(self, user_id: Optional[str], group_name: Optional[str]):
