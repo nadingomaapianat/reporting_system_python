@@ -9,6 +9,7 @@ except ImportError:
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import JSONResponse
 
 # Import API routes
 print("DEBUG: main.py - About to import routers...")
@@ -16,6 +17,8 @@ print("DEBUG: main.py - About to import routers...")
 from utils import api_routes
 from utils.csrf import CSRFMiddleware, create_csrf_token, set_csrf_cookie
 from utils.auth import JWTAuthMiddleware
+from utils.security_middleware import RateLimitMiddleware, SecurityHeadersMiddleware
+from utils.error_sanitizer import sanitize_error_message, is_production
 api_router = api_routes.router
 print("DEBUG: main.py - All routers imported (consolidated in api_router)")
 
@@ -48,10 +51,12 @@ def create_app() -> FastAPI:
     
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
-        logger.error(f"GLOBAL EXCEPTION: {type(exc).__name__}: {exc}")
-        import traceback
-        traceback.print_exc()
-        return {"detail": f"Internal error: {str(exc)}"}, 500
+        logger.error("GLOBAL EXCEPTION: %s: %s", type(exc).__name__, exc, exc_info=True)
+        safe_message = sanitize_error_message(str(exc), is_production())
+        return JSONResponse(
+            status_code=500,
+            content={"detail": safe_message},
+        )
     
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
@@ -71,27 +76,25 @@ def create_app() -> FastAPI:
 
     csrf_cookie_secure = os.getenv("CSRF_COOKIE_SECURE", "true").lower() == "true"
 
-    # Add JWT authentication middleware (before CSRF)
+    # CSRF exempt: only paths that exist in this Python app (aligned with reporting-node where same route exists)
+    # Used in Python: /csrf/token (main.py), /docs, /redoc, /openapi.json (FastAPI), /api/auth/logout (auth_routes)
+    CSRF_EXEMPT_PATHS = (
+        "/csrf/token",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        "/api/auth/logout",
+    )
+
     app.add_middleware(JWTAuthMiddleware)
 
     app.add_middleware(
         CSRFMiddleware,
-        exempt_paths=(
-            "/csrf/token",
-            "/docs",
-            "/redoc",
-            "/openapi.json",
-            "/exports",
-            # Dynamic report export / preview / execute-sql are called via trusted backends (Node/Next),
-            # which already enforce auth and CSRF. Skip Python-side CSRF here to avoid 403s.
-            "/api/reports/dynamic",
-            "/api/reports/dynamic/preview",
-            "/api/reports/execute-sql",
-        ),
+        exempt_paths=CSRF_EXEMPT_PATHS,
     )
 
     # CORS MUST be the outermost middleware so it can handle preflight (OPTIONS) before auth/CSRF
-    # Build from .env: CORS_ORIGINS (comma-separated) or FRONTEND_ORIGIN; fallback to localhost
+    # Bank requirement: trusted origins only, no wildcard; restrict methods and headers (R-WAPT05)
     _cors_env = os.getenv("CORS_ORIGINS", "").strip()
     if _cors_env:
         allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
@@ -100,17 +103,24 @@ def create_app() -> FastAPI:
             os.getenv("FRONTEND_ORIGIN", "https://grc-reporting-uat.adib.co.eg").strip(),
             "http://127.0.0.1:3000",
             "https://grc-reporting-uat.adib.co.eg",
+            "https://grc-reporting-node-uat.adib.co.eg",
         ]
     _extra = os.getenv("FRONTEND_ORIGIN")
     if _extra and _extra not in allowed_origins and _extra != "*":
         allowed_origins.append(_extra)
+    # Never allow "*" in production
+    if is_production() and "*" in allowed_origins:
+        allowed_origins = [o for o in allowed_origins if o != "*"]
+
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RateLimitMiddleware)
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With", "X-CSRF-Token"],
         expose_headers=["X-Export-Src"],
     )
 

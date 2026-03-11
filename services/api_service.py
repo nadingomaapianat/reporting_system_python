@@ -1,18 +1,30 @@
 """
-API service for communicating with Node.js backend
+API service for communicating with Node.js backend.
+Outbound HTTPS uses bank CA cert (certs.pem) when CERT_PATH/CERTS_PEM_PATH is set — same as new_adib_backend.
 """
 import aiohttp
 import asyncio
 import json
 from typing import Dict, Any, Optional, List
 from config import API_CONFIG
+from utils.https_cert import get_ssl_context_for_outbound
+
+
+def _make_connector():
+    """Reusable connector with bank CA for HTTPS when configured."""
+    ctx = get_ssl_context_for_outbound()
+    if ctx:
+        return aiohttp.TCPConnector(ssl=ctx)
+    return None
+
 
 class APIService:
     """Service for API communications"""
-    
+
     def __init__(self):
         self.node_api_url = API_CONFIG['node_api_url']
         self.timeout = API_CONFIG['timeout']
+        self._connector = _make_connector()
     
     async def get_risks_data(
         self,
@@ -39,7 +51,7 @@ class APIService:
             
             # Add reasonable connect/read timeouts to avoid long hangs
             timeout = aiohttp.ClientTimeout(total=self.timeout, connect=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, connector=self._connector) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -82,7 +94,7 @@ class APIService:
             
             # Increase timeout for complex queries
             timeout = aiohttp.ClientTimeout(total=self.timeout, connect=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, connector=self._connector) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -124,7 +136,7 @@ class APIService:
             if function_id:
                 params['functionId'] = function_id
             
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=self._connector) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -180,7 +192,7 @@ class APIService:
             if function_id:
                 params['functionId'] = function_id
 
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout, connect=10)) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout, connect=10), connector=self._connector) as session:
                 async with session.get(url, params=params) as response:
                     if response.status != 200:
                         return []
@@ -235,7 +247,7 @@ class APIService:
             if function_id:
                 params['functionId'] = function_id
             
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=self._connector) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -280,7 +292,7 @@ class APIService:
                 params['groupName'] = group_name
             if function_id:
                 params['functionId'] = function_id
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=self._connector) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         return await response.json()
@@ -311,7 +323,7 @@ class APIService:
                 params['groupName'] = group_name
             if function_id:
                 params['functionId'] = function_id
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=self._connector) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -349,7 +361,7 @@ class APIService:
                 params['groupName'] = group_name
             if function_id:
                 params['functionId'] = function_id
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=self._connector) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         return await response.json()
@@ -380,7 +392,7 @@ class APIService:
                 params['groupName'] = group_name
             if function_id:
                 params['functionId'] = function_id
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=self._connector) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
