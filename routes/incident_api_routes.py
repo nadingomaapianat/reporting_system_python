@@ -35,10 +35,20 @@ db_service = incident_service
 router = APIRouter()
 
 
+def _forward_auth_headers(request: Request) -> dict:
+    """Build headers to forward to Node API so it can authenticate the request (e.g. for incidentActionPlan table)."""
+    out = {}
+    if request.headers.get("cookie"):
+        out["Cookie"] = request.headers.get("cookie")
+    if request.headers.get("authorization"):
+        out["Authorization"] = request.headers.get("authorization")
+    return out
+
+
 # Incidents: PDF export
 
 
-@router.get("/api/grc/incidents/export-pdf")
+@router.api_route("/api/grc/incidents/export-pdf", methods=["GET", "POST"])
 async def export_incidents_pdf(
     request: Request,
     startDate: str = Query(None),
@@ -51,8 +61,16 @@ async def export_incidents_pdf(
     onlyOverallTable: str = Query("False"),
     tableType: str = Query(None),
     functionId: str = Query(None)
-):  
-    """Export incidents report in PDF format (service-backed like controls)."""
+):
+    """Export incidents report in PDF format (GET or POST with optional body.incidentActionPlan for Incident Action Plan)."""
+    incident_action_plan_override = None
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            if isinstance(body, dict) and "incidentActionPlan" in body:
+                incident_action_plan_override = body.get("incidentActionPlan")
+        except Exception:
+            pass
     try:
         write_debug(f"[INCIDENTS PDF] startDate={startDate} endDate={endDate}")
         write_debug(f"[INCIDENTS PDF] cardType={cardType} onlyCard={onlyCard} onlyChart={onlyChart}")
@@ -199,6 +217,15 @@ async def export_incidents_pdf(
             data = await incident_service.get_loss_by_risk_category(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'comprehensiveOperationalLoss':
             data = await incident_service.get_comprehensive_operational_loss(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
+
+        # Incident Action Plan table (from dashboard payload; forward auth so Node returns data, or use body override from frontend)
+        elif cardType == 'incidentActionPlan':
+            if incident_action_plan_override is not None:
+                data = list(incident_action_plan_override) if isinstance(incident_action_plan_override, list) else []
+            else:
+                forward_headers = _forward_auth_headers(request)
+                full = await api_service.get_incidents_data(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, headers=forward_headers)
+                data = (full.get('incidentActionPlan') or []) if isinstance(full, dict) else []
           
         """
         elif cardType == 'createdDeletedIncidentsPerQuarter':
@@ -272,7 +299,7 @@ async def export_incidents_pdf(
         write_debug(f"[INCIDENTS PDF] Export failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
 
-@router.get("/api/grc/incidents/export-excel")
+@router.api_route("/api/grc/incidents/export-excel", methods=["GET", "POST"])
 async def export_incidents_excel(
     request: Request,
     startDate: str = Query(None),
@@ -283,11 +310,24 @@ async def export_incidents_excel(
     onlyChart: str = Query("False"),
     chartType: str = Query(None),
     onlyOverallTable: str = Query("False"),
-    tableType: str = Query(None)
+    tableType: str = Query(None),
+    functionId: str = Query(None),
 ):
-    """Export incidents report in Excel format (service-backed like controls)."""
-   
+    """Export incidents report in Excel format (GET or POST with optional body.incidentActionPlan for Incident Action Plan)."""
+    incident_action_plan_override = None
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            if isinstance(body, dict) and "incidentActionPlan" in body:
+                incident_action_plan_override = body.get("incidentActionPlan")
+        except Exception:
+            pass
     try:
+        # Extract user and function params so export uses same filters as Node/UI (e.g. Incidents Financial Details count matches)
+        user_id, group_name, function_id = extract_user_and_function_params(request)
+        if functionId:
+            from routes.route_utils import clean_function_id
+            function_id = clean_function_id(functionId)
         write_debug(f"Exporting incidents report in Excel format for {startDate} to {endDate}")
         write_debug(f"cardType: {cardType}")
         write_debug(f"onlyCard: {onlyCard}")
@@ -344,88 +384,97 @@ async def export_incidents_excel(
         data = None
         
         if cardType == 'totalIncidents':
-            data = await incident_service.get_incidents_list(startDate, endDate)
+            data = await incident_service.get_incidents_list(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'pendingPreparer':
             write_debug(f"[INCIDENTS PDF] fetching pending preparer incidents for {startDate} to {endDate}")
-            data = await incident_service.get_incidents_by_status('pendingPreparer', startDate, endDate)
+            data = await incident_service.get_incidents_by_status('pendingPreparer', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'pendingChecker':
-            data = await incident_service.get_incidents_by_status('pendingChecker', startDate, endDate)
+            data = await incident_service.get_incidents_by_status('pendingChecker', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'pendingReviewer':
-            data = await incident_service.get_incidents_by_status('pendingReviewer', startDate, endDate)
+            data = await incident_service.get_incidents_by_status('pendingReviewer', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'pendingAcceptance':
-            data = await incident_service.get_incidents_by_status('pendingAcceptance', startDate, endDate)
+            data = await incident_service.get_incidents_by_status('pendingAcceptance', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
             
       
         # Charts
         elif cardType == 'byCategory':
-            data = await incident_service.get_incidents_by_category(startDate, endDate)
+            data = await incident_service.get_incidents_by_category(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'byStatus':
-            data = await incident_service.get_incidents_by_status_distribution(startDate, endDate)
+            data = await incident_service.get_incidents_by_status_distribution(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'monthlyTrend':
-            data = await incident_service.get_incidents_monthly_trend(startDate, endDate)
+            data = await incident_service.get_incidents_monthly_trend(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'incidentsTimeSeries':
-            data = await incident_service.get_incidents_time_series(startDate, endDate)
+            data = await incident_service.get_incidents_time_series(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'topFinancialImpacts':
-            data = await incident_service.get_incidents_top_financial_impacts(startDate, endDate)
+            data = await incident_service.get_incidents_top_financial_impacts(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         
         elif cardType == 'incidentsByEventType':
-            data = await incident_service.get_incidents_by_event_type(startDate, endDate)
+            data = await incident_service.get_incidents_by_event_type(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'incidentsByFinancialImpact':
-            data = await incident_service.get_incidents_by_financial_impact(startDate, endDate)
+            data = await incident_service.get_incidents_by_financial_impact(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'netLossAndRecovery':
-            data = await incident_service.get_incidents_net_loss_recovery(startDate, endDate)
+            data = await incident_service.get_incidents_net_loss_recovery(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         # Pending buckets and totals/list
       
         #tables
         elif cardType == 'overallStatuses':
-            data = await incident_service.get_incidents_status_overview(startDate, endDate)
+            data = await incident_service.get_incidents_status_overview(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'incidentsFinancialDetails':
-            data = await incident_service.get_incidents_financial_details(startDate, endDate)
+            data = await incident_service.get_incidents_financial_details(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'incidentsWithTimeframe':
-            data = await incident_service.get_incidents_with_timeframe(startDate, endDate)
+            data = await incident_service.get_incidents_with_timeframe(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'incidentsWithFinancialAndFunction':
-            data = await incident_service.get_incidents_with_financial_and_function(startDate, endDate)
+            data = await incident_service.get_incidents_with_financial_and_function(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         
         # Operational Loss Metrics - Cards
         elif cardType == 'atmTheftCount':
-            data = await incident_service.get_atm_theft_incidents(startDate, endDate)
+            data = await incident_service.get_atm_theft_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'avgRecognitionTime':
-            data = await incident_service.get_incidents_with_recognition_time(startDate, endDate)
+            data = await incident_service.get_incidents_with_recognition_time(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'internalFraudCount':
-            data = await incident_service.get_internal_fraud_incidents(startDate, endDate)
+            data = await incident_service.get_internal_fraud_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'externalFraudCount':
-            data = await incident_service.get_external_fraud_incidents(startDate, endDate)
+            data = await incident_service.get_external_fraud_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'physicalAssetDamageCount':
-            data = await incident_service.get_physical_asset_damage_incidents(startDate, endDate)
+            data = await incident_service.get_physical_asset_damage_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'peopleErrorCount':
-            data = await incident_service.get_people_error_incidents(startDate, endDate)
+            data = await incident_service.get_people_error_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'internalFraudLoss':
-            data = await incident_service.get_internal_fraud_incidents(startDate, endDate)
+            data = await incident_service.get_internal_fraud_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'externalFraudLoss':
-            data = await incident_service.get_external_fraud_incidents(startDate, endDate)
+            data = await incident_service.get_external_fraud_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'physicalAssetLoss':
-            data = await incident_service.get_physical_asset_damage_incidents(startDate, endDate)
+            data = await incident_service.get_physical_asset_damage_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'peopleErrorLoss':
-            data = await incident_service.get_people_error_incidents(startDate, endDate)
+            data = await incident_service.get_people_error_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         
         # Operational Loss Metrics - Charts
         elif cardType == 'operationalLossValue':
-            data = await incident_service.get_operational_loss_value_monthly(startDate, endDate)
+            data = await incident_service.get_operational_loss_value_monthly(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'monthlyTrendByType':
-            data = await incident_service.get_monthly_trend_by_incident_type(startDate, endDate)
+            data = await incident_service.get_monthly_trend_by_incident_type(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         
         # Operational Loss Metrics - Tables
         elif cardType == 'lossByRiskCategory':
-            data = await incident_service.get_loss_by_risk_category(startDate, endDate)
+            data = await incident_service.get_loss_by_risk_category(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'comprehensiveOperationalLoss':
-            data = await incident_service.get_comprehensive_operational_loss(startDate, endDate)
+            data = await incident_service.get_comprehensive_operational_loss(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
+
+        # Incident Action Plan table (from dashboard payload; forward auth so Node returns data, or use body override from frontend)
+        elif cardType == 'incidentActionPlan':
+            if incident_action_plan_override is not None:
+                data = list(incident_action_plan_override) if isinstance(incident_action_plan_override, list) else []
+            else:
+                forward_headers = _forward_auth_headers(request)
+                full = await api_service.get_incidents_data(startDate, endDate, headers=forward_headers)
+                data = (full.get('incidentActionPlan') or []) if isinstance(full, dict) else []
 
        
         elif cardType == 'incidentsReduced':
-            data = await incident_service.get_incidents_reduced(startDate, endDate)
+            data = await incident_service.get_incidents_reduced(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'newIncidents':
             write_debug(f"[INCIDENTS PDF] fetching new incidents for {startDate} to {endDate}")
-            data = await incident_service.get_new_incidents(startDate, endDate)
+            data = await incident_service.get_new_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
 
 
         
@@ -474,9 +523,6 @@ async def export_incidents_excel(
             }
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
-
-
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
 
 

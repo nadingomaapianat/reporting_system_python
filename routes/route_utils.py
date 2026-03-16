@@ -68,21 +68,31 @@ def extract_user_and_function_params(request: Any) -> tuple[Optional[str], Optio
     """
     Extract user_id, group_name, and function_id from request.
     Returns: (user_id, group_name, function_id)
+    Sources: request.state.user (JWT), or X-User-Id / X-Group-Name headers (when Node proxies with auth).
     """
     user_id = None
     group_name = None
     function_id = None
-    
+
     # Extract user info from request.state (set by JWTAuthMiddleware)
     if hasattr(request, 'state') and hasattr(request.state, 'user'):
         user = request.state.user
         user_id = str(user.get('id', '')) if user.get('id') else None
         group_name = user.get('group') or user.get('groupName') or None
-    
+
+    # When export is proxied through Node, user context is sent via headers (no JWT on Python)
+    if not user_id and hasattr(request, 'headers'):
+        user_id = request.headers.get('X-User-Id') or request.headers.get('x-user-id')
+        group_name = group_name or request.headers.get('X-Group-Name') or request.headers.get('x-group-name')
+    if user_id and isinstance(user_id, str):
+        user_id = user_id.strip() or None
+    if group_name and isinstance(group_name, str):
+        group_name = group_name.strip() or None
+
     # Extract functionId from query parameters
     function_id = request.query_params.get('functionId') or request.query_params.get('function_id')
     function_id = clean_function_id(function_id)
-    
+
     return user_id, group_name, function_id
 
 
@@ -294,14 +304,130 @@ async def save_and_log_export(
     # Always prefer cardType for filename even if header config has a different title
     filename_title = "Report"
     if card_type:
-        # Convert cardType to readable name (e.g., "pendingPreparer" -> "Pending_Preparer")
-        filename_title = card_type
-        # Add spaces before capital letters
         import re
-        filename_title = re.sub(r'([A-Z])', r' \1', filename_title).strip()
-        filename_title = filename_title.replace('_', ' ').title()
-        # Replace spaces with underscores for filename
-        filename_title = filename_title.replace(' ', '_')
+        # Incidents: use proper display names for charts/cards (avoid "Charts - Analysis" or generic names)
+        if dashboard == "incidents":
+            INCIDENT_CARD_FILENAME_MAP = {
+                "totalIncidents": "Total_Incidents",
+                "pendingPreparer": "Incidents_Pending_Preparer",
+                "pendingChecker": "Incidents_Pending_Checker",
+                "pendingReviewer": "Incidents_Pending_Reviewer",
+                "pendingAcceptance": "Incidents_Pending_Acceptance",
+                "incidentsByCategory": "Incidents_by_Category",
+                "byCategory": "Incidents_by_Category",
+                "incidentsByStatus": "Incidents_by_Status",
+                "byStatus": "Incidents_by_Status",
+                "incidentsByStatusDistribution": "Incidents_by_Status_Distribution",
+                "incidentsByEventType": "Incidents_by_Event_Type",
+                "incidentsByFinancialImpact": "Incidents_by_Financial_Impact",
+                "monthlyTrendByType": "Incidents_Monthly_Trend_by_Type",
+                "monthlyTrend": "Incidents_Monthly_Trend",
+                "incidentsTimeSeries": "Incidents_Time_Series",
+                "newIncidentsByMonth": "New_Incidents_by_Month",
+                "topFinancialImpacts": "Top_Financial_Impacts",
+                "netLossAndRecovery": "Net_Loss_by_Incident",
+                "incidentActionPlanByStatus": "Incident_Action_Plan_by_Status",
+                "comprehensiveOperationalLoss": "Comprehensive_Operational_Loss",
+                "lossByRiskCategory": "Loss_Analysis_by_Risk_Category",
+                "incidentsWithTimeframe": "Incidents_With_Timeframe",
+                "incidentsWithFinancialAndFunction": "Incidents_With_Financial_And_Function",
+                "incidentsFinancialDetails": "Incidents_Financial_Details",
+                "atmTheftCount": "ATM_Theft_Events",
+                "avgRecognitionTime": "Avg_Time_to_Recognize_Losses",
+                "internalFraudCount": "Internal_Frauds_Count",
+                "externalFraudCount": "External_Frauds_Count",
+                "physicalAssetDamageCount": "Physical_Asset_Damage_Count",
+                "peopleErrorCount": "People_Error_Count",
+                "internalFraudLoss": "Internal_Fraud_Loss",
+                "externalFraudLoss": "External_Fraud_Loss",
+                "physicalAssetLoss": "Physical_Asset_Loss",
+                "peopleErrorLoss": "People_Error_Loss",
+                "incidentActionPlan": "Incident_Action_Plan",
+                "overallStatuses": "Overall_Incident_Statuses",
+            }
+            filename_title = INCIDENT_CARD_FILENAME_MAP.get(
+                card_type,
+                re.sub(r'([A-Z])', r' \1', card_type).strip().replace('_', ' ').title().replace(' ', '_')
+            )
+        elif dashboard == "controls":
+            CONTROLS_FILENAME_MAP = {
+                "totalControls": "Total_Controls",
+                "unmappedControls": "Unmapped_Controls",
+                "testsPendingPreparer": "Control_Tests_Pending_Preparer",
+                "testsPendingChecker": "Control_Tests_Pending_Checker",
+                "testsPendingReviewer": "Control_Tests_Pending_Reviewer",
+                "testsPendingAcceptance": "Control_Tests_Pending_Acceptance",
+                "unmappedIcofrControls": "Unmapped_ICOFR_Controls_to_COSO",
+                "unmappedNonIcofrControls": "Unmapped_Non_ICOFR_Controls_to_COSO",
+                "quarterlyControlCreationTrend": "Quarterly_Control_Creation_Trend",
+                "controlsByType": "Controls_by_Type",
+                "antiFraudDistribution": "Anti_Fraud_vs_Non_Anti_Fraud_Controls",
+                "controlsPerLevel": "Controls_per_Control_Level",
+                "controlExecutionFrequency": "Control_Execution_Frequency",
+                "numberOfControlsByIcofrStatus": "Number_of_Controls_by_ICOFR_Status",
+                "numberOfFocusPointsPerPrinciple": "Number_of_Focus_Points_per_Principle",
+                "numberOfFocusPointsPerComponent": "Number_of_Focus_Points_per_Component",
+                "numberOfControlsPerComponent": "Number_of_Controls_per_Component",
+                "actionPlansStatus": "Action_Plans_Status",
+                "keyNonKeyControlsPerDepartment": "Key_vs_Non_Key_Controls_per_Department",
+                "keyNonKeyControlsPerProcess": "Key_vs_Non_Key_Controls_per_Process",
+                "keyNonKeyControlsPerBusinessUnit": "Key_vs_Non_Key_Controls_per_Business_Unit",
+                "controlCountByAssertionName": "Control_Count_by_Assertion_Name",
+                "icofrControlCoverageByCoso": "ICOFR_Control_Coverage_by_COSO_Component",
+                "actionPlanForAdequacy": "Action_Plan_for_Adequacy",
+                "actionPlanForEffectiveness": "Action_Plan_for_Effectiveness",
+                "controlSubmissionStatusByQuarterFunction": "Control_Submission_Status_by_Quarter_and_Function",
+                "functionsWithFullyTestedControlTests": "Functions_with_Fully_Tested_Control_Tests",
+                "controlsNotMappedToAssertions": "Controls_not_mapped_to_any_Assertions",
+                "controlsNotMappedToPrinciples": "Controls_not_mapped_to_any_Principles",
+                "controlsTestingApprovalCycle": "Controls_Testing_Approval_Cycle",
+                "overallStatuses": "Control_Creation_Approval_Cycle",
+                "controlsByFunction": "Controls_by_Function",
+                "department": "Controls_by_Department",
+                "risk": "Controls_by_Risk_Response",
+            }
+            filename_title = CONTROLS_FILENAME_MAP.get(
+                card_type,
+                re.sub(r'([A-Z])', r' \1', card_type).strip().replace('_', ' ').title().replace(' ', '_')
+            )
+        elif dashboard == "kris":
+            KRI_FILENAME_MAP = {
+                "totalKris": "Total_KRIs",
+                "pendingPreparer": "KRIs_Pending_Preparer",
+                "pendingChecker": "KRIs_Pending_Checker",
+                "pendingReviewer": "KRIs_Pending_Reviewer",
+                "pendingAcceptance": "KRIs_Pending_Acceptance",
+                "krisByStatus": "KRIs_by_Status",
+                "krisByLevel": "KRIs_by_Risk_Level",
+                "breachedKRIsByDepartment": "Breached_KRIs_by_Function",
+                "kriAssessmentCount": "KRI_Assessment_Count_by_Function",
+                "kriCountsByFrequency": "KRIs_by_Frequency",
+                "kriCountsByMonthYear": "KRIs_Count_by_Month_Year",
+                "kriRisksByKriName": "Risks_by_KRI_Name",
+                "kriOverdueStatusCounts": "KRIs_Overdue_Status",
+                "kriMonthlyAssessment": "Monthly_KRI_Assessments_stacked",
+                "deletedKrisPerMonth": "Deleted_KRIs_Per_Month",
+                "overallKris": "Overall_KRI_Statuses",
+                "kriStatus": "Overall_KRI_Statuses",
+                "allKrisSubmittedByFunction": "KRIs_Submission_Status_by_Function",
+                "activeKrisDetails": "Active_KRIs_Details",
+                "overdueKrisByDepartment": "Overdue_KRIs_by_Function",
+                "kriWithoutLinkedRisks": "KRIs_Without_Linked_Risks",
+                "krisWithoutLinkedRisks": "KRIs_Without_Linked_Risks",
+                "kriRiskRelationships": "KRI_to_Risk_Relationships",
+                "kriDetailsWithActionPlans": "KRI_Details_Action_Plans",
+            }
+            filename_title = KRI_FILENAME_MAP.get(
+                card_type,
+                re.sub(r'([A-Z])', r' \1', card_type).strip().replace('_', ' ').title().replace(' ', '_')
+            )
+        else:
+            # Convert cardType to readable name (e.g., "pendingPreparer" -> "Pending_Preparer")
+            filename_title = card_type
+            filename_title = re.sub(r'([A-Z])', r' \1', filename_title).strip()
+            filename_title = filename_title.replace('_', ' ').title()
+            # Replace spaces with underscores for filename
+            filename_title = filename_title.replace(' ', '_')
     elif header_config and header_config.get("title"):
         # Fallback to header title if no card_type
         filename_title = header_config.get("title", "Report")
@@ -515,7 +641,9 @@ async def save_and_log_export(
                         (export_title, relative_path, file_extension, dashboard, export_type, created_by_value, user_id)
                     )
                     conn.commit()
-                    export_id = cursor.execute("SELECT @@IDENTITY").fetchone()[0]
+                    cursor.execute("SELECT @@IDENTITY")
+                    row = cursor.fetchone()
+                    export_id = row[0] if row else None
                     write_debug(f"[Save Export] Successfully created new export record ID: {export_id} for {relative_path} (type: {export_type}, user_id: {user_id})")
                 except Exception as insert_err:
                     write_debug(f"[Save Export] ERROR inserting record: {str(insert_err)}")
@@ -692,7 +820,9 @@ def generate_excel_report(columns, data_rows, header_config=None):
     
     wb = Workbook()
     ws = wb.active
-    ws.title = header_config.get('title', 'Dynamic Report')
+    # Excel sheet title max 31 chars
+    sheet_title = (header_config.get('title') or 'Dynamic Report').strip()
+    ws.title = sheet_title[:31] if len(sheet_title) > 31 else sheet_title
     # Use smaller page margins so tables use more space
     try:
         from openpyxl.worksheet.page import PageMargins

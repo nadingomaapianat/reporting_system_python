@@ -338,21 +338,22 @@ class RiskService:
         """Get total risks count"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
         elif start_date:
-            date_filter = f"AND createdAt >= '{start_date}'"
+            date_filter = f"AND r.createdAt >= '{start_date}'"
         elif end_date:
-            date_filter = f"AND createdAt <= '{end_date}'"
+            date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("Risks", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, function_id)
         
         query = f"""
-        SELECT code ,name ,FORMAT(CONVERT(datetime, createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
-        FROM {self.get_fully_qualified_table_name('Risks')}
-        WHERE isDeleted = 0 AND deletedAt IS NULL {date_filter} 
+        SELECT r.code, r.name, FORMAT(CONVERT(datetime, r.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+          ISNULL({self._risk_function_name_subquery('r')}, 'Unknown') AS function_name
+        FROM {self.get_fully_qualified_table_name('Risks')} r
+        WHERE r.isDeleted = 0 AND r.deletedAt IS NULL {date_filter}
         {function_filter}
-        ORDER BY createdAt DESC
+        ORDER BY r.createdAt DESC
         """
         
         return await self.execute_query(query)
@@ -375,14 +376,15 @@ class RiskService:
             date_filter = f"AND createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("Risks", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, function_id)
         
         query = f"""
-        SELECT code ,name, inherent_value
-        FROM {self.get_fully_qualified_table_name('Risks')}
-        WHERE isDeleted = 0 AND deletedAt IS NULL AND inherent_value = 'High' {date_filter}
+        SELECT r.code, r.name, r.inherent_value,
+          ISNULL({self._risk_function_name_subquery('r')}, 'Unknown') AS function_name
+        FROM {self.get_fully_qualified_table_name('Risks')} r
+        WHERE r.isDeleted = 0 AND r.deletedAt IS NULL AND r.inherent_value = 'High' {date_filter}
         {function_filter}
-        ORDER BY createdAt DESC
+        ORDER BY r.createdAt DESC
         """
         
         return await self.execute_query(query)
@@ -405,14 +407,15 @@ class RiskService:
             date_filter = f"AND createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("Risks", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, function_id)
         
         query = f"""
-        SELECT code ,name, inherent_value
-        FROM {self.get_fully_qualified_table_name('Risks')}
-        WHERE isDeleted = 0 AND deletedAt IS NULL AND inherent_value = 'Medium' {date_filter}
+        SELECT r.code, r.name, r.inherent_value,
+          ISNULL({self._risk_function_name_subquery('r')}, 'Unknown') AS function_name
+        FROM {self.get_fully_qualified_table_name('Risks')} r
+        WHERE r.isDeleted = 0 AND r.deletedAt IS NULL AND r.inherent_value = 'Medium' {date_filter}
         {function_filter}
-        ORDER BY createdAt DESC
+        ORDER BY r.createdAt DESC
         """
         
         return await self.execute_query(query)
@@ -435,18 +438,16 @@ class RiskService:
             date_filter = f"AND createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("Risks", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, function_id)
         
         query = f"""
-        SELECT code ,name, inherent_value
-        FROM {self.get_fully_qualified_table_name('Risks')}
-        WHERE isDeleted = 0 AND deletedAt IS NULL AND inherent_value = 'Low' {date_filter}
+        SELECT r.code, r.name, r.inherent_value,
+          ISNULL({self._risk_function_name_subquery('r')}, 'Unknown') AS function_name
+        FROM {self.get_fully_qualified_table_name('Risks')} r
+        WHERE r.isDeleted = 0 AND r.deletedAt IS NULL AND r.inherent_value = 'Low' {date_filter}
         {function_filter}
-        ORDER BY createdAt DESC
+        ORDER BY r.createdAt DESC
         """
-
-        
-        
         return await self.execute_query(query)
     
     async def get_risks_reduced_count(
@@ -495,6 +496,60 @@ class RiskService:
         
         return await self.execute_query(query, params)
 
+    async def get_risks_reduced(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Return list of risks with reduction (inherent > residual), matching Node getRiskReduction.
+        Residual date filter applied only when both start_date and end_date are provided;
+        otherwise all reduced risks are returned so export count matches dashboard card.
+        """
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_risk_function_filter("r", access, function_id)
+
+        residual_date_filter = ""
+        params = []
+        if start_date and end_date:
+            import re
+            if re.match(r"^\d{4}-\d{2}-\d{2}", str(start_date).strip()) and re.match(r"^\d{4}-\d{2}-\d{2}", str(end_date).strip()):
+                start = str(start_date).strip()[:10]
+                end = str(end_date).strip()[:10]
+                residual_date_filter = " AND rr.createdAt >= %s AND rr.createdAt <= %s"
+                params = [f"{start}", f"{end} 23:59:59"]
+
+        risks_t = self.get_fully_qualified_table_name("Risks")
+        # Match Node: table name is Residualrisks (lowercase 'r' in risks)
+        residual_t = self.get_fully_qualified_table_name("Residualrisks")
+        inherent_case = "CASE WHEN r.inherent_value = 'High' THEN 3 WHEN r.inherent_value = 'Medium' THEN 2 WHEN r.inherent_value = 'Low' THEN 1 ELSE 0 END"
+        residual_case = "CASE WHEN rr.residual_value = 'High' THEN 3 WHEN rr.residual_value = 'Medium' THEN 2 WHEN rr.residual_value = 'Low' THEN 1 ELSE 0 END"
+
+        query = f"""
+        SELECT
+            r.id AS risk_id,
+            r.code AS code,
+            r.name AS risk_name,
+            ISNULL({self._risk_function_name_subquery('r')}, 'Unknown') AS function_name,
+            r.inherent_value AS inherent_level,
+            rr.residual_value AS residual_level,
+            ({inherent_case}) AS inherent_value,
+            ({residual_case}) AS residual_value,
+            (({inherent_case}) - ({residual_case})) AS reduction,
+            rr.createdAt AS created_at
+        FROM {risks_t} r
+        INNER JOIN {residual_t} rr ON r.id = rr.riskId AND rr.isDeleted = 0
+        WHERE r.isDeleted = 0
+        {residual_date_filter}
+        {function_filter}
+        AND (({inherent_case}) - ({residual_case})) > 0
+        ORDER BY ({inherent_case}) - ({residual_case}) DESC
+        """
+        result = await self.execute_query(query, params if params else None)
+        return result if result else []
 
     async def get_new_risks(
         self,
@@ -514,14 +569,15 @@ class RiskService:
             date_filter = f"AND createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("Risks", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, function_id)
         
         query = f"""
-        SELECT code, name, FORMAT(CONVERT(datetime, createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
-        FROM {self.get_fully_qualified_table_name('Risks')}
-        WHERE isDeleted = 0 AND deletedAt IS NULL AND DATEDIFF(month, createdAt, GETDATE()) = 0 {date_filter}
+        SELECT r.code, r.name, FORMAT(CONVERT(datetime, r.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+          ISNULL({self._risk_function_name_subquery('r')}, 'Unknown') AS function_name
+        FROM {self.get_fully_qualified_table_name('Risks')} r
+        WHERE r.isDeleted = 0 AND r.deletedAt IS NULL AND DATEDIFF(month, r.createdAt, GETDATE()) = 0 {date_filter}
         {function_filter}
-        ORDER BY createdAt DESC
+        ORDER BY r.createdAt DESC
         """
 
         write_debug(f"[RiskService] get_new_risks SQL: {query}")
