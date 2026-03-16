@@ -36,43 +36,7 @@ db_service = control_service
 # Create router
 router = APIRouter()
 
-# Display names for controls cards, charts, and tables (used for PDF/Excel title and filenames)
-CONTROLS_DISPLAY_NAMES = {
-    "totalControls": "Total Controls",
-    "unmappedControls": "Unmapped Controls",
-    "testsPendingPreparer": "Control Tests Pending Preparer",
-    "testsPendingChecker": "Control Tests Pending Checker",
-    "testsPendingReviewer": "Control Tests Pending Reviewer",
-    "testsPendingAcceptance": "Control Tests Pending Acceptance",
-    "unmappedIcofrControls": "Unmapped ICOFR Controls to COSO",
-    "unmappedNonIcofrControls": "Unmapped Non-ICOFR Controls to COSO",
-    "quarterlyControlCreationTrend": "Quarterly Control Creation Trend",
-    "controlsByType": "Controls by Type",
-    "antiFraudDistribution": "Anti-Fraud vs Non Anti-Fraud Controls",
-    "controlsPerLevel": "Controls per Control Level",
-    "controlExecutionFrequency": "Control Execution Frequency",
-    "numberOfControlsByIcofrStatus": "Number of Controls by ICOFR Status",
-    "numberOfFocusPointsPerPrinciple": "Number of Focus Points per Principle",
-    "numberOfFocusPointsPerComponent": "Number of Focus Points per Component",
-    "numberOfControlsPerComponent": "Number of Controls per Component",
-    "actionPlansStatus": "Action Plans Status",
-    "keyNonKeyControlsPerDepartment": "Key vs Non-Key Controls per Department",
-    "keyNonKeyControlsPerProcess": "Key vs Non-Key Controls per Process",
-    "keyNonKeyControlsPerBusinessUnit": "Key vs Non-Key Controls per Business Unit",
-    "controlCountByAssertionName": "Control Count by Assertion Name",
-    "icofrControlCoverageByCoso": "ICOFR Control Coverage by COSO Component",
-    "actionPlanForAdequacy": "Action Plan for Adequacy",
-    "actionPlanForEffectiveness": "Action Plan for Effectiveness",
-    "controlSubmissionStatusByQuarterFunction": "Control Submission Status by Quarter and Function",
-    "functionsWithFullyTestedControlTests": "Functions with Fully Tested Control Tests",
-    "controlsNotMappedToAssertions": "Controls not mapped to any Assertions",
-    "controlsNotMappedToPrinciples": "Controls not mapped to any Principles",
-    "controlsTestingApprovalCycle": "Controls Testing Approval Cycle",
-    "overallStatuses": "Control Creation Approval Cycle",
-    "controlsByFunction": "Controls by Function",
-    "department": "Controls by Department",
-    "risk": "Controls by Risk Response",
-}
+
 
 
 @router.get("/api/grc/controls/export-pdf")
@@ -126,11 +90,6 @@ async def export_controls_pdf(
         # Require cardType for exports
         if not cardType:
             raise HTTPException(status_code=400, detail="cardType or chartType is required for exports")
-
-        # Set report title to the display name for this card/chart/table (PDF title and Excel sheet name)
-        header_config["title"] = CONTROLS_DISPLAY_NAMES.get(
-            cardType, header_config.get("title", "Controls Report")
-        )
 
         # Extract user and function parameters
         user_id, group_name, function_id = extract_user_and_function_params(request)
@@ -350,11 +309,6 @@ async def export_controls_excel(
         # Require cardType for exports
         if not cardType:
             raise HTTPException(status_code=400, detail="cardType or chartType is required for exports")
-
-        # Set report title to the display name for this card/chart/table (PDF title and Excel sheet name)
-        header_config["title"] = CONTROLS_DISPLAY_NAMES.get(
-            cardType, header_config.get("title", "Controls Report")
-        )
 
         # Initialize container for data
 

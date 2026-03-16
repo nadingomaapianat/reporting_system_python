@@ -475,22 +475,19 @@ async def generate_dynamic_report(request: Request):
                 new_rec.update(rec)
                 indexed_rows.append(new_rec)
             
-            # Use the modified columns and data (indexed_rows are dicts, used for chart logic)
+            # Use the modified columns and data
             columns = columns_with_index
+            data_rows = indexed_rows
             
-            write_debug(f"[Dynamic Report] Added index column, total columns: {len(columns)}, total rows: {len(indexed_rows)}")
+            write_debug(f"[Dynamic Report] Added index column, total columns: {len(columns)}, total rows: {len(data_rows)}")
             
             # Get header configuration from request body
             header_config = body.get('headerConfig', {}) or {}
             from utils.export_utils import get_default_header_config
             default_config = get_default_header_config("dynamic")
             merged_config = {**default_config, **header_config}
-            # Use "Transaction Report" title for dynamic/transaction reports (default when type is transaction or not dashboard)
-            export_type = body.get('type')
-            if export_type != 'dashboard':
-                merged_config['title'] = 'Transaction Report'
 
-            # If frontend sent chartConfig, convert it to chart_data for Excel/PDF (use indexed_rows = list of dicts)
+            # If frontend sent chartConfig, convert it to chart_data for Excel/PDF
             chart_cfg = header_config.get('chartConfig') if isinstance(header_config, dict) else None
             if chart_cfg:
                 x_key = chart_cfg.get('xKey')
@@ -508,7 +505,7 @@ async def generate_dynamic_report(request: Request):
 
                     numeric_samples = [
                         to_float_safe(row.get(y_key))
-                        for row in indexed_rows
+                        for row in data_rows
                         if row.get(y_key) not in (None, '', ' ')
                     ]
                     y_is_numeric = any(v is not None for v in numeric_samples)
@@ -519,7 +516,7 @@ async def generate_dynamic_report(request: Request):
                     if chart_type == 'pie' and not y_is_numeric:
                         # For pie with non-numeric Y, count occurrences of Y values
                         counts: dict[str, int] = defaultdict(int)
-                        for row in indexed_rows:
+                        for row in data_rows:
                             y_val = str(row.get(y_key) or '').strip()
                             if y_val:
                                 counts[y_val] += 1
@@ -528,7 +525,7 @@ async def generate_dynamic_report(request: Request):
                     else:
                         # Aggregate by X; sum numeric Y or count rows if non-numeric
                         agg: dict[str, float] = defaultdict(float)
-                        for row in indexed_rows:
+                        for row in data_rows:
                             x_val = str(row.get(x_key) or '').strip()
                             y_raw = row.get(y_key)
                             if not x_val or y_raw in (None, '', ' '):
@@ -551,8 +548,8 @@ async def generate_dynamic_report(request: Request):
                         }
                         write_debug(f"[Dynamic Report] chart_data prepared with {len(labels)} labels for chart export")
             
-            # Excel/PDF/Word generators expect list of lists (values in column order), not list of dicts.
-            data_rows = [[row.get(col, '') for col in columns] for row in indexed_rows]
+            # Get export type from request (transaction or dashboard)
+            export_type = body.get('type')
             
             # Generate report based on format
             report_content = None
