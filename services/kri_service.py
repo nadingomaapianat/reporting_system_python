@@ -297,7 +297,7 @@ class KriService:
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return list of all KRIs"""
+        """Return list of all KRIs with same columns as UI Total KRIs modal (code, kri_name, function_name, frequency, threshold, added_by_name, assigned_person_name, type, type_percentage_or_figure, rcm_functions, risk_mapping, status, created_by_name, kri_status, first_approval, review, second_approval, createdAt)."""
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -308,28 +308,50 @@ class KriService:
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, function_id)
-        
+
+        # Match Node getTotalKris catalog columns for Excel/UI parity
         query = f"""
-        SELECT 
+        SELECT
             k.code,
-            k.kriName as kri_name,
-            k.threshold,
-            k.isAscending as is_ascending,
-            k.kri_level,
-            k.status,
-            FORMAT(CONVERT(datetime, k.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
-            ISNULL(f.name, 'Unknown') as function_name
+            k.kriName AS kri_name,
+            ISNULL(f.name, '') AS function_name,
+            ISNULL(k.frequency, '') AS frequency,
+            ISNULL(k.threshold, '') AS threshold,
+            ISNULL(added_by_u.name, '') AS added_by_name,
+            ISNULL(assigned_u.name, '') AS assigned_person_name,
+            ISNULL(k.type, '') AS type,
+            ISNULL(k.typePercentageOrFigure, '') AS type_percentage_or_figure,
+            (SELECT STRING_AGG(f2.name, ', ') WITHIN GROUP (ORDER BY f2.name)
+             FROM KriFunctions kf
+             INNER JOIN Functions f2 ON f2.id = kf.function_id AND f2.deletedAt IS NULL AND f2.isDeleted = 0
+             WHERE kf.kri_id = k.id AND kf.deletedAt IS NULL) AS rcm_functions,
+            (SELECT STRING_AGG(r.name, ', ') WITHIN GROUP (ORDER BY r.name)
+             FROM KriRisks kr
+             INNER JOIN Risks r ON r.id = kr.risk_id AND r.deletedAt IS NULL
+             WHERE kr.kri_id = k.id AND kr.deletedAt IS NULL) AS risk_mapping,
+            ISNULL(k.status, '') AS status,
+            ISNULL(created_by_u.name, '') AS created_by_name,
+            CASE
+                WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Draft'
+                WHEN ISNULL(k.reviewerStatus, '') = 'sent' THEN 'Review Sent'
+                WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
+                ELSE 'In Progress'
+            END AS kri_status,
+            CASE WHEN ISNULL(k.checkerStatus, '') = 'approved' THEN 'Approved' WHEN ISNULL(k.checkerStatus, '') = 'refused' THEN 'Refused' ELSE 'Pending' END AS first_approval,
+            CASE WHEN ISNULL(k.reviewerStatus, '') = 'sent' THEN 'Sent' ELSE 'Pending' END AS review,
+            CASE WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved' WHEN ISNULL(k.acceptanceStatus, '') = 'refused' THEN 'Refused' ELSE 'Pending' END AS second_approval,
+            FORMAT(CONVERT(datetime, k.createdAt), 'yyyy-MM-dd HH:mm:ss') AS createdAt
         FROM Kris k
-        LEFT JOIN Functions f ON k.related_function_id = f.id
-          AND f.isDeleted = 0
-          AND f.deletedAt IS NULL
-        WHERE k.isDeleted = 0 
-          AND k.deletedAt IS NULL
+        LEFT JOIN Functions f ON k.related_function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
+        LEFT JOIN users added_by_u ON k.addedBy = added_by_u.id AND added_by_u.deletedAt IS NULL
+        LEFT JOIN users assigned_u ON k.assignedPersonId = assigned_u.id AND assigned_u.deletedAt IS NULL
+        LEFT JOIN users created_by_u ON k.created_by = created_by_u.id AND created_by_u.deletedAt IS NULL
+        WHERE k.isDeleted = 0 AND k.deletedAt IS NULL
           {date_filter}
           {function_filter}
         ORDER BY k.createdAt DESC
         """
-        write_debug(f"Query: {query}")
+        write_debug(f"get_kris_list query (truncated): SELECT ... FROM Kris k ...")
         return await self.execute_query(query)
 
     async def get_kris_by_status_detail(
@@ -361,6 +383,7 @@ class KriService:
             SELECT 
                 k.code,
                 k.kriName as kri_name,
+                ISNULL(f.name, 'Unknown') AS function_name,
                 CASE 
                     -- 1) Pending preparer: preparerStatus is anything other than 'sent'
                     WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
@@ -375,7 +398,8 @@ class KriService:
                     ELSE 'Other'
                 END AS status,
                 FORMAT(CONVERT(datetime, k.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
-            FROM Kris k
+            FROM {self.get_fully_qualified_table_name('Kris')} k
+            LEFT JOIN {self.get_fully_qualified_table_name('Functions')} f ON k.related_function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
             WHERE k.isDeleted = 0 AND k.deletedAt IS NULL {date_filter}
             {function_filter}
         )

@@ -46,9 +46,36 @@ db_service = kri_service
 # Create router
 router = APIRouter()
 
+# Display names for KRI cards, charts, and tables (used for PDF/Excel title and filenames)
+KRI_DISPLAY_NAMES = {
+    "totalKris": "Total KRIs",
+    "pendingPreparer": "KRIs Pending Preparer",
+    "pendingChecker": "KRIs Pending Checker",
+    "pendingReviewer": "KRIs Pending Reviewer",
+    "pendingAcceptance": "KRIs Pending Acceptance",
+    "krisByStatus": "KRIs by Status",
+    "krisByLevel": "KRIs by Risk Level",
+    "breachedKRIsByDepartment": "Breached KRIs by Function",
+    "kriAssessmentCount": "KRI Assessment Count by Function",
+    "kriCountsByFrequency": "KRIs by Frequency",
+    "kriCountsByMonthYear": "KRIs Count by Month/Year",
+    "kriRisksByKriName": "Risks by KRI Name",
+    "kriOverdueStatusCounts": "KRIs Overdue Status",
+    "kriMonthlyAssessment": "Monthly KRI Assessments (stacked)",
+    "deletedKrisPerMonth": "Deleted KRIs Per Month",
+    "overallKris": "Overall KRI Statuses",
+    "kriStatus": "Overall KRI Statuses",
+    "allKrisSubmittedByFunction": "KRIs Submission Status by Function",
+    "activeKrisDetails": "Active KRIs Details",
+    "overdueKrisByDepartment": "Overdue KRIs by Function",
+    "kriWithoutLinkedRisks": "KRIs Without Linked Risks",
+    "krisWithoutLinkedRisks": "KRIs Without Linked Risks",
+    "kriRiskRelationships": "KRI to Risk Relationships",
+    "kriDetailsWithActionPlans": "KRI Details & Action Plans",
+}
 
 
-@router.get("/api/grc/kris/export/pdf")
+@router.api_route("/api/grc/kris/export/pdf", methods=["GET", "POST"])
 async def export_kris_pdf(
     request: Request,
     startDate: str = Query(None),
@@ -62,7 +89,23 @@ async def export_kris_pdf(
     tableType: str = Query(None),
     functionId: str = Query(None)
 ):
-    """Export KRIs dashboard to PDF (service-backed like incidents)."""
+    """Export KRIs dashboard to PDF (GET or POST with optional body.totalKrisList or body.kriDetailsWithActionPlans)."""
+    kri_details_override = None
+    total_kris_list_override = None
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                if "totalKrisList" in body:
+                    total_kris_list_override = body.get("totalKrisList")
+                    if not isinstance(total_kris_list_override, list):
+                        total_kris_list_override = []
+                if "kriDetailsWithActionPlans" in body:
+                    kri_details_override = body.get("kriDetailsWithActionPlans")
+                    if not isinstance(kri_details_override, list):
+                        kri_details_override = []
+        except Exception:
+            pass
     global kri_service
     try:
         write_debug(f"[KRIS PDF] startDate={startDate} endDate={endDate}")
@@ -111,6 +154,11 @@ async def export_kris_pdf(
         if not cardType:
             raise HTTPException(status_code=400, detail="cardType or chartType is required for exports")
 
+        # Set report title to the display name for this card/chart/table (PDF title and Excel sheet name)
+        header_config["title"] = KRI_DISPLAY_NAMES.get(
+            cardType, header_config.get("title", "KRI Report")
+        )
+
         write_debug(f"[KRIS PDF] normalized cardType={cardType}")
 
         # Extract user and function parameters
@@ -141,8 +189,12 @@ async def export_kris_pdf(
         
         # Status counts (metrics) - return lists for card export
         if cardType == 'totalKris' or cardType == 'krisList':
-            write_debug('jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj')
-            data = await kri_service.get_kris_list(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
+            if total_kris_list_override is not None:
+                data = total_kris_list_override
+                write_debug(f"[KRIS PDF] using totalKrisList from POST body, len={len(data)}")
+            else:
+                write_debug('jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj')
+                data = await kri_service.get_kris_list(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'pendingPreparer':
             data = await kri_service.get_kris_by_status_detail('pendingPreparer', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'pendingChecker':
@@ -193,6 +245,26 @@ async def export_kris_pdf(
             data = await kri_service.get_kri_risk_relationships(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'kriWithoutLinkedRisks' or cardType == 'krisWithoutLinkedRisks':
             data = await kri_service.get_kris_without_linked_risks(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
+        elif cardType == 'kriDetailsWithActionPlans':
+            # Use POST body if provided (frontend fetches from Node with auth); else fetch from Node
+            if kri_details_override is not None:
+                data = kri_details_override
+                write_debug(f"[KRIS PDF] using kriDetailsWithActionPlans from POST body, len={len(data)}")
+            else:
+                forward_headers = {}
+                if request.headers.get("authorization"):
+                    forward_headers["Authorization"] = request.headers.get("authorization")
+                if request.headers.get("cookie"):
+                    forward_headers["Cookie"] = request.headers.get("cookie")
+                dashboard = await api_service.get_kris_data(
+                    start_date=startDate,
+                    end_date=endDate,
+                    user_id=user_id,
+                    group_name=group_name,
+                    function_id=function_id,
+                    headers=forward_headers if forward_headers else None,
+                )
+                data = dashboard.get("kriDetailsWithActionPlans") or []
         else:
             raise HTTPException(status_code=400, detail=f"Unknown cardType: {cardType}")
 
@@ -245,7 +317,7 @@ async def export_kris_pdf(
         write_debug(f"[KRIS PDF] Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
 
-@router.get("/api/grc/kris/export/excel")
+@router.api_route("/api/grc/kris/export/excel", methods=["GET", "POST"])
 async def export_kris_excel(
     request: Request,
     startDate: str = Query(None),
@@ -256,9 +328,26 @@ async def export_kris_excel(
     onlyChart: str = Query("False"),
     chartType: str = Query(None),
     onlyOverallTable: str = Query("False"),
-    tableType: str = Query(None)
+    tableType: str = Query(None),
+    functionId: str = Query(None)
 ):
-    """Export KRIs dashboard to Excel (service-backed like incidents)."""
+    """Export KRIs dashboard to Excel (GET or POST with optional body.totalKrisList or body.kriDetailsWithActionPlans)."""
+    kri_details_override = None
+    total_kris_list_override = None
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                if "totalKrisList" in body:
+                    total_kris_list_override = body.get("totalKrisList")
+                    if not isinstance(total_kris_list_override, list):
+                        total_kris_list_override = []
+                if "kriDetailsWithActionPlans" in body:
+                    kri_details_override = body.get("kriDetailsWithActionPlans")
+                    if not isinstance(kri_details_override, list):
+                        kri_details_override = []
+        except Exception:
+            pass
     global kri_service
     try:
         write_debug(f"Exporting KRIs report in Excel format for {startDate} to {endDate}")
@@ -308,6 +397,17 @@ async def export_kris_excel(
         if not cardType:
             raise HTTPException(status_code=400, detail="cardType or chartType is required for exports")
 
+        # Set report title to the display name for this card/chart/table (PDF title and Excel sheet name)
+        header_config["title"] = KRI_DISPLAY_NAMES.get(
+            cardType, header_config.get("title", "KRI Report")
+        )
+
+        # Extract user and function parameters (needed for kriDetailsWithActionPlans and filtering)
+        user_id, group_name, function_id = extract_user_and_function_params(request)
+        if functionId:
+            from routes.route_utils import clean_function_id
+            function_id = clean_function_id(functionId)
+
         if not kri_service:
             write_debug("[KRIS EXCEL] ERROR: kri_service is None - attempting to reinitialize")
             try:
@@ -327,7 +427,11 @@ async def export_kris_excel(
         
         # Status counts (metrics) - return lists for card export
         if cardType == 'totalKris' or cardType == 'krisList':
-            data = await kri_service.get_kris_list(startDate, endDate)
+            if total_kris_list_override is not None:
+                data = total_kris_list_override
+                write_debug(f"[KRIS EXCEL] using totalKrisList from POST body, len={len(data)}")
+            else:
+                data = await kri_service.get_kris_list(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'pendingPreparer':
             data = await kri_service.get_kris_by_status_detail('pendingPreparer', startDate, endDate)
         elif cardType == 'pendingChecker':
@@ -378,6 +482,25 @@ async def export_kris_excel(
             data = await kri_service.get_kri_risk_relationships(startDate, endDate)
         elif cardType == 'kriWithoutLinkedRisks' or cardType == 'krisWithoutLinkedRisks':
             data = await kri_service.get_kris_without_linked_risks(startDate, endDate)
+        elif cardType == 'kriDetailsWithActionPlans':
+            if kri_details_override is not None:
+                data = kri_details_override
+                write_debug(f"[KRIS EXCEL] using kriDetailsWithActionPlans from POST body, len={len(data)}")
+            else:
+                forward_headers = {}
+                if request.headers.get("authorization"):
+                    forward_headers["Authorization"] = request.headers.get("authorization")
+                if request.headers.get("cookie"):
+                    forward_headers["Cookie"] = request.headers.get("cookie")
+                dashboard = await api_service.get_kris_data(
+                    start_date=startDate,
+                    end_date=endDate,
+                    user_id=user_id,
+                    group_name=group_name,
+                    function_id=function_id,
+                    headers=forward_headers if forward_headers else None,
+                )
+                data = dashboard.get("kriDetailsWithActionPlans") or []
         else:
             raise HTTPException(status_code=400, detail=f"Unknown cardType: {cardType}")
 

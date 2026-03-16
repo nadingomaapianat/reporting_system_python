@@ -79,6 +79,22 @@ DEFAULT_HEADER_CONFIGS = {
         'tableHeaderBgColor': '#E3F2FD',
         'tableBodyBgColor': '#F5F5F5'
     },
+    'kris': {
+        'title': 'KRI DASHBOARD REPORT',
+        'subtitle': 'Comprehensive Analysis Report',
+        'showLogo': True,
+        'logoSize': 'medium',
+        'bankName': 'PIANAT.AI',
+        'bankAddress': 'Bank address',
+        'bankPhone': 'Bank phone',
+        'bankUrl': 'www.website.com',
+        'watermarkEnabled': True,
+        'watermarkText': 'CONFIDENTIAL',
+        'fontColor': '#1F4E79',
+        'tableHeaderBgColor': '#E3F2FD',
+        'tableHeaderFontColor': '#000000',
+        'tableBodyBgColor': '#F5F5F5'
+    },
     'controls': {
         'title': 'CONTROLS DASHBOARD REPORT',
         'subtitle': 'Comprehensive Analysis Report',
@@ -92,6 +108,38 @@ DEFAULT_HEADER_CONFIGS = {
         'watermarkText': 'CONFIDENTIAL',
         'fontColor': '#1F4E79',
         'tableHeaderBgColor': '#E3F2FD',
+        'tableBodyBgColor': '#F5F5F5'
+    },
+    'incidents': {
+        'title': 'INCIDENTS DASHBOARD REPORT',
+        'subtitle': 'Comprehensive Analysis Report',
+        'showLogo': True,
+        'logoSize': 'medium',
+        'bankName': 'PIANAT.AI',
+        'bankAddress': 'Bank address',
+        'bankPhone': 'Bank phone',
+        'bankUrl': 'www.website.com',
+        'watermarkEnabled': True,
+        'watermarkText': 'CONFIDENTIAL',
+        'fontColor': '#1F4E79',
+        'tableHeaderBgColor': '#E3F2FD',
+        'tableHeaderFontColor': '#000000',
+        'tableBodyBgColor': '#F5F5F5'
+    },
+    'dynamic': {
+        'title': 'Transaction Report',
+        'subtitle': 'Dynamic report from selected tables and columns',
+        'showLogo': True,
+        'logoSize': 'medium',
+        'bankName': 'PIANAT.AI',
+        'bankAddress': 'Bank address',
+        'bankPhone': 'Bank phone',
+        'bankUrl': 'www.website.com',
+        'watermarkEnabled': True,
+        'watermarkText': 'CONFIDENTIAL',
+        'fontColor': '#1F4E79',
+        'tableHeaderBgColor': '#E3F2FD',
+        'tableHeaderFontColor': '#000000',
         'tableBodyBgColor': '#F5F5F5'
     }
 }
