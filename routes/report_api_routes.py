@@ -648,6 +648,7 @@ async def generate_dynamic_report(request: Request):
 async def get_dynamic_dashboard_charts():
     """
     List saved dynamic dashboard charts created from Transaction Reports.
+    Requires Authorization: Bearer <JWT> (same token as Node backend). Call without it returns 401.
     """
     try:
         import json

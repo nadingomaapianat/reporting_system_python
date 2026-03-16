@@ -15,7 +15,9 @@ JWT_ALGORITHM = "HS256"
 security = HTTPBearer(auto_error=False)
 
 # Public paths: only these can be called WITHOUT JWT.
-# Every other API requires both Authorization (Bearer token) and, for POST/PUT/PATCH/DELETE, x-csrf-token.
+# Every other API requires Authorization: Bearer <token> (and for POST/PUT/PATCH/DELETE, x-csrf-token).
+# Clients (e.g. frontend at grc-reporting-uat) must send the same JWT in the Authorization header
+# when calling this API (e.g. GET /api/reports/dynamic-dashboard/charts) or they receive 401.
 PUBLIC_PATHS = [
     "/csrf/token",              # Must be public: client gets CSRF token here first
     "/api/auth/validate-token",  # Must be public: validates token (no token yet on first load)

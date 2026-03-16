@@ -6,9 +6,8 @@ import re
 import glob
 import unicodedata
 import httpx
-import httpx
-
 import pandas as pd
+from utils.https_cert import get_httpx_verify
 from PyPDF2 import PdfReader
 from docx import Document
 from pdf2image import convert_from_bytes
@@ -59,7 +58,7 @@ class BankCheckService:
         webhook_url = os.getenv('OCR_WEBHOOK_URL')
         if webhook_url:
             try:
-                with httpx.Client(timeout=60) as client:
+                with httpx.Client(timeout=60, verify=get_httpx_verify()) as client:
                     files = {'file': ('upload.pdf', pdf_bytes, 'application/pdf')}
                     resp = client.post(webhook_url, files=files)
                     if resp.status_code == 200:
@@ -182,7 +181,7 @@ class BankCheckService:
         webhook_url = os.getenv('OCR_WEBHOOK_URL')
         if webhook_url:
             try:
-                with httpx.Client(timeout=60) as client:
+                with httpx.Client(timeout=60, verify=get_httpx_verify()) as client:
                     files = {'file': ('upload.pdf', pdf_bytes, 'application/pdf')}
                     resp = client.post(webhook_url, files=files)
                     if resp.status_code == 200:

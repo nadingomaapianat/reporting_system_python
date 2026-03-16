@@ -6,6 +6,7 @@ import os
 import json
 import httpx
 from datetime import datetime
+from utils.https_cert import get_httpx_verify
 from typing import Dict, Any, Tuple, List
 from pathlib import Path
 from io import BytesIO
@@ -30,7 +31,7 @@ class EnhancedBankCheckService:
     async def extract_check_data(self, file_bytes: bytes, filename: str) -> Dict[str, Any]:
         """Extract data from check image using webhook"""
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
+            async with httpx.AsyncClient(timeout=60, verify=get_httpx_verify()) as client:
                 files = {
                     'file': (filename, file_bytes, 'application/octet-stream')
                 }

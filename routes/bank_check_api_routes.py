@@ -18,6 +18,7 @@ DashboardActivityService = None  # type: ignore
 from utils.export_utils import get_default_header_config
 from models import ExportRequest, ExportResponse
 from routes.route_utils import write_debug, parse_header_config, merge_header_config, convert_to_boolean
+from utils.https_cert import get_httpx_verify
 
 # Initialize services
 api_service = APIService()
@@ -102,7 +103,7 @@ async def debug_bank_check(
         content = await file.read()
         webhook_url = os.getenv('OCR_WEBHOOK_URL')
         if webhook_url:
-            async with httpx.AsyncClient(timeout=60) as client:
+            async with httpx.AsyncClient(timeout=60, verify=get_httpx_verify()) as client:
                 files = {
                     'file': (file.filename or 'upload.bin', content, file.content_type or 'application/octet-stream')
                 }
