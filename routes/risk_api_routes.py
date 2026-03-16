@@ -124,7 +124,7 @@ async def export_risks_pdf(
             write_debug(f"[RISKS PDF] medium risks data: {data}")
         elif cardType == 'low':
             data = await risk_service.get_low_risks(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
-        elif cardType == 'risksReduced':
+        elif cardType in ('reduction', 'risksReduced'):
             data = await risk_service.get_risks_reduced(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'newRisks':
             write_debug(f"[RISKS PDF] fetching new risks for {startDate} to {endDate}")
@@ -293,7 +293,7 @@ async def export_risks_excel(
             data = await risk_service.get_medium_risks(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'low':
             data = await risk_service.get_low_risks(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
-        elif cardType == 'risksReduced':
+        elif cardType in ('reduction', 'risksReduced'):
             data = await risk_service.get_risks_reduced(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
         elif cardType == 'newRisks':
             data = await risk_service.get_new_risks(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)

@@ -106,6 +106,11 @@ class ControlService:
             AND cf.deletedAt IS NULL
         )
         """
+
+    def _control_function_name_subquery(self, control_alias: str = "c") -> str:
+        """SQL fragment for control function name(s), comma-separated (mirrors Node)."""
+        cf, f = "cf", "f"
+        return f"""(SELECT STRING_AGG({f}.name, ', ') WITHIN GROUP (ORDER BY {f}.name) FROM {self.get_fully_qualified_table_name('ControlFunctions')} {cf} INNER JOIN {self.get_fully_qualified_table_name('Functions')} {f} ON {f}.id = {cf}.function_id WHERE {cf}.control_id = {control_alias}.id AND {cf}.deletedAt IS NULL)"""
     
     async def execute_query(self, query: str, params: Optional[List] = None) -> List[Dict[str, Any]]:
         """Execute a SQL query and return results"""
@@ -194,7 +199,8 @@ class ControlService:
         SELECT 
             c.name, 
             c.code, 
-            CASE WHEN c.createdAt IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(c.createdAt AS DATETIME), 105) ELSE NULL END AS createdAt
+            CASE WHEN c.createdAt IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(c.createdAt AS DATETIME), 105) ELSE NULL END AS createdAt,
+            ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS function_name
         FROM {self.get_fully_qualified_table_name('Controls')} c
         WHERE c.isDeleted = 0 AND c.deletedAt IS NULL {date_filter}
         {function_filter}
@@ -326,8 +332,9 @@ class ControlService:
         SELECT 
             c.code as control_code,
             c.name as control_name,
-            c.{status_field} as status
-        FROM dbo.[Controls] c
+            c.{status_field} as status,
+            ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS function_name
+        FROM {self.get_fully_qualified_table_name('Controls')} c
         WHERE c.isDeleted = 0 AND c.deletedAt IS NULL {date_filter}
           AND {where_clause}
         {function_filter}
@@ -355,7 +362,8 @@ class ControlService:
         query = f"""
         SELECT c.id, c.name as control_name, c.code as control_code, a.name as assertion_name, a.account_type as assertion_type,
           'Not Mapped' as coso_component,
-          'Not Mapped' as coso_point
+          'Not Mapped' as coso_point,
+          ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS function_name
         FROM {self.get_fully_qualified_table_name('Controls')} c 
         JOIN {self.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id 
         WHERE c.isDeleted = 0 AND c.icof_id IS NOT NULL 
@@ -448,7 +456,8 @@ class ControlService:
         query = f"""
         SELECT 
             c.code as control_code,
-            c.name as control_name
+            c.name as control_name,
+            ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS function_name
         FROM {self.get_fully_qualified_table_name('Controls')} c 
         WHERE c.isDeleted = 0 {date_filter}
           AND NOT EXISTS (
@@ -479,7 +488,8 @@ class ControlService:
         query = f"""
         SELECT c.id, c.name as control_name, c.code as control_code, a.name as assertion_name, a.account_type as assertion_type,
           'Not Mapped' as coso_component,
-          'Not Mapped' as coso_point
+          'Not Mapped' as coso_point,
+          ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS function_name
         FROM {self.get_fully_qualified_table_name('Controls')} c 
         LEFT JOIN {self.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id 
         WHERE c.isDeleted = 0 

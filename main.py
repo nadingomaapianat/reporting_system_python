@@ -104,9 +104,9 @@ def create_app() -> FastAPI:
     else:
         allowed_origins = [
            
-            os.getenv("FRONTEND_ORIGIN", "https://reporting-system-frontend.pianat.ai").strip(),
+            os.getenv("FRONTEND_ORIGIN", "http://localhost:3000").strip(),
             "http://127.0.0.1:3000",
-            "https://reporting-system-frontend.pianat.ai",
+            "http://localhost:3000",
         ]
     _extra = os.getenv("FRONTEND_ORIGIN")
     if _extra and _extra not in allowed_origins and _extra != "*":

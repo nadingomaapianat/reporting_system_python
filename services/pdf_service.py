@@ -165,7 +165,7 @@ class PDFService:
                     if isinstance(data, list) and data:
                         first_item = data[0]
                         if isinstance(first_item, dict):
-                            keys = list(first_item.keys())
+                            keys = [k for k in first_item.keys() if str(k).lower() != 'id']
                             if len(keys) >= 2:
                                 key1 = keys[0]
                                 key2 = keys[-1]
@@ -222,12 +222,11 @@ class PDFService:
                 if isinstance(table_rows, list) and table_rows:
                     first_item = table_rows[0]
                     if isinstance(first_item, dict):
-                        raw_keys = list(first_item.keys())
-                        def nice(k: str) -> str:
-                            return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
-                        columns = ['#'] + [nice(k) for k in raw_keys]
+                        from utils.export_utils import get_incident_ordered_keys_pdf, get_incident_label, get_incident_cell_value
+                        raw_keys = get_incident_ordered_keys_pdf(first_item)
+                        columns = ['#'] + [get_incident_label(k) for k in raw_keys]
                         for i, row in enumerate(table_rows, 1):
-                            values = [str(row.get(k, '')) for k in raw_keys]
+                            values = [get_incident_cell_value(row, k) for k in raw_keys]
                             data_rows.append([str(i)] + values)
                     elif isinstance(first_item, (list, tuple)):
                         num_cols = len(first_item)
@@ -257,29 +256,30 @@ class PDFService:
                     if isinstance(first_item, dict):
                         write_debug(f"DEBUG: first_item keys: {list(first_item.keys())}")
                         
-                        # Special handling for status-based card types (similar to controls)
+                        # Status cards: compact columns with Function and readable Created At
                         if card_type in ['pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance']:
-                            write_debug(f"DEBUG: Creating columns for status card type: ['#', 'Code', 'Title', 'Status', 'Created At']")
-                            columns = ["#", "Code", "Title", "Status", "Created At"]
+                            from utils.export_utils import format_cell_value_for_export
+                            columns = ["#", "Code", "Title", "Function", "Status", "Created At"]
                             data_rows = []
                             for i, item in enumerate(data, 1):
+                                fn = item.get('function_name') or item.get('functionName') or 'N/A'
+                                created = format_cell_value_for_export('createdAt', item.get('createdAt', '')) or 'N/A'
                                 data_rows.append([
                                     str(i),
                                     str(item.get('code', 'N/A')),
                                     str(item.get('title', 'N/A')),
+                                    str(fn),
                                     str(item.get('status', 'N/A')),
-                                    str(item.get('createdAt', 'N/A'))
+                                    created
                                 ])
-                            write_debug(f"DEBUG: Created {len(data_rows)} rows with columns: {columns}")
+                            write_debug(f"DEBUG: Created {len(data_rows)} rows (status card)")
                         else:
-                            # Generic handling for other card types
-                            def nice(k: str) -> str:
-                                return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
-                            raw_keys = list(first_item.keys())
-                            columns = ['#'] + [nice(k) for k in raw_keys]
-                            write_debug(f"DEBUG: Generic handling - columns: {columns}")
+                            # Other cards: PDF subset of columns (fewer columns = fits on page, no layout errors)
+                            from utils.export_utils import get_incident_ordered_keys_pdf, get_incident_label, get_incident_cell_value
+                            raw_keys = get_incident_ordered_keys_pdf(first_item)
+                            columns = ['#'] + [get_incident_label(k) for k in raw_keys]
                             for i, item in enumerate(data, 1):
-                                values = [str(item.get(k, 'N/A')) for k in raw_keys]
+                                values = [get_incident_cell_value(item, k) for k in raw_keys]
                                 data_rows.append([str(i)] + values)
                             write_debug(f"DEBUG: Created {len(data_rows)} rows")
                     else:
@@ -438,7 +438,7 @@ class PDFService:
                     if isinstance(kris_data, list) and kris_data:
                         first_item = kris_data[0]
                         if isinstance(first_item, dict):
-                            keys = list(first_item.keys())
+                            keys = [k for k in first_item.keys() if str(k).lower() != 'id']
                             if len(keys) >= 2:
                                 key1 = keys[0]
                                 key2 = keys[-1]
@@ -494,12 +494,62 @@ class PDFService:
                 if isinstance(table_rows, list) and table_rows:
                     first_item = table_rows[0]
                     if isinstance(first_item, dict):
-                        raw_keys = list(first_item.keys())
+                        # Exclude nested/complex keys from table (e.g. kriDetailsWithActionPlans has valuesByPeriod)
+                        exclude_keys = {'id', 'valuesbyperiod'}
+                        raw_keys = [k for k in first_item.keys() if str(k).lower() not in exclude_keys]
                         def nice(k: str) -> str:
+                            if k == 'function_name':
+                                return 'Function'
                             return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
                         columns = ['#'] + [nice(k) for k in raw_keys]
+                        # Add "Values & Action Plans" column for kriDetailsWithActionPlans (periods ; separated, action plans | separated)
+                        if card_type == 'kriDetailsWithActionPlans':
+                            def format_values_by_period_pdf(row):
+                                periods = row.get('valuesByPeriod') or row.get('valuesbyperiod') or []
+                                if not isinstance(periods, list) or not periods:
+                                    return 'No values'
+                                month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                                unit = '%' if (row.get('measurable_unit') or '').lower() == 'percentage' else ''
+                                parts = []
+                                for p in periods:
+                                    if not isinstance(p, dict):
+                                        continue
+                                    month, year = p.get('month'), p.get('year')
+                                    value, assessment = p.get('value'), (p.get('assessment') or '').strip() or 'N/A'
+                                    month_str = f"{month_names[int(month) - 1]} {year}" if month and year else 'N/A'
+                                    val_str = f"{value}{unit}" if value is not None else 'N/A'
+                                    period_line = f"{month_str} – Value: {val_str} {assessment}"
+                                    action_plans = p.get('actionPlans') or p.get('actionplans') or []
+                                    if isinstance(action_plans, list) and action_plans:
+                                        ap_parts = []
+                                        for ap in action_plans:
+                                            if not isinstance(ap, dict):
+                                                continue
+                                            proc = ap.get('control_procedure') or 'N/A'
+                                            impl = ap.get('implementation_date')
+                                            if impl and hasattr(impl, 'strftime'):
+                                                impl = impl.strftime('%b %d, %Y')
+                                            elif impl and isinstance(impl, str):
+                                                try:
+                                                    from datetime import datetime
+                                                    dt = datetime.strptime(impl.split('.')[0][:10], '%Y-%m-%d')
+                                                    impl = dt.strftime('%b %d, %Y')
+                                                except Exception:
+                                                    impl = str(impl)
+                                            else:
+                                                impl = 'N/A'
+                                            bu = ap.get('business_unit') or 'N/A'
+                                            ap_parts.append(f"{proc} · {impl} · {bu}")
+                                        period_line += " | " + " | ".join(ap_parts)
+                                    else:
+                                        period_line += " | No action plan"
+                                    parts.append(period_line)
+                                return " ; ".join(parts) if parts else 'No values'
+                            columns.append('Values & Action Plans')
                         for i, row in enumerate(table_rows, 1):
                             values = [str(row.get(k, '')) for k in raw_keys]
+                            if card_type == 'kriDetailsWithActionPlans':
+                                values.append(format_values_by_period_pdf(row))
                             data_rows.append([str(i)] + values)
                     elif isinstance(first_item, (list, tuple)):
                         num_cols = len(first_item)
@@ -524,11 +574,22 @@ class PDFService:
                         first_item = kris_data[0]
                         if isinstance(first_item, dict):
                             def nice(k: str) -> str:
+                                if k == 'function_name':
+                                    return 'Function'
+                                if k == 'kri_name':
+                                    return 'KRI Name'
+                                if k == 'type_percentage_or_figure':
+                                    return 'Measurable Unit'
                                 return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
-                            raw_keys = list(first_item.keys())
+                            # Total KRIs card: use only a subset of columns in PDF to avoid layout errors (Excel keeps all columns)
+                            if card_type == 'totalKris' or card_type == 'krisList':
+                                pdf_keys = ['code', 'kri_name', 'function_name', 'frequency', 'threshold', 'status', 'createdAt']
+                                raw_keys = [k for k in pdf_keys if k in first_item]
+                            else:
+                                raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
                             columns = ['#'] + [nice(k) for k in raw_keys]
                             for i, item in enumerate(kris_data, 1):
-                                values = [str(item.get(k, 'N/A')) for k in raw_keys]
+                                values = [str(item.get(k, 'N/A'))[:200] for k in raw_keys]  # truncate long text for PDF
                                 data_rows.append([str(i)] + values)
                         else:
                             columns = ['#', 'Value']
@@ -731,9 +792,11 @@ class PDFService:
                 if isinstance(data, list) and len(data) > 0:
                     first_item = data[0]
                     if isinstance(first_item, dict):
-                        raw_keys = list(first_item.keys())
-                        # Human-readable column labels
+                        raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
+                        # Human-readable column labels (Function for function_name to match UI)
                         def nice(k: str) -> str:
+                            if k == 'function_name':
+                                return 'Function'
                             return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
                         columns = ['#'] + [nice(k) for k in raw_keys]
                         data_rows = []
@@ -783,26 +846,28 @@ class PDFService:
                         write_debug(f"  - first_item keys: {list(first_item.keys())}")
                         # Determine columns based on cardType
                         if cardType in ['pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance', 'testsPendingPreparer', 'testsPendingChecker', 'testsPendingReviewer', 'testsPendingAcceptance','unmappedControls','unmappedIcofrControls','unmappedNonIcofrControls','totalControls']:
-                            write_debug(f"  - Creating columns: ['#', 'Control Code', 'Control Name']")
-                            columns = ["#", "Control Code", "Control Name"]
+                            write_debug(f"  - Creating columns: ['#', 'Control Code', 'Control Name', 'Function']")
+                            columns = ["#", "Control Code", "Control Name", "Function"]
                             data_rows = []
                             for i, item in enumerate(data, 1):
                                 data_rows.append([
                                     str(i),
                                     item.get('control_code', item.get('code', 'N/A')),
-                                    item.get('control_name', item.get('name', 'N/A'))
+                                    item.get('control_name', item.get('name', 'N/A')),
+                                    str(item.get('function_name', ''))
                                 ])
                             write_debug(f"  - Created {len(data_rows)} rows with columns: {columns}")
                         else:
                             # Generic handling for other card types
                             write_debug(f"  - Generic handling")
-                            columns = ["#", "Code", "Name"]
+                            columns = ["#", "Code", "Name", "Function"]
                             data_rows = []
                             for i, item in enumerate(data, 1):
                                 data_rows.append([
                                     str(i),
                                     item.get('code', 'N/A'),
-                                    item.get('name', 'N/A')
+                                    item.get('name', 'N/A'),
+                                    str(item.get('function_name', ''))
                                 ])
                             write_debug(f"  - Created {len(data_rows)} rows with columns: {columns}")
                 elif isinstance(data, dict):
@@ -869,7 +934,7 @@ class PDFService:
                 if isinstance(data, list) and data:
                     first_item = data[0]
                     if isinstance(first_item, dict):
-                        keys = list(first_item.keys())
+                        keys = [k for k in first_item.keys() if str(k).lower() != 'id']
                         def fmt(k: str) -> str:
                             return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', k).title()
                         
@@ -943,6 +1008,7 @@ class PDFService:
 
             # TABLE EXPORT
             elif only_overall_table:
+                from utils.export_utils import format_cell_value_for_export
                 write_debug("DEBUG: ===== only_overall_table START =====")
                 write_debug(f"  - data type: {type(data)}")
                 if isinstance(data, list) and data:
@@ -950,7 +1016,7 @@ class PDFService:
                     if isinstance(first_item, dict):
                         # Special formatting for allRisks table
                         if card_type == 'allRisks':
-                            columns = ['#', 'Risk Name', 'Risk Description', 'Event', 'Inherent Value', 'Frequency', 'Financial Impact']
+                            columns = ['#', 'Risk Name', 'Risk Description', 'Event', 'Function', 'Inherent Value', 'Frequency', 'Financial Impact']
                             def map_frequency(val):
                                 mapping = {1: 'Once in Three Years', 2: 'Annually', 3: 'Half Yearly', 4: 'Quarterly', 5: 'Monthly'}
                                 try:
@@ -971,13 +1037,16 @@ class PDFService:
                                     str(row.get('RiskName', '')),
                                     str(row.get('RiskDesc', '')),
                                     str(row.get('RiskEventName', 'Unknown')),
+                                    str(row.get('function_name', '')),
                                     str(row.get('InherentValue', '')),
                                     map_frequency(row.get('InherentFrequency', '')),
                                     map_financial(row.get('InherentFinancialValue', '')),
                                 ])
                         else:
-                            raw_keys = list(first_item.keys())
+                            raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
                             def nice(k: str) -> str:
+                                if k == 'function_name':
+                                    return 'Function'
                                 return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
                             columns = ['#'] + [nice(k) for k in raw_keys]
                             for i, row in enumerate(data, 1):
@@ -998,17 +1067,20 @@ class PDFService:
 
             # CARD SUMMARY EXPORT
             elif only_card and card_type:
+                from utils.export_utils import format_cell_value_for_export
                 write_debug("DEBUG: ===== only_card START =====")
                 write_debug(f"  - data type: {type(data)}")
                 if isinstance(data, list) and data:
                     first_item = data[0]
                     if isinstance(first_item, dict):
                         def nice(k: str) -> str:
+                            if k == 'function_name':
+                                return 'Function'
                             return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
-                        raw_keys = list(first_item.keys())
+                        raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
                         columns = ['#'] + [nice(k) for k in raw_keys]
                         for i, item in enumerate(data, 1):
-                            values = [str(item.get(k, 'N/A')) for k in raw_keys]
+                            values = [format_cell_value_for_export(k, item.get(k)) or str(item.get(k, 'N/A')) for k in raw_keys]
                             data_rows.append([str(i)] + values)
                     else:
                         columns = ['#', 'Value']

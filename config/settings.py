@@ -1,8 +1,9 @@
 """
 Configuration settings for the reporting system.
-Database: SQL Server connection using username and password (SQL authentication).
+Database: SQL Server connection.
 Reads from env: DB_SERVER or DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD.
-Optional: DB_DOMAIN (for domain\\user), DB_BACKEND (pymssql | odbc), DB_CONNECT_TIMEOUT.
+Optional: DB_USE_SQL_AUTH=yes (use SQL Server Authentication with plain username; recommended),
+  DB_DOMAIN (for domain\\user when not using SQL auth), DB_BACKEND (pymssql | odbc), DB_CONNECT_TIMEOUT.
 """
 import os
 from typing import Dict, Any
@@ -22,6 +23,7 @@ _db_host = (os.getenv('DB_SERVER') or os.getenv('DB_HOST') or '').strip()
 _db_port = os.getenv('DB_PORT', '1433')
 _db_name = os.getenv('DB_NAME', '')
 _db_domain = (os.getenv('DB_DOMAIN') or os.getenv('DB_Domain') or '').strip()
+_db_use_sql_auth = (os.getenv('DB_USE_SQL_AUTH') or os.getenv('DB_USE_SQL_AUTHENTICATION') or '').strip().lower() in ('1', 'true', 'yes')
 _db_username = (os.getenv('DB_USERNAME') or '').strip()
 _db_password = (os.getenv('DB_PASSWORD') or '').strip()
 _db_backend = (os.getenv('DB_BACKEND', 'pymssql') or 'pymssql').strip().lower()
@@ -41,8 +43,8 @@ DATABASE_CONFIG = {
 
 # API Configuration (from .env: NODE_API_URL, PYTHON_API_URL, API_TIMEOUT)
 API_CONFIG = {
-    'node_api_url': os.getenv('NODE_API_URL', os.getenv('NODE_BACKEND_URL', 'https://reporting-system-backend.pianat.ai')),
-    'python_api_url': os.getenv('PYTHON_API_URL', os.getenv('PYTHON_API_BASE', 'https://reporting-system-python.pianat.ai')),
+    'node_api_url': os.getenv('NODE_API_URL', os.getenv('NODE_BACKEND_URL', 'http://localhost:3002')),
+    'python_api_url': os.getenv('PYTHON_API_URL', os.getenv('PYTHON_API_BASE', 'http://localhost:8000')),
     'timeout': int(os.getenv('API_TIMEOUT', '60')),
 }
 
@@ -85,6 +87,22 @@ DEFAULT_HEADER_CONFIGS = {
         'tableHeaderFontColor': '#000000',
         'tableBodyBgColor': '#F5F5F5'
     },
+    'kris': {
+        'title': 'KRI DASHBOARD REPORT',
+        'subtitle': 'Comprehensive Analysis Report',
+        'showLogo': True,
+        'logoSize': 'medium',
+        'bankName': 'PIANAT.AI',
+        'bankAddress': 'Bank address',
+        'bankPhone': 'Bank phone',
+        'bankUrl': 'www.website.com',
+        'watermarkEnabled': True,
+        'watermarkText': 'CONFIDENTIAL',
+        'fontColor': '#1F4E79',
+        'tableHeaderBgColor': '#E3F2FD',
+        'tableHeaderFontColor': '#000000',
+        'tableBodyBgColor': '#F5F5F5'
+    },
     'controls': {
         'title': 'CONTROLS DASHBOARD REPORT',
         'subtitle': 'Comprehensive Analysis Report',
@@ -99,13 +117,46 @@ DEFAULT_HEADER_CONFIGS = {
         'fontColor': '#1F4E79',
         'tableHeaderBgColor': '#E3F2FD',
         'tableBodyBgColor': '#F5F5F5'
+    },
+    'incidents': {
+        'title': 'INCIDENTS DASHBOARD REPORT',
+        'subtitle': 'Comprehensive Analysis Report',
+        'showLogo': True,
+        'logoSize': 'medium',
+        'bankName': 'PIANAT.AI',
+        'bankAddress': 'Bank address',
+        'bankPhone': 'Bank phone',
+        'bankUrl': 'www.website.com',
+        'watermarkEnabled': True,
+        'watermarkText': 'CONFIDENTIAL',
+        'fontColor': '#1F4E79',
+        'tableHeaderBgColor': '#E3F2FD',
+        'tableHeaderFontColor': '#000000',
+        'tableBodyBgColor': '#F5F5F5'
+    },
+    'dynamic': {
+        'title': 'Transaction Report',
+        'subtitle': 'Dynamic report from selected tables and columns',
+        'showLogo': True,
+        'logoSize': 'medium',
+        'bankName': 'PIANAT.AI',
+        'bankAddress': 'Bank address',
+        'bankPhone': 'Bank phone',
+        'bankUrl': 'www.website.com',
+        'watermarkEnabled': True,
+        'watermarkText': 'CONFIDENTIAL',
+        'fontColor': '#1F4E79',
+        'tableHeaderBgColor': '#E3F2FD',
+        'tableHeaderFontColor': '#000000',
+        'tableBodyBgColor': '#F5F5F5'
     }
 }
 
 def get_database_connection_string() -> str:
     """
-    Build ODBC connection string for SQL Server using username and password.
-    Uses domain\\username if DB_DOMAIN is set, otherwise username only.
+    Build ODBC connection string for SQL Server.
+    Uses SQL Server Authentication (UID=username, PWD=password) when DB_USE_SQL_AUTH=yes or DB_DOMAIN is empty.
+    Uses domain\\username only when DB_DOMAIN is set and DB_USE_SQL_AUTH is not set.
     """
     config = DATABASE_CONFIG
     parts = [
@@ -115,7 +166,11 @@ def get_database_connection_string() -> str:
         f"Encrypt={config['encrypt']};",
         f"TrustServerCertificate={config['trust_server_certificate']};",
     ]
-    uid = f"{config['domain']}\\{config['username']}" if config.get('domain') else config['username']
+    # SQL Server Authentication: plain username (no domain) so server uses SQL auth, not Windows auth
+    if _db_use_sql_auth or not config.get('domain'):
+        uid = config['username']
+    else:
+        uid = f"{config['domain']}\\{config['username']}"
     parts.append(f"UID={uid};")
     parts.append(f"PWD={config['password']};")
     return "".join(parts)
@@ -123,16 +178,20 @@ def get_database_connection_string() -> str:
 
 def get_db_connection():
     """
-    Return an open SQL Server connection using username and password.
+    Return an open SQL Server connection.
     - DB_BACKEND=pymssql (default): uses pymssql.
     - DB_BACKEND=odbc: uses pyodbc with ODBC Driver.
+    Uses SQL Server Authentication (user + password only) when DB_USE_SQL_AUTH=yes or DB_DOMAIN is empty.
     """
     config = DATABASE_CONFIG
+    if _db_use_sql_auth or not config.get('domain'):
+        user = config['username']
+    else:
+        user = f"{config['domain']}\\{config['username']}"
     if _db_backend == 'pymssql':
         import pymssql
         server = config['server']
         port = int(config['port'])
-        user = f"{config['domain']}\\{config['username']}" if config.get('domain') else config['username']
         return pymssql.connect(
             server=server,
             port=port,

@@ -48,9 +48,11 @@ class ExcelService:
             columns = []
             data_rows = []
             
-            # Define column name formatter (same as PDF)
+            # Define column name formatter (same as PDF; "Function" for function_name to match UI)
             def format_column_name(key):
-                """Convert snake_case or camelCase to Title Case"""
+                """Convert snake_case or camelCase to Title Case; function_name -> Function"""
+                if key == 'function_name':
+                    return 'Function'
                 formatted = re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(key))
                 return formatted.title()
             
@@ -132,7 +134,7 @@ class ExcelService:
                 if isinstance(data, list) and len(data) > 0:
                     first_item = data[0]
                     if isinstance(first_item, dict):
-                        raw_keys = list(first_item.keys())
+                        raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
                         columns = ['#'] + [format_column_name(k) for k in raw_keys]
                         data_rows = []
                         for i, row in enumerate(data, 1):
@@ -179,30 +181,16 @@ class ExcelService:
                         for i, item in enumerate(data, 1):
                             data_rows.append([str(i), str(item)])
                     elif isinstance(first_item, dict):
-                        if cardType in ['pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance', 'testsPendingPreparer', 'testsPendingChecker', 'testsPendingReviewer', 'testsPendingAcceptance','unmappedControls','unmappedIcofrControls','unmappedNonIcofrControls','totalControls']:
-                            columns = ["#", "Control Code", "Control Name"]
-                            data_rows = []
-                            for i, item in enumerate(data, 1):
-                                if isinstance(item, dict):
-                                    data_rows.append([
-                                        str(i),
-                                        item.get('control_code', item.get('code', 'N/A')),
-                                        item.get('control_name', item.get('name', 'N/A'))
-                                    ])
-                                else:
-                                    data_rows.append([str(i), 'N/A', 'N/A'])
-                        else:
-                            columns = ["#", "Code", "Name"]
-                            data_rows = []
-                            for i, item in enumerate(data, 1):
-                                if isinstance(item, dict):
-                                    data_rows.append([
-                                        str(i),
-                                        item.get('code', 'N/A'),
-                                        item.get('name', 'N/A')
-                                    ])
-                                else:
-                                    data_rows.append([str(i), 'N/A', 'N/A'])
+                        # All control cards: export all columns from data (match UI); never export id
+                        raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
+                        columns = ["#"] + [format_column_name(k) for k in raw_keys]
+                        data_rows = []
+                        for i, item in enumerate(data, 1):
+                            if isinstance(item, dict):
+                                values = [str(item.get(k, '')) for k in raw_keys]
+                                data_rows.append([str(i)] + values)
+                            else:
+                                data_rows.append([str(i)] + [''] * len(raw_keys))
                 elif isinstance(data, dict):
                     columns = ["Metric", "Value"]
                     data_rows = [[key, str(value)] for key, value in data.items()]
@@ -245,6 +233,8 @@ class ExcelService:
             data_rows: List[List[str]] = []
 
             def format_column_name(key: str) -> str:
+                if key == 'function_name':
+                    return 'Function'
                 return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(key)).title()
 
             # CHART EXPORT
@@ -384,8 +374,9 @@ class ExcelService:
                 
                 return generate_excel_report(columns, data_rows, header_config)
 
-            # TABLE EXPORT
+            # TABLE EXPORT (full UI columns so Excel has all columns as in dashboard)
             elif only_overall_table:
+                from utils.export_utils import get_incident_ordered_keys_full_ui, get_incident_label, get_incident_cell_value
                 table_rows = []
                 if card_type == 'overallStatuses':
                     table_rows = incidents_data.get('overallStatuses') or incidents_data.get('statusOverview') or []
@@ -395,10 +386,11 @@ class ExcelService:
                 if isinstance(table_rows, list) and len(table_rows) > 0:
                     first_item = table_rows[0]
                     if isinstance(first_item, dict):
-                        raw_keys = list(first_item.keys())
-                        columns = ['#'] + [format_column_name(k) for k in raw_keys]
+                        ordered_keys = get_incident_ordered_keys_full_ui()
+                        columns = ['#'] + [get_incident_label(k) for k in ordered_keys]
                         for i, row in enumerate(table_rows, 1):
-                            values = [str(row.get(k, '')) for k in raw_keys]
+                            # Use blank for missing columns so extra UI columns stay empty, not "N/A"
+                            values = [get_incident_cell_value(row, k, empty_placeholder='') for k in ordered_keys]
                             data_rows.append([str(i)] + values)
                     elif isinstance(first_item, (list, tuple)):
                         num_cols = len(first_item)
@@ -414,25 +406,28 @@ class ExcelService:
                     data_rows = [["1", 'No data available']]
                 return generate_excel_report(columns, data_rows, header_config)
 
-            # CARD SUMMARY EXPORT
+            # CARD SUMMARY EXPORT (full UI columns: #, Code, Title, Function, Status, ... so Total Incidents matches dashboard)
             elif only_card and card_type:
+                from utils.export_utils import get_incident_ordered_keys_full_ui, get_incident_label, get_incident_cell_value
+                ordered_keys = get_incident_ordered_keys_full_ui()
+                columns = ['#'] + [get_incident_label(k) for k in ordered_keys]
                 if isinstance(data, list) and data:
                     first_item = data[0]
                     if isinstance(first_item, dict):
-                        raw_keys = list(first_item.keys())
-                        columns = ['#'] + [format_column_name(k) for k in raw_keys]
                         for i, item in enumerate(data, 1):
-                            values = [str(item.get(k, 'N/A')) for k in raw_keys]
+                            values = [get_incident_cell_value(item, k, empty_placeholder='') for k in ordered_keys]
                             data_rows.append([str(i)] + values)
                     else:
                         columns = ['#', 'Value']
                         data_rows = [["1", str(first_item)]]
+                elif isinstance(data, list) and len(data) == 0:
+                    # Empty list: keep full UI columns, one row so sheet is not only headers
+                    data_rows = [["No data available"] + [""] * (len(columns) - 1)]
                 elif isinstance(data, dict):
                     columns = ["Metric", "Value"]
                     data_rows = [[key, str(value)] for key, value in data.items()]
                 else:
-                    columns = ["Metric", "Value"]
-                    data_rows = [["No data available", "N/A"]]
+                    data_rows = [["No data available"] + [""] * (len(columns) - 1)]
                 return generate_excel_report(columns, data_rows, header_config)
 
             # DEFAULT
@@ -467,7 +462,60 @@ class ExcelService:
             data_rows: List[List[str]] = []
 
             def format_column_name(key: str) -> str:
+                if key == 'function_name':
+                    return 'Function'
                 return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(key)).title()
+
+            def format_values_by_period(row: Dict[str, Any]) -> str:
+                """Format valuesByPeriod for Excel: periods separated by ' ; ', action plans by ' | ', commas where needed."""
+                periods = row.get('valuesByPeriod') or row.get('valuesbyperiod') or []
+                if not isinstance(periods, list) or not periods:
+                    return 'No values'
+                month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                unit = '%' if (row.get('measurable_unit') or '').lower() == 'percentage' else ''
+                parts = []
+                for p in periods:
+                    if not isinstance(p, dict):
+                        continue
+                    month = p.get('month')
+                    year = p.get('year')
+                    value = p.get('value')
+                    assessment = (p.get('assessment') or '').strip() or 'N/A'
+                    month_str = f"{month_names[int(month) - 1]} {year}" if month and year else 'N/A'
+                    val_str = f"{value}{unit}" if value is not None else 'N/A'
+                    period_line = f"{month_str} – Value: {val_str} {assessment}"
+                    action_plans = p.get('actionPlans') or p.get('actionplans') or []
+                    if isinstance(action_plans, list) and action_plans:
+                        ap_parts = []
+                        for ap in action_plans:
+                            if not isinstance(ap, dict):
+                                continue
+                            proc = ap.get('control_procedure') or 'N/A'
+                            impl = ap.get('implementation_date')
+                            if impl:
+                                try:
+                                    from datetime import datetime
+                                    if hasattr(impl, 'strftime'):
+                                        impl = impl.strftime('%b %d, %Y')
+                                    elif isinstance(impl, str):
+                                        for fmt in ['%Y-%m-%d', '%Y-%m-%dT%H:%M:%S']:
+                                            try:
+                                                dt = datetime.strptime(impl.split('.')[0][:10], '%Y-%m-%d')
+                                                impl = dt.strftime('%b %d, %Y')
+                                                break
+                                            except Exception:
+                                                pass
+                                except Exception:
+                                    impl = str(impl)
+                            else:
+                                impl = 'N/A'
+                            bu = ap.get('business_unit') or 'N/A'
+                            ap_parts.append(f"{proc} · {impl} · {bu}")
+                        period_line += " | " + " | ".join(ap_parts)
+                    else:
+                        period_line += " | No action plan"
+                    parts.append(period_line)
+                return " ; ".join(parts) if parts else 'No values'
 
             # CHART EXPORT
             if only_chart and card_type:
@@ -613,10 +661,17 @@ class ExcelService:
                 if isinstance(table_rows, list) and len(table_rows) > 0:
                     first_item = table_rows[0]
                     if isinstance(first_item, dict):
-                        raw_keys = list(first_item.keys())
+                        # Exclude nested keys (e.g. kriDetailsWithActionPlans has valuesByPeriod)
+                        exclude_keys = {'id', 'valuesbyperiod'}
+                        raw_keys = [k for k in first_item.keys() if str(k).lower() not in exclude_keys]
                         columns = ['#'] + [format_column_name(k) for k in raw_keys]
+                        # Add "Values & Action Plans" column for this table (periods ; separated, action plans | separated)
+                        if card_type == 'kriDetailsWithActionPlans':
+                            columns.append('Values & Action Plans')
                         for i, row in enumerate(table_rows, 1):
                             values = [str(row.get(k, '')) for k in raw_keys]
+                            if card_type == 'kriDetailsWithActionPlans':
+                                values.append(format_values_by_period(row))
                             data_rows.append([str(i)] + values)
                     elif isinstance(first_item, (list, tuple)):
                         num_cols = len(first_item)
@@ -643,7 +698,7 @@ class ExcelService:
                     if data:  # Non-empty list
                         first_item = data[0]
                         if isinstance(first_item, dict):
-                            raw_keys = list(first_item.keys())
+                            raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
                             columns = ['#'] + [format_column_name(k) for k in raw_keys]
                             for i, item in enumerate(data, 1):
                                 values = [str(item.get(k, 'N/A')) for k in raw_keys]
@@ -700,6 +755,8 @@ class ExcelService:
             data_rows: List[List[str]] = []
 
             def format_column_name(key: str) -> str:
+                if key == 'function_name':
+                    return 'Function'
                 write_debug(f"Formatting column name: {key}")
                 return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(key)).title()
 
@@ -789,7 +846,7 @@ class ExcelService:
                     if isinstance(first_item, dict):
                         # Special formatting for allRisks
                         if card_type == 'allRisks':
-                            columns = ['#', 'Risk Name', 'Risk Description', 'Event', 'Inherent Value', 'Frequency', 'Financial Impact']
+                            columns = ['#', 'Risk Name', 'Risk Description', 'Event', 'Function', 'Inherent Value', 'Frequency', 'Financial Impact']
                             def map_frequency(val):
                                 mapping = {1: 'Once in Three Years', 2: 'Annually', 3: 'Half Yearly', 4: 'Quarterly', 5: 'Monthly'}
                                 try:
@@ -811,17 +868,19 @@ class ExcelService:
                                     str(row.get('RiskName', '')),
                                     str(row.get('RiskDesc', '')),
                                     str(row.get('RiskEventName', 'Unknown')),
+                                    str(row.get('function_name', '')),
                                     str(row.get('InherentValue', '')),
                                     map_frequency(row.get('InherentFrequency', '')),
                                     map_financial(row.get('InherentFinancialValue', '')),
                                 ])
                         else:
-                            raw_keys = list(first_item.keys())
+                            from utils.export_utils import format_cell_value_for_export
+                            raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
                             columns = ['#'] + [format_column_name(k) for k in raw_keys]
                             data_rows = []
                             for i, row in enumerate(data, 1):
                                 if isinstance(row, dict):
-                                    values = [str(row.get(k, '')) for k in raw_keys]
+                                    values = [format_cell_value_for_export(k, row.get(k)) or str(row.get(k, '')) for k in raw_keys]
                                     data_rows.append([str(i)] + values)
                                 elif isinstance(row, (list, tuple)):
                                     vals = [str(v) for v in row]
@@ -845,6 +904,7 @@ class ExcelService:
 
             # CARD SUMMARY EXPORT
             elif only_card and card_type:
+                from utils.export_utils import format_cell_value_for_export
                 write_debug(f"Generating risks Excel report for mmmmm {start_date} to {end_date}")
                 write_debug(f"card_type={card_type}, only_card={only_card}, only_overall_table={only_overall_table}, only_chart={only_chart}")
                 write_debug(f"data: {data}")
@@ -852,12 +912,12 @@ class ExcelService:
                 if isinstance(data, list) and data:
                     first_item = data[0]
                     if isinstance(first_item, dict):
-                        raw_keys = list(first_item.keys())
+                        raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
                         columns = ['#'] + [format_column_name(k) for k in raw_keys]
                         data_rows = []
                         for i, item in enumerate(data, 1):
                             if isinstance(item, dict):
-                                values = [str(item.get(k, 'N/A')) for k in raw_keys]
+                                values = [format_cell_value_for_export(k, item.get(k)) or str(item.get(k, 'N/A')) for k in raw_keys]
                                 data_rows.append([str(i)] + values)
                             elif isinstance(item, (list, tuple)):
                                 vals = [str(v) for v in item]

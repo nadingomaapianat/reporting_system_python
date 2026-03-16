@@ -265,8 +265,9 @@ class APIService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """Get incidents dashboard data from Node.js API"""
+        """Get incidents dashboard data from Node.js API. Pass headers (e.g. Cookie, Authorization) to forward auth."""
         try:
             url = f"{self.node_api_url}/api/grc/incidents"
             params = {}
@@ -280,8 +281,10 @@ class APIService:
                 params['groupName'] = group_name
             if function_id:
                 params['functionId'] = function_id
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
-                async with session.get(url, params=params) as response:
+            request_headers = dict(headers) if headers else {}
+            timeout = aiohttp.ClientTimeout(total=self.timeout)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, params=params, headers=request_headers or None) as response:
                     if response.status == 200:
                         return await response.json()
                     return {}
@@ -334,8 +337,9 @@ class APIService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """Get KRIs dashboard data from Node.js API"""
+        """Get KRIs dashboard data from Node.js API. Pass headers (e.g. Authorization, Cookie) to forward auth."""
         try:
             url = f"{self.node_api_url}/api/grc/kris"
             params = {}
@@ -349,8 +353,9 @@ class APIService:
                 params['groupName'] = group_name
             if function_id:
                 params['functionId'] = function_id
+            request_headers = dict(headers) if headers else None
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
-                async with session.get(url, params=params) as response:
+                async with session.get(url, params=params, headers=request_headers) as response:
                     if response.status == 200:
                         return await response.json()
                     return {}
