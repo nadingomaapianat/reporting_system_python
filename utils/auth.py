@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from urllib.parse import unquote
 from jose import jwt, JWTError
 from typing import Dict, Any, Optional
 from fastapi import HTTPException, Depends, status, Request
@@ -7,25 +9,56 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-# JWT Configuration - matching v2_backend
-# Tokens are generated in v2_backend, we only validate them here
-JWT_SECRET = "GRC_ADIB_2025"
+# JWT Configuration - must match Node (reporting-system-node) so same tokens work for both.
+JWT_SECRET = os.getenv("JWT_SECRET", os.getenv("JWT_SECRET_KEY", "GRC_ADIB_2025"))
 JWT_ALGORITHM = "HS256"
 
 security = HTTPBearer(auto_error=False)
 
 # Public paths: only these can be called WITHOUT JWT.
-# Every other API requires Authorization: Bearer <token> (and for POST/PUT/PATCH/DELETE, x-csrf-token).
-# Clients (e.g. frontend at grc-reporting-uat) must send the same JWT in the Authorization header
-# when calling this API (e.g. GET /api/reports/dynamic-dashboard/charts) or they receive 401.
 PUBLIC_PATHS = [
-    "/csrf/token",              # Must be public: client gets CSRF token here first
-    "/api/auth/validate-token",  # Must be public: validates token (no token yet on first load)
-    "/api/auth/logout",          # Allow without token so logout works when session expired
+    "/csrf/token",
+    "/api/auth/validate-token",
+    "/api/auth/logout",
     "/docs",
     "/redoc",
     "/openapi.json",
 ]
+
+
+def get_token_from_request(request: Request) -> Optional[str]:
+    """
+    Get JWT the same way as reporting-system-node (no frontend change needed).
+    (1) Authorization: Bearer <token>
+    (2) Cookie: reporting_node_token (set by Node with COOKIE_DOMAIN e.g. .adib.co.eg so browser sends it to Python)
+    (3) Cookies: iframe_d_c_c_t_p_1 + iframe_d_c_c_t_p_2 (URL-decoded).
+    (4) Query param: token or access_token (GET only) — fallback when cookies are not sent cross-origin.
+    """
+    auth_header = request.headers.get("authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()  # after "Bearer "
+        if token:
+            return token
+
+    reporting_token = request.cookies.get("reporting_node_token")
+    if reporting_token:
+        return reporting_token
+
+    part1 = request.cookies.get("iframe_d_c_c_t_p_1")
+    part2 = request.cookies.get("iframe_d_c_c_t_p_2") or ""
+    if part1:
+        try:
+            return unquote(part1 + part2)
+        except Exception:
+            pass
+
+    # GET requests: allow token in query when cookies/header not sent (e.g. cross-origin export)
+    if request.method.upper() == "GET":
+        query_token = request.query_params.get("token") or request.query_params.get("access_token")
+        if query_token and query_token.strip():
+            return query_token.strip()
+
+    return None
 
 
 def verify_token(token: str) -> Dict[str, Any]:
@@ -55,44 +88,38 @@ async def get_current_user(
 
 
 class JWTAuthMiddleware(BaseHTTPMiddleware):
-    """Middleware to validate JWT tokens on all requests except public paths."""
-    
+    """
+    Validate JWT the same way as reporting-system-node: token from
+    Authorization header OR cookie (reporting_node_token or iframe_d_c_c_t_p_*).
+    Frontend can call this API the same way it calls Node (same headers/cookies).
+    """
+
     async def dispatch(self, request: Request, call_next):
-        # Always allow CORS preflight through (OPTIONS) so CORSMiddleware can respond
         if request.method.upper() == "OPTIONS":
             return await call_next(request)
-        
-        # Skip authentication for public paths
+
         if any(request.url.path.startswith(path) for path in PUBLIC_PATHS):
             return await call_next(request)
-        
-        # Check for Authorization header
-        auth_header = request.headers.get("authorization")
-        if not auth_header:
+
+        token = get_token_from_request(request)
+        if not token:
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                content={"success": False, "message": "Authorization header is missing"}
+                content={
+                    "success": False,
+                    "message": "Authorization token is missing (use Bearer header, cookies reporting_node_token / iframe_d_c_c_t_p_*, or for GET: ?token=)"
+                },
             )
-        
-        # Extract token
-        if not auth_header.startswith("Bearer "):
-            return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content={"success": False, "message": "Bearer token is missing"}
-            )
-        
-        token = auth_header.split("Bearer ")[1]
-        
+
         try:
             payload = verify_token(token)
-            # Attach user to request
             request.state.user = payload
         except HTTPException as e:
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                content={"success": False, "message": e.detail}
+                content={"success": False, "message": e.detail or "Invalid token"},
             )
-        
+
         return await call_next(request)
 
 
