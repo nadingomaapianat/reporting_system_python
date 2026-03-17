@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from urllib.parse import unquote
 from jose import jwt, JWTError
 from typing import Dict, Any, Optional
@@ -8,6 +9,11 @@ from fastapi import HTTPException, Depends, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+
+
+def _auth_log(msg: str) -> None:
+    """Print to terminal (stdout) so auth debug appears in console, not in log file."""
+    print(f"[AUTH] {msg}", flush=True, file=sys.stdout)
 
 # JWT Configuration - must match Node (reporting-system-node) so same tokens work for both.
 JWT_SECRET = os.getenv("JWT_SECRET", os.getenv("JWT_SECRET_KEY", "GRC_ADIB_2025"))
@@ -30,25 +36,45 @@ def get_token_from_request(request: Request) -> Optional[str]:
     """
     Get JWT the same way as reporting-system-node (no frontend change needed).
     (1) Authorization: Bearer <token>
-    (2) Cookie: reporting_node_token (set by Node with COOKIE_DOMAIN e.g. .adib.co.eg so browser sends it to Python)
-    (3) Cookies: iframe_d_c_c_t_p_1 + iframe_d_c_c_t_p_2 (URL-decoded).
-    (4) Query param: token or access_token (GET only) — fallback when cookies are not sent cross-origin.
+    (2) X-Forwarded-Authorization: Bearer <token> (when a proxy strips Authorization)
+    (3) X-Export-Token: <token> (for server-to-server export proxy)
+    (4) Cookie: reporting_node_token (set by Node with COOKIE_DOMAIN e.g. .adib.co.eg so browser sends it to Python)
+    (5) Cookies: d_c_c_t_p_1 + d_c_c_t_p_2 (URL-decoded). Set by main backend (e.g. new_adib_backend /
+        uat-backend.adib.co.eg). Token is split across two cookies due to size limits.
+    (6) Query param: token or access_token (GET only) — fallback when cookies are not sent cross-origin.
     """
     auth_header = request.headers.get("authorization")
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header[7:].strip()  # after "Bearer "
         if token:
+            _auth_log(f"Token from: Authorization header (path={request.url.path})")
             return token
+
+    # When Node (or another proxy) forwards the request, proxy may strip Authorization; accept these headers
+    forwarded = request.headers.get("x-forwarded-authorization")
+    if forwarded and forwarded.startswith("Bearer "):
+        token = forwarded[7:].strip()
+        if token:
+            _auth_log(f"Token from: X-Forwarded-Authorization (path={request.url.path})")
+            return token
+    export_token = request.headers.get("x-export-token")
+    if export_token and export_token.strip():
+        _auth_log(f"Token from: X-Export-Token (path={request.url.path})")
+        return export_token.strip()
 
     reporting_token = request.cookies.get("reporting_node_token")
     if reporting_token:
+        _auth_log(f"Token from: cookie reporting_node_token (path={request.url.path})")
         return reporting_token
 
-    part1 = request.cookies.get("iframe_d_c_c_t_p_1")
-    part2 = request.cookies.get("iframe_d_c_c_t_p_2") or ""
+    part1 = request.cookies.get("d_c_c_t_p_1")
+    part2 = request.cookies.get("d_c_c_t_p_2") or ""
     if part1:
         try:
-            return unquote(part1 + part2)
+            token = unquote(part1 + part2)
+            if token:
+                _auth_log(f"Token from: cookies d_c_c_t_p_* (path={request.url.path})")
+                return token
         except Exception:
             pass
 
@@ -56,8 +82,13 @@ def get_token_from_request(request: Request) -> Optional[str]:
     if request.method.upper() == "GET":
         query_token = request.query_params.get("token") or request.query_params.get("access_token")
         if query_token and query_token.strip():
+            _auth_log(f"Token from: query param token/access_token (path={request.url.path})")
             return query_token.strip()
 
+    _auth_log(
+        f"No token found for path={request.url.path} method={request.method} "
+        "(checked: Authorization, X-Forwarded-Authorization, X-Export-Token, cookies reporting_node_token/d_c_c_t_p_*, query token/access_token)"
+    )
     return None
 
 
@@ -66,7 +97,8 @@ def verify_token(token: str) -> Dict[str, Any]:
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return payload
-    except JWTError:
+    except JWTError as e:
+        _auth_log(f"Token verification failed: {e} (token prefix: {token[:20] if len(token) > 20 else token}...)")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token"
@@ -90,7 +122,7 @@ async def get_current_user(
 class JWTAuthMiddleware(BaseHTTPMiddleware):
     """
     Validate JWT the same way as reporting-system-node: token from
-    Authorization header OR cookie (reporting_node_token or iframe_d_c_c_t_p_*).
+    Authorization header OR cookie (reporting_node_token or d_c_c_t_p_*).
     Frontend can call this API the same way it calls Node (same headers/cookies).
     """
 
@@ -103,11 +135,12 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
 
         token = get_token_from_request(request)
         if not token:
+            _auth_log(f"401 path={request.url.path} method={request.method} -> reason: token missing")
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 content={
                     "success": False,
-                    "message": "Authorization token is missing (use Bearer header, cookies reporting_node_token / iframe_d_c_c_t_p_*, or for GET: ?token=)"
+                    "message": "Authorization token is missing (use Bearer header, cookies reporting_node_token / d_c_c_t_p_*, or for GET: ?token=)"
                 },
             )
 
@@ -115,6 +148,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             payload = verify_token(token)
             request.state.user = payload
         except HTTPException as e:
+            _auth_log(f"401 path={request.url.path} method={request.method} -> reason: token invalid or expired")
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 content={"success": False, "message": e.detail or "Invalid token"},
