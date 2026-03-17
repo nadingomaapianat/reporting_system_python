@@ -1,32 +1,32 @@
-# Python reporting API – DB via pymssql (NTLM/FreeTDS, no ODBC driver required)
-# Set DB_BACKEND=pymssql and DB_DOMAIN, DB_USERNAME, DB_PASSWORD for NTLM in Docker
-
+# Use slim image for smaller footprint
 FROM python:3.11-slim
 
-WORKDIR /app
+# Prevent Python from writing .pyc files and enable unbuffered logging
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    WORKDIR=/app
 
-# pymssql uses FreeTDS; install for SQL Server connectivity (no Microsoft ODBC repo)
-# Install fonts so PDFs render correctly (avoid hollow squares for text on live)
+WORKDIR ${WORKDIR}
+
+# Install system dependencies and fonts for PDF rendering
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        freetds-dev pkg-config \
+        freetds-dev \
+        pkg-config \
         fonts-dejavu-core \
         fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
-# Python env
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-# Install dependencies
+# Install Python requirements
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Copy application
+# Copy application source
 COPY . .
 
-# App listens on 8000; override with PORT env
+# Expose the application port
 EXPOSE 8000
 
-# Same DB env as Node: DB_HOST, DB_PORT, DB_NAME, DB_USE_WINDOWS_AUTH=0, DB_DOMAIN, DB_USERNAME, DB_PASSWORD
+# Start the application
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
