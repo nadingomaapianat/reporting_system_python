@@ -30,8 +30,10 @@ def get_client_ip(request: Request) -> str:
 
 
 # --- Rate limiting: 40 requests per minute per IP (same as Node) ---
+# /csrf/token exempt so frontend/proxy can fetch CSRF without 429 under load
 RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMIT_MAX = 40
+RATE_LIMIT_EXEMPT_PATHS = ("/csrf/token",)
 _store: dict[str, tuple[int, float]] = {}
 _store_ttl: float = 0
 
@@ -49,6 +51,9 @@ def _clean_store():
 class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         if request.method == "OPTIONS":
+            return await call_next(request)
+        path = request.url.path.rstrip("/") or "/"
+        if any(path == p or path.startswith(p + "/") for p in RATE_LIMIT_EXEMPT_PATHS):
             return await call_next(request)
         ip = get_client_ip(request)
         now = time.time()
