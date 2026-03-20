@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import os
 import secrets
 from typing import Iterable, Sequence, Set
 
@@ -60,12 +61,18 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
 
 def set_csrf_cookie(response: Response, token: str, *, secure: bool) -> None:
+    # Same-site subdomains (*.adib.co.eg) usually work with "lax"; use CSRF_COOKIE_SAMESITE=none + secure for stricter cross-site.
+    samesite_raw = (os.getenv("CSRF_COOKIE_SAMESITE") or "lax").strip().lower()
+    if samesite_raw not in ("strict", "lax", "none"):
+        samesite_raw = "lax"
+    if samesite_raw == "none" and not secure:
+        samesite_raw = "lax"
     response.set_cookie(
         CSRF_COOKIE_NAME,
         token,
         httponly=True,
         secure=secure,
-        samesite="strict",
+        samesite=samesite_raw,
         path="/",
     )
 

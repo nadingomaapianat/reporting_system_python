@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 import sys
@@ -68,6 +69,36 @@ PUBLIC_PATHS = [
     "/redoc",
     "/openapi.json",
 ]
+# Optional echo endpoint for cookie debugging (off unless REPORTING_DEBUG_COOKIES_ENDPOINT=true)
+if os.getenv("REPORTING_DEBUG_COOKIES_ENDPOINT", "").lower() in ("1", "true", "yes"):
+    PUBLIC_PATHS.append("/debug/cookies")
+
+_LOG_AUTH_HEADERS = os.getenv("REPORTING_LOG_AUTH_HEADERS", "").lower() in ("1", "true", "yes")
+_auth_header_logger = logging.getLogger("reporting.auth.headers")
+
+
+def log_incoming_auth_headers(request: Request) -> None:
+    """
+    Log Cookie / Authorization presence (lengths only — never full secrets) when
+    REPORTING_LOG_AUTH_HEADERS=true.
+    """
+    if not _LOG_AUTH_HEADERS:
+        return
+    cookie_header = request.headers.get("cookie")
+    auth_h = request.headers.get("authorization")
+    fwd = request.headers.get("x-forwarded-authorization")
+    export_t = request.headers.get("x-export-token")
+    _auth_header_logger.info(
+        "incoming_headers path=%s method=%s cookie_header_len=%s has_authorization=%s "
+        "has_x_forwarded_authorization=%s has_x_export_token=%s cookie_names=%s",
+        request.url.path,
+        request.method,
+        len(cookie_header) if cookie_header else 0,
+        bool(auth_h),
+        bool(fwd),
+        bool(export_t and export_t.strip()),
+        list(request.cookies.keys()),
+    )
 
 
 def get_token_from_request(request: Request) -> Optional[str]:
@@ -140,7 +171,8 @@ def get_token_from_request(request: Request) -> Optional[str]:
 
     _auth_log(
         f"No token found for path={request.url.path} method={request.method} "
-        f"(checked: Authorization, X-Forwarded-Authorization, X-Export-Token, cookies {REPORTING_AUTH_COOKIE_NAME}/d_c_c_t_p_*, "
+        f"(checked: Authorization, X-Forwarded-Authorization, X-Export-Token, cookies "
+        f"{REPORTING_AUTH_COOKIE_NAME}/{REPORTING_NODE_TOKEN_LEGACY}/d_c_c_t_p_*, "
         f"{'query token/access_token' if _ALLOW_QUERY_TOKEN_GET else 'query token disabled'})"
     )
     return None
@@ -183,6 +215,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if request.method.upper() == "OPTIONS":
             return await call_next(request)
+
+        log_incoming_auth_headers(request)
 
         if any(request.url.path.startswith(path) for path in PUBLIC_PATHS):
             return await call_next(request)

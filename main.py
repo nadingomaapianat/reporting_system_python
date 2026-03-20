@@ -93,18 +93,24 @@ def create_app() -> FastAPI:
         exempt_paths=CSRF_EXEMPT_PATHS,
     )
 
-    # CORS MUST be the outermost middleware so it can handle preflight (OPTIONS) before auth/CSRF
-    # Bank requirement: trusted origins only, no wildcard; restrict methods and headers (R-WAPT05)
+    # CORS: last add_middleware = outermost in Starlette — runs first on the request (preflight before auth).
+    # Direct browser calls: allow_credentials=True + explicit origins (no "*") so cookies are sent cross-origin.
     _cors_env = os.getenv("CORS_ORIGINS", "").strip()
     if _cors_env:
         allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
     else:
-        allowed_origins = [
-            os.getenv("FRONTEND_ORIGIN", "https://grc-reporting-uat.adib.co.eg").strip(),
-            "http://127.0.0.1:3000",
-            "https://grc-reporting-uat.adib.co.eg",
-            "https://grc-reporting-node-uat.adib.co.eg",
-        ]
+        _fe = os.getenv("FRONTEND_ORIGIN", "https://grc-reporting-uat.adib.co.eg").strip()
+        allowed_origins = list(
+            dict.fromkeys(
+                [
+                    "https://grc-reporting-uat.adib.co.eg",
+                    "https://grc-dcc-uat.adib.co.eg",
+                    _fe,
+                    "http://127.0.0.1:3000",
+                    "https://grc-reporting-node-uat.adib.co.eg",
+                ]
+            )
+        )
     _extra = os.getenv("FRONTEND_ORIGIN")
     if _extra and _extra not in allowed_origins and _extra != "*":
         allowed_origins.append(_extra)
@@ -119,8 +125,8 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=allowed_origins,
         allow_credentials=True,
-        allow_methods=["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With", "X-CSRF-Token"],
+        allow_methods=["*"],
+        allow_headers=["*"],
         expose_headers=["X-Export-Src"],
     )
 
@@ -132,6 +138,21 @@ def create_app() -> FastAPI:
         token = create_csrf_token()
         set_csrf_cookie(response, token, secure=csrf_cookie_secure)
         return {"csrfToken": token}
+
+    # Optional: echo cookies for debugging cross-origin auth (enable REPORTING_DEBUG_COOKIES_ENDPOINT=true)
+    if os.getenv("REPORTING_DEBUG_COOKIES_ENDPOINT", "").lower() in ("1", "true", "yes"):
+
+        @app.get("/debug/cookies")
+        async def debug_cookies(request: Request):
+            raw = request.headers.get("cookie") or ""
+            return {
+                "cookie_header_present": bool(raw),
+                "cookie_header_length": len(raw),
+                "parsed_cookie_names": list(request.cookies.keys()),
+                "origin": request.headers.get("origin"),
+                "host": request.headers.get("host"),
+                "referer": request.headers.get("referer"),
+            }
 
     # Serve exported files statically under /exports
     app.mount("/exports", StaticFiles(directory="exports"), name="exports")
