@@ -4,6 +4,8 @@ KRI service for KRI operations
 import asyncio
 from typing import List, Dict, Any, Optional
 from config import get_db_connection
+from utils.jwt_context import get_request_jwt_claims
+from utils.reporting_access import is_reporting_admin
 
 def write_debug(msg):
     """Write debug message to file with timestamp"""
@@ -32,14 +34,15 @@ class KriService:
     async def _get_user_function_access(self, user_id: Optional[str], group_name: Optional[str]):
         """
         Mirror Node UserFunctionAccessService.getUserFunctionAccess for KRIs.
+        - Admin: super_admin_, REPORTING_SUPER_ADMIN_USER_IDS, JWT role=admin, isAdmin=true.
         - If user_id is None: treat as unrestricted (backward compatibility).
-        - If group_name == 'super_admin_': unrestricted.
         - Otherwise: fetch functionIds from UserFunction + Functions.
         """
-        if not user_id:
+        claims = get_request_jwt_claims()
+        if is_reporting_admin(user_id, group_name, claims):
             return {"is_super_admin": True, "function_ids": []}
 
-        if group_name == 'super_admin_':
+        if not user_id:
             return {"is_super_admin": True, "function_ids": []}
 
         query = f"""

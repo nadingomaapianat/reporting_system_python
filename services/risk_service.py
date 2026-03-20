@@ -5,6 +5,8 @@ import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from config import get_db_connection
+from utils.jwt_context import get_request_jwt_claims
+from utils.reporting_access import is_reporting_admin
 
 def write_debug(msg):
     """Write debug message to file with timestamp"""
@@ -36,16 +38,17 @@ class RiskService:
         Mirror Node UserFunctionAccessService.getUserFunctionAccess for Risks.
 
         Behaviour:
-        - If user_id is None: treat as unrestricted (no function filter) to keep
-          backward compatibility for existing callers.
-        - If group_name == 'super_admin_': unrestricted (no function filter).
+        - Admin (same as Node): super_admin_ group, REPORTING_SUPER_ADMIN_USER_IDS,
+          JWT role=admin, or JWT isAdmin=true → no function filter.
+        - If user_id is None: treat as unrestricted (backward compatibility).
         - Otherwise: fetch functionIds from UserFunction + Functions.
         """
-        # Backwards compatibility: if we don't know the user, don't restrict data
-        if not user_id:
+        claims = get_request_jwt_claims()
+        if is_reporting_admin(user_id, group_name, claims):
             return {"is_super_admin": True, "function_ids": []}
 
-        if group_name == 'super_admin_':
+        # Backwards compatibility: if we don't know the user, don't restrict data
+        if not user_id:
             return {"is_super_admin": True, "function_ids": []}
 
         query = f"""

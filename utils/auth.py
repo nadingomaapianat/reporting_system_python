@@ -12,6 +12,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
+from utils.jwt_context import set_request_jwt_claims
+
 
 def _cookie_from_header(cookie_header: Optional[str], name: str) -> Optional[str]:
     """Parse cookie value from raw Cookie header (same as Node)."""
@@ -213,6 +215,9 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
+        # Clear per-request JWT context unless we authenticate below
+        set_request_jwt_claims(None)
+
         if request.method.upper() == "OPTIONS":
             return await call_next(request)
 
@@ -235,6 +240,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         try:
             payload = verify_token(token)
             request.state.user = payload
+            set_request_jwt_claims(payload)
         except HTTPException as e:
             _auth_log(f"401 path={request.url.path} method={request.method} -> reason: token invalid or expired")
             return JSONResponse(
