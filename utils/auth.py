@@ -51,6 +51,11 @@ JWT_ALGORITHM = "HS256"
 
 # Static cookie name for JWT (same as Node and frontend).
 REPORTING_AUTH_COOKIE_NAME = "reporting_auth_token"
+# Legacy name from reporting_system_node2 auth.controller (still used in some deployments).
+REPORTING_NODE_TOKEN_LEGACY = "reporting_node_token"
+
+# Set REPORTING_ALLOW_QUERY_TOKEN_AUTH=false in production to disable ?token= / ?access_token= (avoids leaks in logs).
+_ALLOW_QUERY_TOKEN_GET = os.getenv("REPORTING_ALLOW_QUERY_TOKEN_AUTH", "true").lower() in ("true", "1", "yes")
 
 security = HTTPBearer(auto_error=False)
 
@@ -87,11 +92,16 @@ def get_token_from_request(request: Request) -> Optional[str]:
         _auth_log(f"Token from: X-Export-Token (path={request.url.path})")
         return export_token.strip()
 
-    # 2) Cookie — same as Node (reporting_auth_token then split cookies)
+    # 2) Cookie — same as Node (reporting_auth_token, legacy reporting_node_token, then split cookies)
     reporting_token = request.cookies.get(REPORTING_AUTH_COOKIE_NAME)
     if reporting_token:
         _auth_log(f"Token from: cookie {REPORTING_AUTH_COOKIE_NAME} (path={request.url.path})")
         return reporting_token
+
+    legacy_token = request.cookies.get(REPORTING_NODE_TOKEN_LEGACY)
+    if legacy_token:
+        _auth_log(f"Token from: cookie {REPORTING_NODE_TOKEN_LEGACY} (path={request.url.path})")
+        return legacy_token
 
     for prefix in ("iframe_d_c_c_t_p", "d_c_c_t_p"):
         part1 = request.cookies.get(f"{prefix}_1")
@@ -111,14 +121,18 @@ def get_token_from_request(request: Request) -> Optional[str]:
         if reporting_from_header:
             _auth_log(f"Token from: Cookie header {REPORTING_AUTH_COOKIE_NAME} (path={request.url.path})")
             return reporting_from_header
+        legacy_from_header = _cookie_from_header(raw_cookie, REPORTING_NODE_TOKEN_LEGACY)
+        if legacy_from_header:
+            _auth_log(f"Token from: Cookie header {REPORTING_NODE_TOKEN_LEGACY} (path={request.url.path})")
+            return legacy_from_header
         for prefix in ("iframe_d_c_c_t_p", "d_c_c_t_p"):
             token = _token_from_split_cookies_in_header(raw_cookie, prefix)
             if token:
                 _auth_log(f"Token from: Cookie header {prefix}_* (path={request.url.path})")
                 return token
 
-    # 3) GET: query param fallback
-    if request.method.upper() == "GET":
+    # 3) GET: query param fallback (optional; disable in prod via REPORTING_ALLOW_QUERY_TOKEN_AUTH=false)
+    if _ALLOW_QUERY_TOKEN_GET and request.method.upper() == "GET":
         query_token = request.query_params.get("token") or request.query_params.get("access_token")
         if query_token and query_token.strip():
             _auth_log(f"Token from: query param token/access_token (path={request.url.path})")
@@ -126,7 +140,8 @@ def get_token_from_request(request: Request) -> Optional[str]:
 
     _auth_log(
         f"No token found for path={request.url.path} method={request.method} "
-        f"(checked: Authorization, X-Forwarded-Authorization, X-Export-Token, cookies {REPORTING_AUTH_COOKIE_NAME}/d_c_c_t_p_*, query token/access_token)"
+        f"(checked: Authorization, X-Forwarded-Authorization, X-Export-Token, cookies {REPORTING_AUTH_COOKIE_NAME}/d_c_c_t_p_*, "
+        f"{'query token/access_token' if _ALLOW_QUERY_TOKEN_GET else 'query token disabled'})"
     )
     return None
 
