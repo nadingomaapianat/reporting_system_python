@@ -5,6 +5,7 @@ import asyncio
 import os
 from typing import List, Dict, Any, Optional
 from config import get_db_connection
+from utils.pymssql_params import normalize_params
 from utils.jwt_context import get_request_jwt_claims
 from utils.reporting_access import is_reporting_admin
 
@@ -116,7 +117,7 @@ class KriService:
             try:
                 cursor = conn.cursor()
                 if params:
-                    cursor.execute(query, params)
+                    cursor.execute(query, normalize_params(params))
                 else:
                     cursor.execute(query)
                 

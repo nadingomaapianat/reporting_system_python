@@ -8,6 +8,7 @@ from typing import List, Dict, Any, Optional
 from config import get_db_connection
 from utils.jwt_context import get_request_jwt_claims
 from utils.reporting_access import is_reporting_admin
+from utils.pymssql_params import normalize_params
 
 def write_debug(msg):
     """Write debug message to file with timestamp"""
@@ -146,7 +147,7 @@ class IncidentService:
             try:
                 cursor = conn.cursor()
                 if params:
-                    cursor.execute(query, params)
+                    cursor.execute(query, normalize_params(params))
                 else:
                     cursor.execute(query)
                 

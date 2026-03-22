@@ -29,6 +29,7 @@ from routes.route_utils import (
     generate_pdf_report,
     extract_user_and_function_params
 )
+from utils.pymssql_params import normalize_params
 
 # Initialize services
 api_service = APIService()
@@ -269,7 +270,8 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
                                   AND f.deletedAt IS NULL
                                   AND uf.userId IS NOT NULL
                             """
-                            cursor.execute(query, user_functions)
+                            # IN (%s,%s,...): pymssql needs tuple of values, not list
+                            cursor.execute(query, normalize_params(user_functions))
                             shared_user_ids = [str(row[0]).strip() for row in cursor.fetchall() if row[0] and str(row[0]).strip()]
                             write_debug(f"[List Exports] Users sharing functions with {user_id}: {shared_user_ids} (total: {len(shared_user_ids)})")
                         except Exception as e:
@@ -330,7 +332,7 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
 
             # Total count with search and filters
             count_query = f"SELECT COUNT(*) FROM dbo.report_exports {search_condition}"
-            cursor.execute(count_query, search_params)
+            cursor.execute(count_query, tuple(search_params))
             total_count = int(cursor.fetchone()[0])
 
             # Pagination via OFFSET/FETCH
@@ -345,7 +347,7 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
                 ORDER BY created_at DESC, id DESC
                 OFFSET %s ROWS FETCH NEXT %s ROWS ONLY
             """
-            cursor.execute(select_query, tuple(search_params + [offset, safe_limit]))
+            cursor.execute(select_query, normalize_params(search_params + [offset, safe_limit]))
             rows = cursor.fetchall()
             exports = [
                 {

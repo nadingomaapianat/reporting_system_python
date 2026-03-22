@@ -557,8 +557,8 @@ async def insert_check_record(
                     }
                 values.append(coerced)
             
-            # Execute insert
-            cursor.execute(insert_query, values)
+            # Execute insert (pymssql requires tuple/dict, not list)
+            cursor.execute(insert_query, tuple(values))
             conn.commit()
             
             # Get the inserted record ID
@@ -916,7 +916,7 @@ async def create_table(request: Request):
                             values.append(value)
                         
                         if values:  # Only insert if we have valid values
-                            cursor.execute(insert_query, values)
+                            cursor.execute(insert_query, tuple(values))
                             conn.commit()
                             
                             # Get the inserted record ID
