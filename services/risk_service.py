@@ -2,6 +2,7 @@
 Risk service for risk operations
 """
 import asyncio
+import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from config import get_db_connection
@@ -45,6 +46,13 @@ class RiskService:
         """
         claims = get_request_jwt_claims()
         if is_reporting_admin(user_id, group_name, claims):
+            try:
+                write_debug(
+                    f"[RiskService] access: super_admin=True (is_reporting_admin) user_id={user_id!r} "
+                    f"jwt_role={claims.get('role')!r} jwt_isAdmin={claims.get('isAdmin')!r} group={group_name!r}"
+                )
+            except Exception:
+                pass
             return {"is_super_admin": True, "function_ids": []}
 
         # Backwards compatibility: if we don't know the user, don't restrict data
@@ -65,6 +73,27 @@ class RiskService:
         # Trim function IDs to handle spaces
         function_ids = [str(r.get('id')).strip() if r.get('id') else None for r in rows]
         function_ids = [fid for fid in function_ids if fid]  # Remove None values
+
+        try:
+            write_debug(
+                f"[RiskService] access: user_id={user_id} is_super_admin=False "
+                f"n_functions={len(function_ids)} jwt_role={claims.get('role')!r} "
+                f"jwt_isAdmin={claims.get('isAdmin')!r} group={group_name!r}"
+            )
+        except Exception:
+            pass
+
+        # UAT / migration only: if user has no UserFunction rows, treat like super-admin (same spirit as Node when table is missing + REPORTS_EMPTY_FUNCTIONS_SEE_ALL).
+        if (
+            not function_ids
+            and os.getenv("REPORTING_ALLOW_ALL_WHEN_NO_USER_FUNCTIONS", "").lower() in ("1", "true", "yes")
+        ):
+            try:
+                write_debug("[RiskService] access: REPORTING_ALLOW_ALL_WHEN_NO_USER_FUNCTIONS → no function filter")
+            except Exception:
+                pass
+            return {"is_super_admin": True, "function_ids": []}
+
         return {"is_super_admin": False, "function_ids": function_ids}
 
     def _build_risk_function_filter(
@@ -385,7 +414,8 @@ class RiskService:
         SELECT r.code, r.name, r.inherent_value,
           ISNULL({self._risk_function_name_subquery('r')}, 'Unknown') AS function_name
         FROM {self.get_fully_qualified_table_name('Risks')} r
-        WHERE r.isDeleted = 0 AND r.deletedAt IS NULL AND r.inherent_value = 'High' {date_filter}
+        WHERE r.isDeleted = 0 AND r.deletedAt IS NULL
+          AND LOWER(LTRIM(RTRIM(CAST(r.inherent_value AS NVARCHAR(100))))) = 'high' {date_filter}
         {function_filter}
         ORDER BY r.createdAt DESC
         """
@@ -416,7 +446,8 @@ class RiskService:
         SELECT r.code, r.name, r.inherent_value,
           ISNULL({self._risk_function_name_subquery('r')}, 'Unknown') AS function_name
         FROM {self.get_fully_qualified_table_name('Risks')} r
-        WHERE r.isDeleted = 0 AND r.deletedAt IS NULL AND r.inherent_value = 'Medium' {date_filter}
+        WHERE r.isDeleted = 0 AND r.deletedAt IS NULL
+          AND LOWER(LTRIM(RTRIM(CAST(r.inherent_value AS NVARCHAR(100))))) = 'medium' {date_filter}
         {function_filter}
         ORDER BY r.createdAt DESC
         """
@@ -447,7 +478,8 @@ class RiskService:
         SELECT r.code, r.name, r.inherent_value,
           ISNULL({self._risk_function_name_subquery('r')}, 'Unknown') AS function_name
         FROM {self.get_fully_qualified_table_name('Risks')} r
-        WHERE r.isDeleted = 0 AND r.deletedAt IS NULL AND r.inherent_value = 'Low' {date_filter}
+        WHERE r.isDeleted = 0 AND r.deletedAt IS NULL
+          AND LOWER(LTRIM(RTRIM(CAST(r.inherent_value AS NVARCHAR(100))))) = 'low' {date_filter}
         {function_filter}
         ORDER BY r.createdAt DESC
         """

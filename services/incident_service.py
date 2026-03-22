@@ -2,6 +2,7 @@
 Incident service for incident operations
 """
 import asyncio
+import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from config import get_db_connection
@@ -61,6 +62,11 @@ class IncidentService:
         # Trim function IDs to handle spaces
         function_ids = [str(r.get('id')).strip() if r.get('id') else None for r in rows]
         function_ids = [fid for fid in function_ids if fid]  # Remove None values
+        if (
+            not function_ids
+            and os.getenv("REPORTING_ALLOW_ALL_WHEN_NO_USER_FUNCTIONS", "").lower() in ("1", "true", "yes")
+        ):
+            return {"is_super_admin": True, "function_ids": []}
         return {"is_super_admin": False, "function_ids": function_ids}
 
     def _build_incident_function_filter(

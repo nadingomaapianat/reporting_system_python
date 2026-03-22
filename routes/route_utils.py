@@ -11,6 +11,8 @@ import json
 import sys
 from datetime import datetime
 
+from utils.jwt_context import set_request_jwt_claims
+
 
 def write_debug(msg: str) -> None:
     """Write debug message to file with timestamp"""
@@ -77,7 +79,12 @@ def extract_user_and_function_params(request: Any) -> tuple[Optional[str], Optio
     # Extract user info from request.state (set by JWTAuthMiddleware)
     if hasattr(request, 'state') and hasattr(request.state, 'user'):
         user = request.state.user
-        user_id = str(user.get('id', '')) if user.get('id') else None
+        # Ensure JWT claims are in contextvars (fixes edge cases where context was lost)
+        if user:
+            set_request_jwt_claims(user if isinstance(user, dict) else {})
+        # Node signs { id }; some JWTs use sub only
+        _uid = user.get("id") or user.get("sub")
+        user_id = str(_uid).strip() if _uid is not None and str(_uid).strip() else None
         group_name = user.get('group') or user.get('groupName') or None
 
     # When export is proxied through Node, user context is sent via headers (no JWT on Python)

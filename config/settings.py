@@ -21,6 +21,7 @@ _db_backend = (os.getenv('DB_BACKEND', 'pymssql') or 'pymssql').strip().lower()
 # Connection timeout in seconds; when DB is unreachable, fail fast to avoid long waits and 504s (default 10s).
 _db_connect_timeout = max(5, min(120, int(os.getenv('DB_CONNECT_TIMEOUT', '10'))))
 
+# database: MUST match reporting_system_node DB_NAME for GRC exports; otherwise UI (Node) and exports (Python) read different DBs.
 DATABASE_CONFIG = {
     'server': _db_host or '206.189.57.0',
     'port': _db_port or '1433',
