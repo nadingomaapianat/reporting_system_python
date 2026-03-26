@@ -104,6 +104,41 @@ INCIDENT_COLUMNS_UI = [
     ('createdAt', 'Created At'),
 ]
 
+# Incident Action Plan table (Actionplans linked to Incidents) — matches IncidentsDashboard incidentActionPlan columns
+INCIDENT_ACTION_PLAN_COLUMNS = [
+    ('incident_name', 'Incident Name'),
+    ('incident_department', 'Incident Department'),
+    ('root_cause', 'Root Cause'),
+    ('description', 'Description'),
+    ('action_taken', 'Action Taken'),
+    ('action_owner', 'Action Owner'),
+    ('status', 'Status'),
+    ('expected_implementation_date', 'Expected Implementation Date'),
+]
+
+
+def get_incident_action_plan_ordered_keys() -> list:
+    """Fixed column order for Incident Action Plan exports (matches UI)."""
+    return [k for k, _ in INCIDENT_ACTION_PLAN_COLUMNS]
+
+
+def get_incident_action_plan_label(key: str) -> str:
+    """UI label for an Incident Action Plan column key."""
+    for k, label in INCIDENT_ACTION_PLAN_COLUMNS:
+        if k == key:
+            return label
+    import re
+    return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(key)).title()
+
+
+def get_incident_action_plan_cell_value(row: dict, key: str, empty_placeholder: str = 'N/A') -> str:
+    """Cell value for Incident Action Plan row; dates formatted like other exports."""
+    v = row.get(key, '')
+    if v is None or v == '':
+        return empty_placeholder
+    return format_cell_value_for_export(key, v)
+
+
 # PDF only: subset of columns so the table fits on the page and avoids layout errors
 INCIDENT_COLUMNS_PDF = [
     ('code', 'Code'),
@@ -173,4 +208,21 @@ def get_incident_cell_value(row: dict, key: str, empty_placeholder: str = 'N/A')
     return format_cell_value_for_export(key, v)
 
 
-__all__ = ['get_default_header_config', 'merge_header_config', 'format_cell_value_for_export', 'DATE_KEYS', 'DATETIME_KEYS', 'INCIDENT_COLUMNS_UI', 'INCIDENT_COLUMNS_PDF', 'get_incident_ordered_keys', 'get_incident_ordered_keys_pdf', 'get_incident_ordered_keys_full_ui', 'get_incident_label', 'get_incident_cell_value']
+__all__ = [
+    'get_default_header_config',
+    'merge_header_config',
+    'format_cell_value_for_export',
+    'DATE_KEYS',
+    'DATETIME_KEYS',
+    'INCIDENT_COLUMNS_UI',
+    'INCIDENT_COLUMNS_PDF',
+    'INCIDENT_ACTION_PLAN_COLUMNS',
+    'get_incident_ordered_keys',
+    'get_incident_ordered_keys_pdf',
+    'get_incident_ordered_keys_full_ui',
+    'get_incident_label',
+    'get_incident_cell_value',
+    'get_incident_action_plan_ordered_keys',
+    'get_incident_action_plan_label',
+    'get_incident_action_plan_cell_value',
+]

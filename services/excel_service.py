@@ -376,7 +376,6 @@ class ExcelService:
 
             # TABLE EXPORT (full UI columns so Excel has all columns as in dashboard)
             elif only_overall_table:
-                from utils.export_utils import get_incident_ordered_keys_full_ui, get_incident_label, get_incident_cell_value
                 table_rows = []
                 if card_type == 'overallStatuses':
                     table_rows = incidents_data.get('overallStatuses') or incidents_data.get('statusOverview') or []
@@ -386,12 +385,25 @@ class ExcelService:
                 if isinstance(table_rows, list) and len(table_rows) > 0:
                     first_item = table_rows[0]
                     if isinstance(first_item, dict):
-                        ordered_keys = get_incident_ordered_keys_full_ui()
-                        columns = ['#'] + [get_incident_label(k) for k in ordered_keys]
-                        for i, row in enumerate(table_rows, 1):
-                            # Use blank for missing columns so extra UI columns stay empty, not "N/A"
-                            values = [get_incident_cell_value(row, k, empty_placeholder='') for k in ordered_keys]
-                            data_rows.append([str(i)] + values)
+                        if card_type == 'incidentActionPlan':
+                            from utils.export_utils import (
+                                get_incident_action_plan_ordered_keys,
+                                get_incident_action_plan_label,
+                                get_incident_action_plan_cell_value,
+                            )
+                            ordered_keys = get_incident_action_plan_ordered_keys()
+                            columns = ['#'] + [get_incident_action_plan_label(k) for k in ordered_keys]
+                            for i, row in enumerate(table_rows, 1):
+                                values = [get_incident_action_plan_cell_value(row, k, empty_placeholder='') for k in ordered_keys]
+                                data_rows.append([str(i)] + values)
+                        else:
+                            from utils.export_utils import get_incident_ordered_keys_full_ui, get_incident_label, get_incident_cell_value
+                            ordered_keys = get_incident_ordered_keys_full_ui()
+                            columns = ['#'] + [get_incident_label(k) for k in ordered_keys]
+                            for i, row in enumerate(table_rows, 1):
+                                # Use blank for missing columns so extra UI columns stay empty, not "N/A"
+                                values = [get_incident_cell_value(row, k, empty_placeholder='') for k in ordered_keys]
+                                data_rows.append([str(i)] + values)
                     elif isinstance(first_item, (list, tuple)):
                         num_cols = len(first_item)
                         columns = ['#'] + [f'C{idx+1}' for idx in range(num_cols)]
