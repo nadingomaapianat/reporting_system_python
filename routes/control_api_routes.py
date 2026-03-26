@@ -18,6 +18,7 @@ DashboardActivityService = None  # type: ignore
 from utils.export_utils import get_default_header_config
 from models import ExportRequest, ExportResponse
 from routes.route_utils import write_debug, parse_header_config, merge_header_config, convert_to_boolean, save_and_log_export, extract_user_and_function_params
+from utils.order_by_function import apply_order_by_function_deep, order_by_function_from_request
 
 # Initialize services
 api_service = APIService()
@@ -238,6 +239,8 @@ async def export_controls_pdf(
 
             
         controls_data[cardType] = card_data
+        if order_by_function_from_request(request):
+            controls_data = apply_order_by_function_deep(controls_data)
 
         
 
@@ -452,6 +455,8 @@ async def export_controls_excel(
 
             
             controls_data[cardType] = card_data
+        if order_by_function_from_request(request):
+            controls_data = apply_order_by_function_deep(controls_data)
         
         # Data fetching complete via service methods (no inline SQL)
         

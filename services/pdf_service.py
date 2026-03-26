@@ -222,12 +222,24 @@ class PDFService:
                 if isinstance(table_rows, list) and table_rows:
                     first_item = table_rows[0]
                     if isinstance(first_item, dict):
-                        from utils.export_utils import get_incident_ordered_keys_pdf, get_incident_label, get_incident_cell_value
-                        raw_keys = get_incident_ordered_keys_pdf(first_item)
-                        columns = ['#'] + [get_incident_label(k) for k in raw_keys]
-                        for i, row in enumerate(table_rows, 1):
-                            values = [get_incident_cell_value(row, k) for k in raw_keys]
-                            data_rows.append([str(i)] + values)
+                        if card_type == 'incidentActionPlan':
+                            from utils.export_utils import (
+                                get_incident_action_plan_ordered_keys,
+                                get_incident_action_plan_label,
+                                get_incident_action_plan_cell_value,
+                            )
+                            raw_keys = get_incident_action_plan_ordered_keys()
+                            columns = ['#'] + [get_incident_action_plan_label(k) for k in raw_keys]
+                            for i, row in enumerate(table_rows, 1):
+                                values = [get_incident_action_plan_cell_value(row, k) for k in raw_keys]
+                                data_rows.append([str(i)] + values)
+                        else:
+                            from utils.export_utils import get_incident_ordered_keys_pdf, get_incident_label, get_incident_cell_value
+                            raw_keys = get_incident_ordered_keys_pdf(first_item)
+                            columns = ['#'] + [get_incident_label(k) for k in raw_keys]
+                            for i, row in enumerate(table_rows, 1):
+                                values = [get_incident_cell_value(row, k) for k in raw_keys]
+                                data_rows.append([str(i)] + values)
                     elif isinstance(first_item, (list, tuple)):
                         num_cols = len(first_item)
                         columns = ['#'] + [f'C{idx+1}' for idx in range(num_cols)]
