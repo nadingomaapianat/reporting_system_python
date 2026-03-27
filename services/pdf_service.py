@@ -1132,3 +1132,198 @@ class PDFService:
             doc.build(content)
             buffer.seek(0)
             return buffer.getvalue()
+
+    async def generate_comply_pdf(
+        self,
+        comply_data: Dict[str, Any],
+        start_date: str,
+        end_date: str,
+        header_config: Dict[str, Any],
+        card_type: str = None,
+        only_card: bool = False,
+        only_overall_table: bool = False,
+        only_chart: bool = False,
+    ) -> bytes:
+        """Comply PDF: dynamic columns from Node SQL rows (same rendering approach as risks charts/tables)."""
+        import re
+
+        write_debug("DEBUG: ===== generate_comply_pdf START =====")
+        try:
+            if not header_config or (isinstance(header_config, dict) and len(header_config) == 0):
+                from utils.export_utils import get_default_header_config
+
+                header_config = get_default_header_config("comply")
+
+            if not comply_data:
+                raise ValueError("No comply_data provided")
+
+            data = comply_data.get(card_type, [])
+
+            columns: List[str] = []
+            data_rows: List[List[str]] = []
+
+            if only_chart and card_type:
+                chart_data = {"labels": [], "values": []}
+                if isinstance(data, list) and data:
+                    first_item = data[0]
+                    if isinstance(first_item, dict):
+                        keys = [k for k in first_item.keys() if str(k).lower() != "id"]
+
+                        def fmt(k: str) -> str:
+                            return re.sub(r"[_]|([a-z])([A-Z])", r"\1 \2", str(k)).title()
+
+                        if len(keys) >= 3:
+                            label_key = keys[0]
+                            value_keys = [k for k in keys[1:] if k != label_key]
+                            if not value_keys:
+                                value_keys = [keys[-1]]
+                            columns = [fmt(label_key)] + [fmt(k) for k in value_keys]
+                            for item in data:
+                                name = item.get(label_key, "N/A")
+                                row = [name]
+                                values_for_chart = []
+                                for vk in value_keys:
+                                    val = item.get(vk, 0)
+                                    row.append(str(val))
+                                    values_for_chart.append(val)
+                                chart_data["labels"].append(name)
+                                chart_data["values"].append(
+                                    values_for_chart[0] if values_for_chart else 0
+                                )
+                                data_rows.append(row)
+                        elif len(keys) >= 2:
+                            key1, key2 = keys[0], keys[-1]
+                            columns = [fmt(key1), fmt(key2)]
+                            for item in data:
+                                name = item.get(key1, "N/A")
+                                value = item.get(key2, 0)
+                                chart_data["labels"].append(name)
+                                chart_data["values"].append(value)
+                                data_rows.append([name, str(value)])
+                        else:
+                            columns = ["Label", "Value"]
+                            for item in data:
+                                name = str(item)
+                                chart_data["labels"].append(name)
+                                chart_data["values"].append(0)
+                                data_rows.append([name, "0"])
+                    else:
+                        columns = ["Label", "Value"]
+                        data_rows.append([str(first_item), "0"])
+                else:
+                    columns = ["Label", "Value"]
+                    data_rows.append(["No data available", "0"])
+
+                default_type_by_card = {
+                    "surveysByStatus": "pie",
+                    "complianceByStatus": "pie",
+                    "complianceByProgress": "pie",
+                    "complianceByApproval": "pie",
+                    "complianceByControlCategory": "bar",
+                    "topFailedControls": "bar",
+                    "controlsPerCategory": "bar",
+                    "risksPerCategory": "bar",
+                    "impactedAreasTrend": "line",
+                    "questionsPerType": "pie",
+                    "questionsPerReferences": "bar",
+                    "controlNosPerDomains": "bar",
+                    "avgScorePerSurvey": "bar",
+                }
+                chart_type_override = None
+                try:
+                    chart_type_override = header_config.get("chartType") or header_config.get("chart_type")
+                except Exception:
+                    chart_type_override = None
+                valid_types = {"bar", "line", "pie"}
+                if chart_type_override in valid_types:
+                    resolved_chart_type = chart_type_override
+                else:
+                    resolved_chart_type = default_type_by_card.get(card_type or "", "bar")
+                header_config["chart_data"] = chart_data
+                header_config["chart_type"] = resolved_chart_type
+
+            elif only_overall_table:
+                from utils.export_utils import format_cell_value_for_export
+
+                write_debug("DEBUG: comply PDF only_overall_table")
+                if isinstance(data, list) and data:
+                    first_item = data[0]
+                    if isinstance(first_item, dict):
+                        raw_keys = [k for k in first_item.keys() if str(k).lower() != "id"]
+
+                        def nice(k: str) -> str:
+                            if k == "function_name":
+                                return "Function"
+                            return re.sub(r"[_]|([a-z])([A-Z])", r"\1 \2", str(k)).title()
+
+                        columns = ["#"] + [nice(k) for k in raw_keys]
+                        for i, row in enumerate(data, 1):
+                            values = [
+                                format_cell_value_for_export(k, row.get(k)) or str(row.get(k, ""))
+                                for k in raw_keys
+                            ]
+                            data_rows.append([str(i)] + values)
+                    elif isinstance(first_item, (list, tuple)):
+                        num_cols = len(first_item)
+                        columns = ["#"] + [f"C{idx+1}" for idx in range(num_cols)]
+                        for i, row in enumerate(data, 1):
+                            vals = [str(v) for v in (row if isinstance(row, (list, tuple)) else [row])]
+                            data_rows.append([str(i)] + vals)
+                    else:
+                        columns = ["#", "Value"]
+                        data_rows = [["1", str(first_item)]]
+                else:
+                    columns = ["#", "Value"]
+                    data_rows = [["1", "No data available"]]
+
+            elif only_card and card_type:
+                from utils.export_utils import format_cell_value_for_export
+
+                if isinstance(data, list) and data:
+                    first_item = data[0]
+                    if isinstance(first_item, dict):
+
+                        def nice2(k: str) -> str:
+                            if k == "function_name":
+                                return "Function"
+                            return re.sub(r"[_]|([a-z])([A-Z])", r"\1 \2", str(k)).title()
+
+                        raw_keys = [k for k in first_item.keys() if str(k).lower() != "id"]
+                        columns = ["#"] + [nice2(k) for k in raw_keys]
+                        for i, item in enumerate(data, 1):
+                            values = [
+                                format_cell_value_for_export(k, item.get(k)) or str(item.get(k, "N/A"))
+                                for k in raw_keys
+                            ]
+                            data_rows.append([str(i)] + values)
+                    else:
+                        columns = ["#", "Value"]
+                        data_rows = [["1", str(first_item)]]
+                elif isinstance(data, dict):
+                    columns = ["Metric", "Value"]
+                    data_rows = [[k, str(v)] for k, v in data.items()]
+                else:
+                    columns = ["Metric", "Value"]
+                    data_rows = [["No data available", "N/A"]]
+            else:
+                data_rows = [["Comply Dashboard Report", "Generated Successfully"]]
+                columns = ["Title", "Status"]
+
+            from utils.export_utils import merge_header_config
+
+            final_config = merge_header_config("comply", header_config)
+            result = generate_pdf_report(columns, data_rows, final_config)
+            if not result:
+                raise ValueError("PDF generation returned None")
+            return result
+        except Exception as e:
+            write_debug(f"ERROR: generate_comply_pdf - {e}")
+            import traceback
+
+            traceback.print_exc()
+            buffer = io.BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=A4)
+            content = [Paragraph("Error generating comply report", getSampleStyleSheet()["Normal"])]
+            doc.build(content)
+            buffer.seek(0)
+            return buffer.getvalue()

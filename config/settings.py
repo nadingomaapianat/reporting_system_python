@@ -118,6 +118,22 @@ DEFAULT_HEADER_CONFIGS = {
         'tableHeaderBgColor': '#E3F2FD',
         'tableBodyBgColor': '#F5F5F5'
     },
+    'comply': {
+        'title': 'COMPLY DASHBOARD REPORT',
+        'subtitle': 'Comprehensive Analysis Report',
+        'showLogo': True,
+        'logoSize': 'medium',
+        'bankName': 'PIANAT.AI',
+        'bankAddress': 'Bank address',
+        'bankPhone': 'Bank phone',
+        'bankUrl': 'www.website.com',
+        'watermarkEnabled': True,
+        'watermarkText': 'CONFIDENTIAL',
+        'fontColor': '#1F4E79',
+        'tableHeaderBgColor': '#E3F2FD',
+        'tableHeaderFontColor': '#000000',
+        'tableBodyBgColor': '#F5F5F5'
+    },
     'incidents': {
         'title': 'INCIDENTS DASHBOARD REPORT',
         'subtitle': 'Comprehensive Analysis Report',

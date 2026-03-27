@@ -588,7 +588,7 @@ async def save_and_log_export(
                 # Dashboard reports: incidents, kris, risks, controls
                 # Transaction reports: everything else
                 export_type = "transaction"  # Default
-                if dashboard and dashboard.lower() in ['incidents', 'kris', 'risks', 'controls']:
+                if dashboard and dashboard.lower() in ['incidents', 'kris', 'risks', 'controls', 'comply']:
                     export_type = "dashboard"
             
             # Check if record already exists with same parameters within the last 30 seconds
