@@ -469,7 +469,7 @@ async def export_incidents_excel(
                 data = list(incident_action_plan_override) if isinstance(incident_action_plan_override, list) else []
             else:
                 forward_headers = _forward_auth_headers(request)
-                full = await api_service.get_incidents_data(startDate, endDate, headers=forward_headers)
+                full = await api_service.get_incidents_data(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, headers=forward_headers)
                 data = (full.get('incidentActionPlan') or []) if isinstance(full, dict) else []
 
        
@@ -482,8 +482,8 @@ async def export_incidents_excel(
 
         
         else:
-            # Fallback to aggregated API data
-            incidents_data = await api_service.get_incidents_data(startDate, endDate)
+            # Fallback to aggregated API data (same date/function scope as dashboard)
+            incidents_data = await api_service.get_incidents_data(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id)
             data = incidents_data.get(cardType) or incidents_data.get('statusOverview') or []
 
         incidents_data_wrapped = {cardType or 'overallStatuses': data}

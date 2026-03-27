@@ -13,6 +13,33 @@ class APIService:
     def __init__(self):
         self.node_api_url = API_CONFIG['node_api_url']
         self.timeout = API_CONFIG['timeout']
+
+    @staticmethod
+    def _node_grc_filter_params(
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> Dict[str, str]:
+        """startDate/endDate/functionId normalized like Node GRC (ISO dates, trimmed function id)."""
+        from utils.node_grc_query import grc_iso_date_param, grc_function_id_param
+
+        params: Dict[str, str] = {}
+        sd = grc_iso_date_param(start_date)
+        ed = grc_iso_date_param(end_date)
+        if sd:
+            params["startDate"] = sd
+        if ed:
+            params["endDate"] = ed
+        if user_id:
+            params["userId"] = user_id
+        if group_name:
+            params["groupName"] = group_name
+        fid = grc_function_id_param(function_id)
+        if fid:
+            params["functionId"] = fid
+        return params
     
     async def get_risks_data(
         self,
@@ -25,17 +52,7 @@ class APIService:
         """Get risks data from Node.js API"""
         try:
             url = f"{self.node_api_url}/api/grc/risks"
-            params = {}
-            if start_date:
-                params['startDate'] = start_date
-            if end_date:
-                params['endDate'] = end_date
-            if user_id:
-                params['userId'] = user_id
-            if group_name:
-                params['groupName'] = group_name
-            if function_id:
-                params['functionId'] = function_id
+            params = self._node_grc_filter_params(start_date, end_date, user_id, group_name, function_id)
             
             # Add reasonable connect/read timeouts to avoid long hangs
             timeout = aiohttp.ClientTimeout(total=self.timeout, connect=10)
@@ -68,17 +85,7 @@ class APIService:
         """Get controls data from Node.js API with fallback"""
         try:
             url = f"{self.node_api_url}/api/grc/controls"
-            params = {}
-            if start_date:
-                params['startDate'] = start_date
-            if end_date:
-                params['endDate'] = end_date
-            if user_id:
-                params['userId'] = user_id
-            if group_name:
-                params['groupName'] = group_name
-            if function_id:
-                params['functionId'] = function_id
+            params = self._node_grc_filter_params(start_date, end_date, user_id, group_name, function_id)
             
             # Increase timeout for complex queries
             timeout = aiohttp.ClientTimeout(total=self.timeout, connect=10)
@@ -112,17 +119,7 @@ class APIService:
         """Get specific risks card data from Node.js API"""
         try:
             url = f"{self.node_api_url}/api/grc/risks/{card_type}"
-            params = {}
-            if start_date:
-                params['startDate'] = start_date
-            if end_date:
-                params['endDate'] = end_date
-            if user_id:
-                params['userId'] = user_id
-            if group_name:
-                params['groupName'] = group_name
-            if function_id:
-                params['functionId'] = function_id
+            params = self._node_grc_filter_params(start_date, end_date, user_id, group_name, function_id)
             
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 async with session.get(url, params=params) as response:
@@ -223,17 +220,8 @@ class APIService:
             endpoint = endpoint_map.get(card_type, card_type)
             url = f"{self.node_api_url}/api/grc/controls/{endpoint}"
             # Request a large page size to retrieve all rows for export
-            params = {'page': 1, 'limit': 10000}
-            if start_date:
-                params['startDate'] = start_date
-            if end_date:
-                params['endDate'] = end_date
-            if user_id:
-                params['userId'] = user_id
-            if group_name:
-                params['groupName'] = group_name
-            if function_id:
-                params['functionId'] = function_id
+            params: Dict[str, Any] = {'page': 1, 'limit': 10000}
+            params.update(self._node_grc_filter_params(start_date, end_date, user_id, group_name, function_id))
             
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 async with session.get(url, params=params) as response:
@@ -270,17 +258,7 @@ class APIService:
         """Get incidents dashboard data from Node.js API. Pass headers (e.g. Cookie, Authorization) to forward auth."""
         try:
             url = f"{self.node_api_url}/api/grc/incidents"
-            params = {}
-            if start_date:
-                params['startDate'] = start_date
-            if end_date:
-                params['endDate'] = end_date
-            if user_id:
-                params['userId'] = user_id
-            if group_name:
-                params['groupName'] = group_name
-            if function_id:
-                params['functionId'] = function_id
+            params = self._node_grc_filter_params(start_date, end_date, user_id, group_name, function_id)
             request_headers = dict(headers) if headers else {}
             timeout = aiohttp.ClientTimeout(total=self.timeout)
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -342,22 +320,45 @@ class APIService:
         """Get KRIs dashboard data from Node.js API. Pass headers (e.g. Authorization, Cookie) to forward auth."""
         try:
             url = f"{self.node_api_url}/api/grc/kris"
-            params = {}
-            if start_date:
-                params['startDate'] = start_date
-            if end_date:
-                params['endDate'] = end_date
-            if user_id:
-                params['userId'] = user_id
-            if group_name:
-                params['groupName'] = group_name
-            if function_id:
-                params['functionId'] = function_id
+            params = self._node_grc_filter_params(start_date, end_date, user_id, group_name, function_id)
             request_headers = dict(headers) if headers else None
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 async with session.get(url, params=params, headers=request_headers) as response:
                     if response.status == 200:
                         return await response.json()
+                    return {}
+        except Exception:
+            return {}
+
+    async def get_comply_dashboard(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Get full GRC Comply dashboard from Node (same data as UI). Forward Cookie/Authorization for JWT."""
+        try:
+            url = f"{self.node_api_url}/api/grc/comply"
+            params: Dict[str, str] = {}
+            if start_date:
+                params["startDate"] = start_date
+            if end_date:
+                params["endDate"] = end_date
+            if user_id:
+                params["userId"] = user_id
+            if group_name:
+                params["groupName"] = group_name
+            if function_id:
+                params["functionId"] = function_id
+            request_headers = dict(headers) if headers else None
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+                async with session.get(url, params=params, headers=request_headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data if isinstance(data, dict) else {}
                     return {}
         except Exception:
             return {}
@@ -374,17 +375,8 @@ class APIService:
         """Get specific KRIs card data from Node.js API"""
         try:
             url = f"{self.node_api_url}/api/grc/kris/{card_type}"
-            params = {'page': 1, 'limit': 10000}
-            if start_date:
-                params['startDate'] = start_date
-            if end_date:
-                params['endDate'] = end_date
-            if user_id:
-                params['userId'] = user_id
-            if group_name:
-                params['groupName'] = group_name
-            if function_id:
-                params['functionId'] = function_id
+            params: Dict[str, Any] = {'page': 1, 'limit': 10000}
+            params.update(self._node_grc_filter_params(start_date, end_date, user_id, group_name, function_id))
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
