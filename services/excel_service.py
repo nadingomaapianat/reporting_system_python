@@ -967,3 +967,188 @@ class ExcelService:
         except Exception as e:
             print(f"Error generating risks Excel: {e}")
             raise e
+
+    async def generate_comply_excel(
+        self,
+        comply_data: Dict[str, Any],
+        start_date: str,
+        end_date: str,
+        header_config: Dict[str, Any],
+        card_type: str = None,
+        only_card: bool = False,
+        only_overall_table: bool = False,
+        only_chart: bool = False,
+    ) -> bytes:
+        """Comply Excel: dynamic columns from Node SQL rows (mirrors risks Excel paths)."""
+        try:
+            from routes.route_utils import generate_excel_report, write_debug
+            import re
+
+            write_debug(f"Generating comply Excel for {start_date} to {end_date}")
+            if not header_config or (isinstance(header_config, dict) and len(header_config) == 0):
+                from utils.export_utils import get_default_header_config
+
+                header_config = get_default_header_config("comply")
+
+            data = comply_data.get(card_type, []) if comply_data else []
+            columns: List[str] = []
+            data_rows: List[List[str]] = []
+
+            def format_column_name(key: str) -> str:
+                if key == "function_name":
+                    return "Function"
+                return re.sub(r"[_]|([a-z])([A-Z])", r"\1 \2", str(key)).title()
+
+            if only_chart and card_type:
+                if isinstance(data, list) and data:
+                    first_item = data[0]
+                    if isinstance(first_item, dict):
+                        keys = list(first_item.keys())
+                        if len(keys) >= 3:
+                            label_key = keys[0]
+                            value_keys = [k for k in keys[1:] if k != label_key]
+                            if not value_keys:
+                                value_keys = [keys[-1]]
+                            columns = [format_column_name(label_key)] + [
+                                format_column_name(k) for k in value_keys
+                            ]
+                            for item in data:
+                                name = item.get(label_key, "N/A")
+                                row = [name]
+                                for vk in value_keys:
+                                    row.append(str(item.get(vk, 0)))
+                                data_rows.append(row)
+                        elif len(keys) >= 2:
+                            key1, key2 = keys[0], keys[-1]
+                            columns = [format_column_name(key1), format_column_name(key2)]
+                            for item in data:
+                                data_rows.append(
+                                    [str(item.get(key1, "N/A")), str(item.get(key2, 0))]
+                                )
+                        else:
+                            key1 = keys[0]
+                            columns = [format_column_name(key1), "Value"]
+                            for item in data:
+                                data_rows.append([str(item.get(key1, "N/A")), "0"])
+                    else:
+                        data_rows = [[str(first_item), "0"]]
+                        columns = ["Label", "Value"]
+                else:
+                    data_rows = [["No data available", "0"]]
+                    columns = ["Label", "Value"]
+
+                default_type_by_card = {
+                    "surveysByStatus": "pie",
+                    "complianceByStatus": "pie",
+                    "complianceByProgress": "pie",
+                    "complianceByApproval": "pie",
+                    "complianceByControlCategory": "bar",
+                    "topFailedControls": "bar",
+                    "controlsPerCategory": "bar",
+                    "risksPerCategory": "bar",
+                    "impactedAreasTrend": "line",
+                    "questionsPerType": "pie",
+                    "questionsPerReferences": "bar",
+                    "controlNosPerDomains": "bar",
+                    "avgScorePerSurvey": "bar",
+                }
+                chart_type = header_config.get("chartType") or header_config.get("chart_type")
+                if chart_type and chart_type in {"bar", "line", "pie"}:
+                    pass
+                else:
+                    chart_type = default_type_by_card.get(card_type, "bar")
+                header_config["chart_type"] = chart_type
+                chart_labels: List[str] = []
+                chart_values: List[float] = []
+                for row in data_rows:
+                    if len(row) >= 2:
+                        chart_labels.append(str(row[0]))
+                        try:
+                            chart_values.append(float(row[1]))
+                        except Exception:
+                            chart_values.append(0)
+                if chart_labels and chart_values:
+                    header_config["chart_data"] = {"labels": chart_labels, "values": chart_values}
+                return generate_excel_report(columns, data_rows, header_config)
+
+            if only_overall_table and card_type:
+                if isinstance(data, list) and len(data) > 0:
+                    first_item = data[0]
+                    if isinstance(first_item, dict):
+                        from utils.export_utils import format_cell_value_for_export
+
+                        raw_keys = [k for k in first_item.keys() if str(k).lower() != "id"]
+                        columns = ["#"] + [format_column_name(k) for k in raw_keys]
+                        data_rows = []
+                        for i, row in enumerate(data, 1):
+                            if isinstance(row, dict):
+                                values = [
+                                    format_cell_value_for_export(k, row.get(k)) or str(row.get(k, ""))
+                                    for k in raw_keys
+                                ]
+                                data_rows.append([str(i)] + values)
+                            elif isinstance(row, (list, tuple)):
+                                data_rows.append([str(i)] + [str(v) for v in row])
+                            else:
+                                data_rows.append([str(i), str(row)])
+                    elif isinstance(first_item, (list, tuple)):
+                        num_cols = len(first_item)
+                        columns = ["#"] + [f"C{idx+1}" for idx in range(num_cols)]
+                        data_rows = []
+                        for i, row in enumerate(data, 1):
+                            vals = [str(v) for v in (row if isinstance(row, (list, tuple)) else [row])]
+                            data_rows.append([str(i)] + vals)
+                    else:
+                        columns = ["#", "Value"]
+                        data_rows = [[str(i + 1), str(v)] for i, v in enumerate(data)]
+                else:
+                    columns = ["#", "Value"]
+                    data_rows = [["1", "No data available"]]
+                return generate_excel_report(columns, data_rows, header_config)
+
+            if only_card and card_type:
+                from utils.export_utils import format_cell_value_for_export
+
+                if isinstance(data, list) and data:
+                    first_item = data[0]
+                    if isinstance(first_item, dict):
+                        raw_keys = [k for k in first_item.keys() if str(k).lower() != "id"]
+                        columns = ["#"] + [format_column_name(k) for k in raw_keys]
+                        data_rows = []
+                        for i, item in enumerate(data, 1):
+                            if isinstance(item, dict):
+                                values = [
+                                    format_cell_value_for_export(k, item.get(k))
+                                    or str(item.get(k, "N/A"))
+                                    for k in raw_keys
+                                ]
+                                data_rows.append([str(i)] + values)
+                            elif isinstance(item, (list, tuple)):
+                                data_rows.append([str(i)] + [str(v) for v in item])
+                            else:
+                                data_rows.append([str(i), str(item)])
+                    else:
+                        columns = ["#", "Value"]
+                        data_rows = [["1", str(first_item)]]
+                elif isinstance(data, dict):
+                    columns = ["Metric", "Value"]
+                    data_rows = [[key, str(value)] for key, value in data.items()]
+                else:
+                    columns = ["Metric", "Value"]
+                    data_rows = [["No data available", "N/A"]]
+                return generate_excel_report(columns, data_rows, header_config)
+
+            from openpyxl import Workbook
+            from io import BytesIO
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = header_config.get("title", "Comply Report")
+            ws["A1"] = "Comply Dashboard Report"
+            ws["A2"] = "Generated Successfully"
+            output = BytesIO()
+            wb.save(output)
+            return output.getvalue()
+        except Exception as e:
+            print(f"Error generating comply Excel: {e}")
+            raise e
