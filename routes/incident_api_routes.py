@@ -131,7 +131,8 @@ async def export_incidents_pdf(
             # Clean functionId using the same logic as extract_user_and_function_params
             from routes.route_utils import clean_function_id
             function_id = clean_function_id(functionId)
-        write_debug(f"[INCIDENTS PDF] user_id={user_id}, group_name={group_name}, function_id={function_id}")
+        function_ids = functionIds
+        write_debug(f"[INCIDENTS PDF] user_id={user_id}, group_name={group_name}, function_id={function_id}, functionIds={functionIds!r}")
 
         # Fetch data via incident_service
         if not incident_service:
@@ -339,6 +340,7 @@ async def export_incidents_excel(
         if functionId:
             from routes.route_utils import clean_function_id
             function_id = clean_function_id(functionId)
+        function_ids = functionIds
         write_debug(f"Exporting incidents report in Excel format for {startDate} to {endDate}")
         write_debug(f"cardType: {cardType}")
         write_debug(f"onlyCard: {onlyCard}")

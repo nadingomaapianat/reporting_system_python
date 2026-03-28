@@ -345,19 +345,10 @@ class APIService:
     ) -> Dict[str, Any]:
         """Get full GRC Comply dashboard from Node (same data as UI). Forward Cookie/Authorization for JWT."""
         try:
-            from utils.node_grc_query import grc_merge_function_query_params
-
             url = f"{self.node_api_url}/api/grc/comply"
-            params: Dict[str, str] = {}
-            if start_date:
-                params["startDate"] = start_date
-            if end_date:
-                params["endDate"] = end_date
-            if user_id:
-                params["userId"] = user_id
-            if group_name:
-                params["groupName"] = group_name
-            params.update(grc_merge_function_query_params(function_id, function_ids_csv))
+            params = self._node_grc_filter_params(
+                start_date, end_date, user_id, group_name, function_id, function_ids_csv
+            )
             if extra_query:
                 for k, v in extra_query.items():
                     if v is not None and str(v).strip() != "":

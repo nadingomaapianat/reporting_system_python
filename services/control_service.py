@@ -822,59 +822,87 @@ class ControlService:
         write_debug(f"Query result: {result} (count: {len(result)})")
         return result
     
-    async def get_number_of_focus_points_per_principle(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Get number of focus points per principle"""
+    async def get_number_of_focus_points_per_principle(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Focus points per principle — matches Node dashboard-config (Controls + ControlCosos + function filter)."""
         write_debug(f"Fetching focus points per principle - start_date: {start_date}, end_date: {end_date}")
-        
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND prin.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        
-        principles_table = self.get_fully_qualified_table_name('CosoPrinciples')
-        points_table = self.get_fully_qualified_table_name('CosoPoints')
-        
+            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
+
+        controls_table = self.get_fully_qualified_table_name("Controls")
+        ccx_table = self.get_fully_qualified_table_name("ControlCosos")
+        points_table = self.get_fully_qualified_table_name("CosoPoints")
+        principles_table = self.get_fully_qualified_table_name("CosoPrinciples")
+
         query = f"""
         SELECT 
             prin.name AS name,
-            COUNT(point.id) AS value
-        FROM {principles_table} prin
-        LEFT JOIN {points_table} point ON prin.id = point.principle_id
-        WHERE prin.deletedAt IS NULL 
+            COUNT(DISTINCT point.id) AS value
+        FROM {controls_table} c
+        INNER JOIN {ccx_table} ccx ON c.id = ccx.control_id AND ccx.deletedAt IS NULL
+        INNER JOIN {points_table} point ON ccx.coso_id = point.id AND point.deletedAt IS NULL
+        INNER JOIN {principles_table} prin ON prin.id = point.principle_id AND prin.deletedAt IS NULL
+        WHERE c.isDeleted = 0 AND c.deletedAt IS NULL
         {date_filter}
+        {function_filter}
         GROUP BY prin.name
-        ORDER BY COUNT(point.id) DESC, prin.name
+        ORDER BY COUNT(DISTINCT point.id) DESC, prin.name
         """
-        
         write_debug(f"SQL Query: {query}")
         result = await self.execute_query(query)
         write_debug(f"Query result: {result} (count: {len(result)})")
         return result
-    
-    async def get_number_of_focus_points_per_component(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Get number of focus points per component"""
+
+    async def get_number_of_focus_points_per_component(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Focus points per component — matches Node dashboard-config (Controls + ControlCosos + function filter)."""
         write_debug(f"Fetching focus points per component - start_date: {start_date}, end_date: {end_date}")
-        
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND comp.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        
-        components_table = self.get_fully_qualified_table_name('CosoComponents')
-        principles_table = self.get_fully_qualified_table_name('CosoPrinciples')
-        points_table = self.get_fully_qualified_table_name('CosoPoints')
-        
+            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
+
+        controls_table = self.get_fully_qualified_table_name("Controls")
+        ccx_table = self.get_fully_qualified_table_name("ControlCosos")
+        points_table = self.get_fully_qualified_table_name("CosoPoints")
+        principles_table = self.get_fully_qualified_table_name("CosoPrinciples")
+        components_table = self.get_fully_qualified_table_name("CosoComponents")
+
         query = f"""
         SELECT 
             comp.name AS name,
-            COUNT(point.id) AS value
-        FROM {components_table} comp
-        JOIN {principles_table} prin ON prin.component_id = comp.id
-        LEFT JOIN {points_table} point ON point.principle_id = prin.id
-        WHERE comp.deletedAt IS NULL AND prin.deletedAt IS NULL 
+            COUNT(DISTINCT point.id) AS value
+        FROM {controls_table} c
+        INNER JOIN {ccx_table} ccx ON c.id = ccx.control_id AND ccx.deletedAt IS NULL
+        INNER JOIN {points_table} point ON ccx.coso_id = point.id AND point.deletedAt IS NULL
+        INNER JOIN {principles_table} prin ON prin.id = point.principle_id AND prin.deletedAt IS NULL
+        INNER JOIN {components_table} comp ON prin.component_id = comp.id AND comp.deletedAt IS NULL
+        WHERE c.isDeleted = 0 AND c.deletedAt IS NULL
         {date_filter}
+        {function_filter}
         GROUP BY comp.name
-        ORDER BY COUNT(point.id) DESC
+        ORDER BY COUNT(DISTINCT point.id) DESC
         """
-        
         write_debug(f"SQL Query: {query}")
         result = await self.execute_query(query)
         write_debug(f"Query result: {result} (count: {len(result)})")
@@ -1290,29 +1318,7 @@ class ControlService:
         """
         write_debug(f"SQL Query: {q}")
         res = await self.execute_query(q)
-        write_debug(f"Query result: {len(res)} rows for actionPlanForAdequacy")
-        if not res:
-            # Fallback 2: fetch from Actionplans only (no join requirements), show available columns
-            q_min = f"""
-            SELECT 
-                ap.control_procedure AS [Control Procedure],
-                ap.[type] AS [Control Procedure Type],
-                ap.factor AS [Factor],
-                ap.riskType AS [Risk Treatment],
-                ap.responsible AS [Action Plan Owner],
-                ap.expected_cost AS [Expected Cost],
-                ap.business_unit AS [Business Unit Status],
-                ap.meeting_date AS [Meeting Date],
-                ap.implementation_date AS [Expected Implementation Date],
-                ap.not_attend AS [Did Not Attend]
-            FROM {self.get_fully_qualified_table_name('Actionplans')} ap
-            WHERE ap.[from] = 'adequacy' AND ap.deletedAt IS NULL
-        {date_filter}
-            ORDER BY ap.createdAt DESC
-            """
-            write_debug(f"SQL Query (minimal): {q_min}")
-            res = await self.execute_query(q_min)
-            write_debug(f"Query result (minimal): {len(res)} rows for actionPlanForAdequacy")
+        write_debug(f"Query result: {len(res)} rows for icofrControlCoverageByCoso")
         return res
 
     async def get_controls_not_mapped_to_principles(
