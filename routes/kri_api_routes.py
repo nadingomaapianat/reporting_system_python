@@ -20,6 +20,7 @@ from utils.export_utils import get_default_header_config
 from models import ExportRequest, ExportResponse
 from routes.route_utils import write_debug, parse_header_config, merge_header_config, convert_to_boolean, save_and_log_export, extract_user_and_function_params
 from utils.order_by_function import apply_order_by_function_deep, order_by_function_from_request
+from utils.node_grc_query import grc_iso_date_param
 
 # Initialize services
 api_service = APIService()
@@ -159,6 +160,10 @@ async def export_kris_pdf(
         if not cardType:
             raise HTTPException(status_code=400, detail="cardType or chartType is required for exports")
 
+        start_date_q = grc_iso_date_param(startDate)
+        end_date_q = grc_iso_date_param(endDate)
+        write_debug(f"[KRIS PDF] dates for SQL/Node: start={start_date_q!r} end={end_date_q!r} (raw: {startDate!r} / {endDate!r})")
+
         # Set report title to the display name for this card/chart/table (PDF title and Excel sheet name)
         header_config["title"] = KRI_DISPLAY_NAMES.get(
             cardType, header_config.get("title", "KRI Report")
@@ -172,6 +177,7 @@ async def export_kris_pdf(
             # Clean functionId using the same logic as extract_user_and_function_params
             from routes.route_utils import clean_function_id
             function_id = clean_function_id(functionId)
+        function_ids = functionIds
         write_debug(f"[KRIS PDF] user_id={user_id}, group_name={group_name}, function_id={function_id}")
 
         # Fetch data via kri_service - reinitialize if needed
@@ -198,58 +204,57 @@ async def export_kris_pdf(
                 data = total_kris_list_override
                 write_debug(f"[KRIS PDF] using totalKrisList from POST body, len={len(data)}")
             else:
-                write_debug('jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj')
-                data = await kri_service.get_kris_list(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+                data = await kri_service.get_kris_list(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'pendingPreparer':
-            data = await kri_service.get_kris_by_status_detail('pendingPreparer', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_by_status_detail('pendingPreparer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'pendingChecker':
-            data = await kri_service.get_kris_by_status_detail('pendingChecker', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_by_status_detail('pendingChecker', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'pendingReviewer':
-            data = await kri_service.get_kris_by_status_detail('pendingReviewer', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_by_status_detail('pendingReviewer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'pendingAcceptance':
-            data = await kri_service.get_kris_by_status_detail('pendingAcceptance', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_by_status_detail('pendingAcceptance', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'approved':
-            data = await kri_service.get_kris_by_status_detail('Approved', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_by_status_detail('Approved', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         
         # Charts
         elif cardType == 'krisByStatus':
-            data = await kri_service.get_kris_by_status(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_by_status(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'krisByLevel':
-            data = await kri_service.get_kris_by_level_detailed(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_by_level_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'breachedKRIsByDepartment':
-            data = await kri_service.get_breached_kris_by_department_detailed(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_breached_kris_by_department_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriAssessmentCount':
-            data = await kri_service.get_kri_assessment_count_detailed(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_assessment_count_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriMonthlyAssessment':
-            data = await kri_service.get_kri_monthly_assessment(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_monthly_assessment(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'newlyCreatedKrisPerMonth':
-            data = await kri_service.get_newly_created_kris_per_month(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_newly_created_kris_per_month(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'deletedKrisPerMonth':
-            data = await kri_service.get_deleted_kris_per_month(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_deleted_kris_per_month(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriOverdueStatusCounts':
-            data = await kri_service.get_kri_overdue_status_counts(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_overdue_status_counts(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriCountsByMonthYear':
-            data = await kri_service.get_kri_counts_by_month_year(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_counts_by_month_year(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriCountsByFrequency':
-            data = await kri_service.get_kri_counts_by_frequency(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_counts_by_frequency(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriRisksByKriName':
-            data = await kri_service.get_kri_risks_by_kri_name(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_risks_by_kri_name(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         
         # Tables
         elif cardType == 'overallKris' or cardType == 'kriStatus':
-            data = await kri_service.get_overall_kri_statuses(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_overall_kri_statuses(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriHealth':
-            data = await kri_service.get_kri_health(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_health(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'activeKrisDetails':
-            data = await kri_service.get_active_kris_details(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_active_kris_details(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'overdueKrisByDepartment':
-            data = await kri_service.get_overdue_kris_by_department(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_overdue_kris_by_department(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'allKrisSubmittedByFunction':
-            data = await kri_service.get_all_kris_submitted_by_function(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_all_kris_submitted_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriRiskRelationships':
-            data = await kri_service.get_kri_risk_relationships(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_risk_relationships(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriWithoutLinkedRisks' or cardType == 'krisWithoutLinkedRisks':
-            data = await kri_service.get_kris_without_linked_risks(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_without_linked_risks(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriDetailsWithActionPlans':
             # Use POST body if provided (frontend fetches from Node with auth); else fetch from Node
             if kri_details_override is not None:
@@ -262,11 +267,12 @@ async def export_kris_pdf(
                 if request.headers.get("cookie"):
                     forward_headers["Cookie"] = request.headers.get("cookie")
                 dashboard = await api_service.get_kris_data(
-                    start_date=startDate,
-                    end_date=endDate,
+                    start_date=start_date_q,
+                    end_date=end_date_q,
                     user_id=user_id,
                     group_name=group_name,
                     function_id=function_id,
+                    function_ids_csv=function_ids,
                     headers=forward_headers if forward_headers else None,
                 )
                 data = dashboard.get("kriDetailsWithActionPlans") or []
@@ -408,6 +414,10 @@ async def export_kris_excel(
         if not cardType:
             raise HTTPException(status_code=400, detail="cardType or chartType is required for exports")
 
+        start_date_q = grc_iso_date_param(startDate)
+        end_date_q = grc_iso_date_param(endDate)
+        write_debug(f"[KRIS EXCEL] dates for SQL/Node: start={start_date_q!r} end={end_date_q!r} (raw: {startDate!r} / {endDate!r})")
+
         # Set report title to the display name for this card/chart/table (PDF title and Excel sheet name)
         header_config["title"] = KRI_DISPLAY_NAMES.get(
             cardType, header_config.get("title", "KRI Report")
@@ -418,6 +428,7 @@ async def export_kris_excel(
         if functionId:
             from routes.route_utils import clean_function_id
             function_id = clean_function_id(functionId)
+        function_ids = functionIds
 
         if not kri_service:
             write_debug("[KRIS EXCEL] ERROR: kri_service is None - attempting to reinitialize")
@@ -442,57 +453,57 @@ async def export_kris_excel(
                 data = total_kris_list_override
                 write_debug(f"[KRIS EXCEL] using totalKrisList from POST body, len={len(data)}")
             else:
-                data = await kri_service.get_kris_list(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+                data = await kri_service.get_kris_list(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'pendingPreparer':
-            data = await kri_service.get_kris_by_status_detail('pendingPreparer', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_by_status_detail('pendingPreparer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'pendingChecker':
-            data = await kri_service.get_kris_by_status_detail('pendingChecker', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_by_status_detail('pendingChecker', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'pendingReviewer':
-            data = await kri_service.get_kris_by_status_detail('pendingReviewer', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_by_status_detail('pendingReviewer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'pendingAcceptance':
-            data = await kri_service.get_kris_by_status_detail('pendingAcceptance', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_by_status_detail('pendingAcceptance', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'approved':
-            data = await kri_service.get_kris_by_status_detail('Approved', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_by_status_detail('Approved', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         
         # Charts
         elif cardType == 'krisByStatus':
-            data = await kri_service.get_kris_by_status(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_by_status(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'krisByLevel':
-            data = await kri_service.get_kris_by_level_detailed(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_by_level_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'breachedKRIsByDepartment':
-            data = await kri_service.get_breached_kris_by_department_detailed(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_breached_kris_by_department_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriAssessmentCount':
-            data = await kri_service.get_kri_assessment_count_detailed(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_assessment_count_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriMonthlyAssessment':
-            data = await kri_service.get_kri_monthly_assessment(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_monthly_assessment(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'newlyCreatedKrisPerMonth':
-            data = await kri_service.get_newly_created_kris_per_month(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_newly_created_kris_per_month(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'deletedKrisPerMonth':
-            data = await kri_service.get_deleted_kris_per_month(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_deleted_kris_per_month(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriOverdueStatusCounts':
-            data = await kri_service.get_kri_overdue_status_counts(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_overdue_status_counts(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriCountsByMonthYear':
-            data = await kri_service.get_kri_counts_by_month_year(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_counts_by_month_year(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriCountsByFrequency':
-            data = await kri_service.get_kri_counts_by_frequency(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_counts_by_frequency(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriRisksByKriName':
-            data = await kri_service.get_kri_risks_by_kri_name(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_risks_by_kri_name(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         
         # Tables
         elif cardType == 'overallKris' or cardType == 'kriStatus':
-            data = await kri_service.get_overall_kri_statuses(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_overall_kri_statuses(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriHealth':
-            data = await kri_service.get_kri_health(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_health(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'activeKrisDetails':
-            data = await kri_service.get_active_kris_details(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_active_kris_details(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'overdueKrisByDepartment':
-            data = await kri_service.get_overdue_kris_by_department(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_overdue_kris_by_department(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'allKrisSubmittedByFunction':
-            data = await kri_service.get_all_kris_submitted_by_function(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_all_kris_submitted_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriRiskRelationships':
-            data = await kri_service.get_kri_risk_relationships(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_risk_relationships(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriWithoutLinkedRisks' or cardType == 'krisWithoutLinkedRisks':
-            data = await kri_service.get_kris_without_linked_risks(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_without_linked_risks(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriDetailsWithActionPlans':
             if kri_details_override is not None:
                 data = kri_details_override
@@ -504,11 +515,12 @@ async def export_kris_excel(
                 if request.headers.get("cookie"):
                     forward_headers["Cookie"] = request.headers.get("cookie")
                 dashboard = await api_service.get_kris_data(
-                    start_date=startDate,
-                    end_date=endDate,
+                    start_date=start_date_q,
+                    end_date=end_date_q,
                     user_id=user_id,
                     group_name=group_name,
                     function_id=function_id,
+                    function_ids_csv=function_ids,
                     headers=forward_headers if forward_headers else None,
                 )
                 data = dashboard.get("kriDetailsWithActionPlans") or []
@@ -522,7 +534,14 @@ async def export_kris_excel(
         
         # Generate Excel
         excel_content = await excel_service.generate_kris_excel(
-            kris_data, startDate, endDate, header_config, cardType, only_card_bool, only_overall_table_bool, only_chart_bool
+            kris_data,
+            start_date_q or startDate or "",
+            end_date_q or endDate or "",
+            header_config,
+            cardType,
+            only_card_bool,
+            only_overall_table_bool,
+            only_chart_bool,
         )
         
         # Get user from request headers (if available)
@@ -536,7 +555,7 @@ async def export_kris_excel(
             card_type=cardType,
             header_config=header_config,
             created_by=created_by,
-            date_range={'startDate': startDate, 'endDate': endDate},
+            date_range={'startDate': start_date_q or startDate, 'endDate': end_date_q or endDate},
             request=request
         )
         

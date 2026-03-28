@@ -17,6 +17,7 @@ from routes.route_utils import (
     extract_user_and_function_params,
 )
 from utils.order_by_function import apply_order_by_function_deep, order_by_function_from_request
+from utils.node_grc_query import grc_iso_date_param
 
 api_service = APIService()
 pdf_service = PDFService()
@@ -132,6 +133,13 @@ async def export_comply_pdf(
         if not cardType:
             raise HTTPException(status_code=400, detail="cardType, chartType, or tableType is required")
 
+        start_date_q = grc_iso_date_param(startDate)
+        end_date_q = grc_iso_date_param(endDate)
+        write_debug(
+            f"[COMPLY PDF] dates for Node: start={start_date_q!r} end={end_date_q!r} "
+            f"(raw: {startDate!r} / {endDate!r})"
+        )
+
         user_id, group_name, function_id = extract_user_and_function_params(request)
         if functionId:
             from routes.route_utils import clean_function_id
@@ -208,7 +216,10 @@ async def export_comply_excel(
     onlyOverallTable: str = Query("False"),
     tableType: Optional[str] = Query(None),
     functionId: Optional[str] = Query(None),
-    functionIds: Optional[str] = Query(None),
+    functionIds: Optional[str] = Query(
+        None,
+        description="Comma-separated function IDs (multi-select); same as GRC dashboard exports",
+    ),
 ):
     try:
         write_debug(
@@ -236,6 +247,13 @@ async def export_comply_excel(
         if not cardType:
             raise HTTPException(status_code=400, detail="cardType, chartType, or tableType is required")
 
+        start_date_q = grc_iso_date_param(startDate)
+        end_date_q = grc_iso_date_param(endDate)
+        write_debug(
+            f"[COMPLY EXCEL] dates for Node: start={start_date_q!r} end={end_date_q!r} "
+            f"(raw: {startDate!r} / {endDate!r})"
+        )
+
         user_id, group_name, function_id = extract_user_and_function_params(request)
         if functionId:
             from routes.route_utils import clean_function_id
@@ -262,8 +280,8 @@ async def export_comply_excel(
 
         excel_content = await excel_service.generate_comply_excel(
             comply_data,
-            startDate or "",
-            endDate or "",
+            start_date_q or startDate or "",
+            end_date_q or endDate or "",
             header_config,
             cardType,
             only_card_bool,
@@ -279,7 +297,7 @@ async def export_comply_excel(
             card_type=cardType,
             header_config=header_config,
             created_by=created_by,
-            date_range={"startDate": startDate, "endDate": endDate},
+            date_range={"startDate": start_date_q or startDate, "endDate": end_date_q or endDate},
             request=request,
         )
         filename = export_info["filename"]
