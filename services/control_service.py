@@ -115,6 +115,39 @@ class ControlService:
         )
         """
 
+    def _build_control_function_join_filter(
+        self,
+        cf_alias: str,
+        access: dict,
+        selected_function_ids: Optional[List[str]] = None,
+    ) -> str:
+        """
+        Mirror Node buildControlFunctionJoinFilter: restrict the outer ControlFunctions join
+        so department-by-function charts only count junction rows in selected/allowed scope.
+        Uses plain cf.function_id IN (...) like Node (no LTRIM on the column — avoids SQL Server
+        errors when function_id is uniqueidentifier).
+        """
+        sel = [str(x).strip() for x in (selected_function_ids or []) if x and str(x).strip()]
+        sel = list(dict.fromkeys(sel))
+
+        if sel:
+            if not access.get("is_super_admin"):
+                allowed = set(access.get("function_ids") or [])
+                if not all(s in allowed for s in sel):
+                    return " AND 1 = 0"
+            in_sql = ",".join(f"'{self._sql_escape_function_id(fid)}'" for fid in sel)
+            return f" AND {cf_alias}.function_id IN ({in_sql})"
+
+        if access.get("is_super_admin"):
+            return ""
+
+        function_ids = access.get("function_ids") or []
+        if not function_ids:
+            return " AND 1 = 0"
+
+        ids = ",".join(f"'{self._sql_escape_function_id(fid)}'" for fid in function_ids)
+        return f" AND {cf_alias}.function_id IN ({ids})"
+
     def _build_direct_function_filter(
         self,
         table_alias: str,
@@ -553,7 +586,7 @@ class ControlService:
         {date_filter}
         {function_join_filter}
         GROUP BY f.name
-        ORDER BY control_count DESC
+        ORDER BY COUNT(DISTINCT c.id) DESC, f.name
         """
         
         write_debug(f"SQL Query: {query}")
