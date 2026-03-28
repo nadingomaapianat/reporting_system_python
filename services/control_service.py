@@ -67,6 +67,35 @@ class ControlService:
 
         return grc_parse_selected_function_ids_list(function_id, function_ids_csv)
 
+    def _build_control_created_at_date_filter_sql(
+        self,
+        start_date: Optional[str],
+        end_date: Optional[str],
+    ) -> str:
+        """
+        Match Node BaseDashboardService.buildDateFilter for c.createdAt (Controls dashboard dateField).
+        Uses >= start date and <= end 23:59:59 — not BETWEEN start AND end at midnight (end day fully included).
+        """
+        if not start_date and not end_date:
+            return ""
+
+        def _iso_day(s: Optional[str]) -> Optional[str]:
+            if not s:
+                return None
+            t = str(s).strip()
+            return t[:10] if len(t) >= 10 and t[4] == "-" and t[7] == "-" else None
+
+        start = _iso_day(start_date)
+        end = _iso_day(end_date)
+        if not start and not end:
+            return ""
+        parts: List[str] = []
+        if start:
+            parts.append(f"AND c.createdAt >= '{start}'")
+        if end:
+            parts.append(f"AND c.createdAt <= '{end} 23:59:59'")
+        return "\n        " + "\n        ".join(parts)
+
     def _build_control_function_filter(
         self,
         table_alias: str,
@@ -1093,10 +1122,8 @@ class ControlService:
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Status overview table matching Node config (controls with statuses)."""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        """Status overview table matching Node statusOverview (Control Creation Approval Cycle)."""
+        date_filter = self._build_control_created_at_date_filter_sql(start_date, end_date)
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
@@ -1110,10 +1137,10 @@ class ControlService:
             c.reviewerStatus,
             c.acceptanceStatus
         FROM {self.get_fully_qualified_table_name('Controls')} c
-        WHERE c.isDeleted = 0 AND c.deletedAt IS NULL
+        WHERE c.isDeleted = 0
         {date_filter}
         {function_filter}
-        ORDER BY c.createdAt DESC
+        ORDER BY c.createdAt DESC, c.name
         """
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
