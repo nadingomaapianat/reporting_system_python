@@ -5,3 +5,5 @@ environment.env
 environment.docker.env
 *.tar
 dcc-reporting-python.tar
+# Python wheel binaries (e.g. offline vendor dirs)
+*.whl
