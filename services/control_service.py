@@ -614,16 +614,17 @@ class ControlService:
         function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
         
         controls_table = self.get_fully_qualified_table_name('Controls')
-        
+
+        # Match Node dashboard statusDistribution ("Controls by Risk Response Type"): functionFilter on c, ISNULL bucket.
         query = f"""
         SELECT 
-            c.risk_response as name,
-            COUNT(c.id) as value
+            ISNULL(c.risk_response, 'Unknown') AS name,
+            COUNT(c.id) AS value
         FROM {controls_table} c
-        WHERE c.isDeleted = 0 
+        WHERE c.isDeleted = 0 AND c.deletedAt IS NULL
         {date_filter}
         {function_filter}
-        GROUP BY c.risk_response
+        GROUP BY ISNULL(c.risk_response, 'Unknown')
         ORDER BY COUNT(c.id) DESC
         """
         
