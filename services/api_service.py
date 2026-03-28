@@ -314,12 +314,15 @@ class APIService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids_csv: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """Get KRIs dashboard data from Node.js API. Pass headers (e.g. Authorization, Cookie) to forward auth."""
         try:
             url = f"{self.node_api_url}/api/grc/kris"
-            params = self._node_grc_filter_params(start_date, end_date, user_id, group_name, function_id)
+            params = self._node_grc_filter_params(
+                start_date, end_date, user_id, group_name, function_id, function_ids_csv
+            )
             request_headers = dict(headers) if headers else None
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 async with session.get(url, params=params, headers=request_headers) as response:

@@ -60,26 +60,34 @@ class IncidentService:
         function_ids = [fid for fid in function_ids if fid]  # Remove None values
         return {"is_super_admin": False, "function_ids": function_ids}
 
+    def _sql_escape_function_id(self, fid: str) -> str:
+        return str(fid).replace("'", "''")
+
+    def _selected_function_ids(self, function_id: Optional[str], function_ids_csv: Optional[str]) -> Optional[List[str]]:
+        from utils.node_grc_query import grc_parse_selected_function_ids_list
+
+        return grc_parse_selected_function_ids_list(function_id, function_ids_csv)
+
     def _build_incident_function_filter(
         self,
         table_alias: str,
         access: dict,
-        selected_function_id: Optional[str] = None,
+        selected_function_ids: Optional[List[str]] = None,
     ) -> str:
         """
-        Mirror Node buildDirectFunctionFilter for Incidents:
+        Mirror Node buildDirectFunctionFilter for Incidents (including multi-select IN (...)):
         - Uses function_id column directly (not a join table).
-        - If selected_function_id: filter by that only (verify access for non-admins).
-        - If no selected_function_id: super admin sees all, normal user sees only their functions.
         """
-        if selected_function_id is not None:
-            selected_function_id = selected_function_id.strip() or None
+        sel = [str(x).strip() for x in (selected_function_ids or []) if x and str(x).strip()]
+        sel = list(dict.fromkeys(sel))
 
-        if selected_function_id:
-            if (not access.get("is_super_admin")) and (selected_function_id not in access.get("function_ids", [])):
-                return " AND 1 = 0"
-            # Use LTRIM(RTRIM()) to handle spaces in function_id column
-            return f" AND LTRIM(RTRIM({table_alias}.function_id)) = '{selected_function_id}'"
+        if sel:
+            if not access.get("is_super_admin"):
+                allowed = set(access.get("function_ids") or [])
+                if not all(s in allowed for s in sel):
+                    return " AND 1 = 0"
+            in_sql = ",".join(f"'{self._sql_escape_function_id(fid)}'" for fid in sel)
+            return f" AND LTRIM(RTRIM({table_alias}.function_id)) IN ({in_sql})"
 
         if access.get("is_super_admin"):
             return ""
@@ -88,8 +96,7 @@ class IncidentService:
         if not function_ids:
             return " AND 1 = 0"
 
-        ids = ",".join(f"'{fid}'" for fid in function_ids)
-        # Use LTRIM(RTRIM()) to handle spaces in function_id column
+        ids = ",".join(f"'{self._sql_escape_function_id(fid)}'" for fid in function_ids)
         return f" AND LTRIM(RTRIM({table_alias}.function_id)) IN ({ids})"
 
     def _build_incident_date_filter(
@@ -170,6 +177,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents list with all columns for Excel export. Uses only tables/columns used elsewhere in this service."""
         date_filter = ""
@@ -177,7 +185,7 @@ class IncidentService:
             date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         # Same query shape as Node (grc-incidents.service getTotalIncidents): RootCauses, Currencies on i.currency, Users for owner, i.status as recoveryStatus
         query = f"""
@@ -351,12 +359,13 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents status overview list with computed status (matches Node.js statusOverview)"""
         date_filter = self._build_incident_date_filter(start_date, end_date)
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -392,6 +401,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents rows filtered by computed status label (not counts)."""
         date_filter = ""
@@ -403,7 +413,7 @@ class IncidentService:
             date_filter = f"AND i.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         # Build query that computes the label and filters to requested status
         query = f"""
@@ -448,6 +458,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
        
         write_debug(f"[INCIDENTS BY CATEGORY] fetching incidents by category for {start_date} to {end_date}")
@@ -461,7 +472,7 @@ class IncidentService:
             date_filter = f"AND i.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -488,6 +499,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents count by status (distribution for charts)"""
         date_filter = ""
@@ -499,7 +511,7 @@ class IncidentService:
             date_filter = f"AND i.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         WITH IncidentStatus AS (
@@ -548,6 +560,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents monthly trend counts grouped by occurrence_date"""
         date_filter = ""
@@ -559,7 +572,7 @@ class IncidentService:
             date_filter = f"AND i.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -583,6 +596,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents time series by month (matches grc-incidents.service.ts)"""
         date_filter = ""
@@ -594,7 +608,7 @@ class IncidentService:
             date_filter = f"AND i.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         WITH month_series AS (
@@ -643,6 +657,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return top financial impacts grouped by category with total net loss"""
         date_filter = ""
@@ -654,7 +669,7 @@ class IncidentService:
             date_filter = f"AND i.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -682,6 +697,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return net loss and recovery data for incidents"""
         date_filter = ""
@@ -693,7 +709,7 @@ class IncidentService:
             date_filter = f"AND i.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -722,6 +738,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents count by event type (excludes NULL and deleted event types)"""
         date_filter = ""
@@ -733,7 +750,7 @@ class IncidentService:
             date_filter = f"AND i.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -759,6 +776,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents count by financial impact (excludes NULL and deleted financial impacts)"""
         date_filter = ""
@@ -770,7 +788,7 @@ class IncidentService:
             date_filter = f"AND i.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -797,6 +815,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return new incidents count per month (matches grc-incidents.service.ts)"""
         date_filter = ""
@@ -808,7 +827,7 @@ class IncidentService:
             date_filter = f"AND i.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -843,6 +862,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents with timeframe values (matches grc-incidents.service.ts)"""
         date_filter = ""
@@ -854,7 +874,7 @@ class IncidentService:
             date_filter = f"AND i.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -888,12 +908,13 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents financial details with net loss, recovery, and gross amount (matches Node.js)"""
         date_filter = self._build_incident_date_filter(start_date, end_date)
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -932,6 +953,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return ATM theft incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
@@ -943,7 +965,7 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -973,6 +995,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return internal fraud incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
@@ -984,7 +1007,7 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1014,6 +1037,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return external fraud incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
@@ -1025,7 +1049,7 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1055,6 +1079,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return physical asset damage incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
@@ -1066,7 +1091,7 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1096,6 +1121,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return people error incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
@@ -1107,7 +1133,7 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1137,6 +1163,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents with recognition time calculation (last 12 months)"""
         date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
@@ -1148,7 +1175,7 @@ class IncidentService:
             date_filter = f"AND i.occurrence_date <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1177,6 +1204,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return operational loss value by month (last 12 months)"""
         date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
@@ -1188,7 +1216,7 @@ class IncidentService:
             date_filter = f"AND i.occurrence_date <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1214,6 +1242,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return monthly trend analysis by incident type (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
@@ -1225,7 +1254,7 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1270,6 +1299,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return loss analysis by risk category (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
@@ -1281,7 +1311,7 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1309,6 +1339,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return comprehensive operational loss dashboard metrics (last 12 months)"""
         date_filter = "COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
@@ -1320,7 +1351,7 @@ class IncidentService:
             date_filter = f"COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1417,6 +1448,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents with financial impact and function details (matches grc-incidents.service.ts)"""
         date_filter = ""
@@ -1428,7 +1460,7 @@ class IncidentService:
             date_filter = f"AND i.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1458,6 +1490,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return ATM theft incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
@@ -1469,7 +1502,7 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1499,6 +1532,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return internal fraud incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
@@ -1510,7 +1544,7 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1540,6 +1574,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return external fraud incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
@@ -1551,7 +1586,7 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1581,6 +1616,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return physical asset damage incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
@@ -1592,7 +1628,7 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1622,6 +1658,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return people error incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
@@ -1633,7 +1670,7 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1663,6 +1700,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents with recognition time calculation (last 12 months)"""
         date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
@@ -1674,7 +1712,7 @@ class IncidentService:
             date_filter = f"AND i.occurrence_date <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1703,6 +1741,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return operational loss value by month (last 12 months)"""
         date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
@@ -1714,7 +1753,7 @@ class IncidentService:
             date_filter = f"AND i.occurrence_date <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1740,6 +1779,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return monthly trend analysis by incident type (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
@@ -1751,7 +1791,7 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1796,6 +1836,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return loss analysis by risk category (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
@@ -1807,7 +1848,7 @@ class IncidentService:
             date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -1835,6 +1876,7 @@ class IncidentService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return comprehensive operational loss dashboard metrics (last 12 months)"""
         date_filter = "COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
@@ -1846,7 +1888,7 @@ class IncidentService:
             date_filter = f"COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, function_id)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 

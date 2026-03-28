@@ -2,3 +2,7 @@
 .venv/
 # Python wheel binaries (e.g. offline vendor dirs)
 *.whl
+
+# Bytecode
+__pycache__/
+*.pyc

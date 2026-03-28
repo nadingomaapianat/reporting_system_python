@@ -42,6 +42,28 @@ def grc_function_id_param(s: Optional[str]) -> Optional[str]:
     return t if t else None
 
 
+def grc_parse_selected_function_ids_list(
+    function_id: Optional[str],
+    function_ids_csv: Optional[str],
+) -> Optional[List[str]]:
+    """
+    Parsed list of function ids for SQL/exports (same rules as Node parseGrcFunctionIdsFromQueries).
+    Returns None when no explicit filter; non-empty list when user selected one or more functions.
+    """
+    m = grc_merge_function_query_params(function_id, function_ids_csv)
+    if not m:
+        return None
+    if "functionId" in m:
+        return [m["functionId"]]
+    raw = m.get("functionIds") or ""
+    parts: List[str] = []
+    for p in raw.split(","):
+        t = grc_function_id_param(p.strip() if p else None)
+        if t:
+            parts.append(t)
+    return parts if parts else None
+
+
 def grc_merge_function_query_params(
     function_id: Optional[str],
     function_ids_csv: Optional[str],
