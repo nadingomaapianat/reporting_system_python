@@ -104,6 +104,7 @@ async def export_comply_pdf(
     onlyOverallTable: str = Query("False"),
     tableType: Optional[str] = Query(None),
     functionId: Optional[str] = Query(None),
+    functionIds: Optional[str] = Query(None),
 ):
     try:
         write_debug(
@@ -206,6 +207,7 @@ async def export_comply_excel(
     onlyOverallTable: str = Query("False"),
     tableType: Optional[str] = Query(None),
     functionId: Optional[str] = Query(None),
+    functionIds: Optional[str] = Query(None),
 ):
     try:
         write_debug(
@@ -247,6 +249,7 @@ async def export_comply_excel(
             user_id=user_id,
             group_name=group_name,
             function_id=function_id,
+            function_ids_csv=functionIds,
             headers=fwd,
             extra_query=ob_params if ob_params else None,
         )
