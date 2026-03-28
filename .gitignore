@@ -1,2 +1,4 @@
 
 .venv/
+# Python wheel binaries (e.g. offline vendor dirs)
+*.whl
