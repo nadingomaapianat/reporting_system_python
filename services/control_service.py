@@ -115,6 +115,38 @@ class ControlService:
         )
         """
 
+    def _build_direct_function_filter(
+        self,
+        table_alias: str,
+        column_name: str,
+        access: dict,
+        selected_function_ids: Optional[List[str]] = None,
+    ) -> str:
+        """
+        Mirror Node buildDirectFunctionFilter for rows with a direct function_id column
+        (e.g. ControlDesignTests t.function_id). Do not use ControlFunctions EXISTS for these.
+        """
+        sel = [str(x).strip() for x in (selected_function_ids or []) if x and str(x).strip()]
+        sel = list(dict.fromkeys(sel))
+
+        if sel:
+            if not access.get("is_super_admin"):
+                allowed = set(access.get("function_ids") or [])
+                if not all(s in allowed for s in sel):
+                    return " AND 1 = 0"
+            in_sql = ",".join(f"'{self._sql_escape_function_id(fid)}'" for fid in sel)
+            return f" AND LTRIM(RTRIM({table_alias}.{column_name})) IN ({in_sql})"
+
+        if access.get("is_super_admin"):
+            return ""
+
+        function_ids = access.get("function_ids") or []
+        if not function_ids:
+            return " AND 1 = 0"
+
+        ids = ",".join(f"'{self._sql_escape_function_id(fid)}'" for fid in function_ids)
+        return f" AND LTRIM(RTRIM({table_alias}.{column_name})) IN ({ids})"
+
     def _control_function_name_subquery(self, control_alias: str = "c") -> str:
         """SQL fragment for control function name(s), comma-separated (mirrors Node)."""
         cf, f = "cf", "f"
@@ -361,10 +393,13 @@ class ControlService:
         """Get controls with pending test status (using ControlDesignTests table like Node.js frontend)"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            # Node base-dashboard: dateFilterT on t.createdAt for ControlDesignTests, not c.createdAt
+            date_filter = f"AND t.createdAt BETWEEN '{start_date}' AND '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
+        function_filter = self._build_direct_function_filter(
+            "t", "function_id", access, self._selected_function_ids(function_id, function_ids)
+        )
         
         # Map status types to database columns
         status_column_map = {
@@ -405,8 +440,9 @@ class ControlService:
           AND t.deletedAt IS NULL
         {date_filter}
         {function_filter}
-        ORDER BY c.createdAt DESC, c.name
+        ORDER BY t.createdAt DESC, c.name
         """
+        write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
 
     async def get_unmapped_controls(
@@ -1087,10 +1123,12 @@ class ControlService:
     ) -> List[Dict[str, Any]]:
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND t.createdAt BETWEEN '{start_date}' AND '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
+        function_filter = self._build_direct_function_filter(
+            "t", "function_id", access, self._selected_function_ids(function_id, function_ids)
+        )
         
         query = f"""
         SELECT 
@@ -1116,7 +1154,7 @@ class ControlService:
         INNER JOIN {self.get_fully_qualified_table_name('Functions')} AS f ON t.function_id = f.id
         WHERE c.isDeleted = 0 AND (t.deletedAt IS NULL) AND t.function_id IS NOT NULL {date_filter}
         {function_filter}
-        ORDER BY c.createdAt DESC, c.name
+        ORDER BY t.createdAt DESC, c.name
         """
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
