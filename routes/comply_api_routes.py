@@ -145,6 +145,7 @@ async def export_comply_pdf(
             user_id=user_id,
             group_name=group_name,
             function_id=function_id,
+            function_ids_csv=functionIds,
             headers=fwd,
         )
         node_key = _node_report_key_for_card(cardType)

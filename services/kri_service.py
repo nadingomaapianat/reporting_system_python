@@ -68,26 +68,34 @@ class KriService:
             return {"is_super_admin": True, "function_ids": []}
         return {"is_super_admin": False, "function_ids": function_ids}
 
+    def _sql_escape_function_id(self, fid: str) -> str:
+        return str(fid).replace("'", "''")
+
+    def _selected_function_ids(self, function_id: Optional[str], function_ids_csv: Optional[str]) -> Optional[List[str]]:
+        from utils.node_grc_query import grc_parse_selected_function_ids_list
+
+        return grc_parse_selected_function_ids_list(function_id, function_ids_csv)
+
     def _build_kri_function_filter(
         self,
         table_alias: str,
         access: dict,
-        selected_function_id: Optional[str] = None,
+        selected_function_ids: Optional[List[str]] = None,
     ) -> str:
         """
-        Mirror Node buildKriFunctionFilter:
+        Mirror Node buildKriFunctionFilter (including multi-select IN (...)):
         - Uses related_function_id column directly (not KriFunctions join).
-        - If selected_function_id: filter by that only (verify access for non-admins).
-        - If no selected_function_id: super admin sees all, normal user sees only their functions.
         """
-        if selected_function_id is not None:
-            selected_function_id = selected_function_id.strip() or None
+        sel = [str(x).strip() for x in (selected_function_ids or []) if x and str(x).strip()]
+        sel = list(dict.fromkeys(sel))
 
-        if selected_function_id:
-            if (not access.get("is_super_admin")) and (selected_function_id not in access.get("function_ids", [])):
-                return " AND 1 = 0"
-            # Use LTRIM(RTRIM()) to handle spaces in related_function_id column
-            return f" AND LTRIM(RTRIM({table_alias}.related_function_id)) = '{selected_function_id}'"
+        if sel:
+            if not access.get("is_super_admin"):
+                allowed = set(access.get("function_ids") or [])
+                if not all(s in allowed for s in sel):
+                    return " AND 1 = 0"
+            in_sql = ",".join(f"'{self._sql_escape_function_id(fid)}'" for fid in sel)
+            return f" AND LTRIM(RTRIM({table_alias}.related_function_id)) IN ({in_sql})"
 
         if access.get("is_super_admin"):
             return ""
@@ -96,8 +104,7 @@ class KriService:
         if not function_ids:
             return " AND 1 = 0"
 
-        ids = ",".join(f"'{fid}'" for fid in function_ids)
-        # Use LTRIM(RTRIM()) to handle spaces in related_function_id column
+        ids = ",".join(f"'{self._sql_escape_function_id(fid)}'" for fid in function_ids)
         return f" AND LTRIM(RTRIM({table_alias}.related_function_id)) IN ({ids})"
     
     async def execute_query(self, query: str, params: Optional[List] = None) -> List[Dict[str, Any]]:
@@ -151,6 +158,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return KRIs grouped by status"""
         date_filter = ""
@@ -162,7 +170,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -199,6 +207,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return KRIs grouped by risk level"""
         date_filter = ""
@@ -210,7 +219,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -233,6 +242,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return breached KRIs by department"""
         date_filter = ""
@@ -244,7 +254,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -270,6 +280,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return KRI assessment count by department"""
         date_filter = ""
@@ -281,7 +292,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -306,6 +317,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return list of all KRIs with same columns as UI Total KRIs modal (code, kri_name, function_name, frequency, threshold, added_by_name, assigned_person_name, type, type_percentage_or_figure, rcm_functions, risk_mapping, status, created_by_name, kri_status, first_approval, review, second_approval, createdAt)."""
         date_filter = ""
@@ -317,7 +329,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
 
         # Match Node getTotalKris catalog columns for Excel/UI parity
         query = f"""
@@ -372,6 +384,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return KRIs rows filtered by computed status label (not counts, matches incidents pattern)"""
         write_debug(f"Getting KRIS by status detail: {status}")
@@ -385,7 +398,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
 
         # Build query that computes the label and filters to requested status
         query = f"""
@@ -428,6 +441,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> Dict[str, int]:
         """Return KRIs status counts (independent counts, matches Node.js logic)"""
         date_filter = ""
@@ -439,7 +453,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         WITH KrisStatus AS (
@@ -474,6 +488,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return all KRIs with their combined status (for Overall KRI Statuses table)"""
         date_filter = ""
@@ -485,7 +500,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT
@@ -524,6 +539,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return KRIs by level with derived logic from latest values (matches Node.js)"""
         date_filter = ""
@@ -535,7 +551,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         WITH LatestKV AS (
@@ -588,6 +604,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return count of KRIs by function (simplified - just count KRIs per function)"""
         date_filter = ""
@@ -599,7 +616,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -629,6 +646,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return KRI health status list"""
         date_filter = ""
@@ -640,7 +658,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT
@@ -673,6 +691,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return KRI assessment count by function (count assessments from KriValues table)"""
         date_filter = ""
@@ -684,7 +703,7 @@ class KriService:
             date_filter = f"AND kv.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT
@@ -716,6 +735,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return monthly KRI counts grouped by assessment"""
         date_filter = ""
@@ -727,7 +747,7 @@ class KriService:
             date_filter = f"AND kv.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT
@@ -754,6 +774,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return number of newly created KRIs per month"""
         date_filter = ""
@@ -765,7 +786,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -787,6 +808,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return number of deleted KRIs by month"""
         date_filter = ""
@@ -798,7 +820,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -819,6 +841,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return KRIs overdue vs not overdue based on related Action Plans"""
         date_filter = ""
@@ -830,7 +853,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         WITH classified AS (
@@ -867,6 +890,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return overdue KRIs with department from Actionplans or linked Function"""
         date_filter = ""
@@ -878,7 +902,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT DISTINCT 
@@ -912,6 +936,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return all KRIs submitted by function"""
         date_filter = ""
@@ -923,7 +948,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT
@@ -962,6 +987,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return KRI counts by month and year"""
         date_filter = ""
@@ -973,7 +999,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT  
@@ -997,6 +1023,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return KRI counts by frequency"""
         date_filter = ""
@@ -1008,7 +1035,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -1030,6 +1057,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return risks linked to KRIs (count per KRI name)"""
         date_filter = ""
@@ -1041,7 +1069,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -1069,6 +1097,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return KRI and Risk relationships (detailed list)"""
         date_filter = ""
@@ -1080,7 +1109,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -1112,6 +1141,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return KRIs without linked risks"""
         date_filter = ""
@@ -1123,7 +1153,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT  
@@ -1154,6 +1184,7 @@ class KriService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return active KRIs details"""
         date_filter = ""
@@ -1165,7 +1196,7 @@ class KriService:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, function_id)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT

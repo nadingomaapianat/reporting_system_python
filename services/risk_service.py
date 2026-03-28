@@ -97,42 +97,46 @@ class RiskService:
 
         return {"is_super_admin": False, "function_ids": function_ids}
 
+    def _sql_escape_function_id(self, fid: str) -> str:
+        return str(fid).replace("'", "''")
+
+    def _selected_function_ids(self, function_id: Optional[str], function_ids_csv: Optional[str]) -> Optional[List[str]]:
+        from utils.node_grc_query import grc_parse_selected_function_ids_list
+
+        return grc_parse_selected_function_ids_list(function_id, function_ids_csv)
+
     def _build_risk_function_filter(
         self,
         table_alias: str,
         access: dict,
-        selected_function_id: Optional[str] = None,
+        selected_function_ids: Optional[List[str]] = None,
     ) -> str:
         """
-        Mirror Node buildRiskFunctionFilter:
+        Mirror Node buildRiskFunctionFilter (including multi-select IN (...)):
         - Uses RiskFunctions join table to restrict risks by function.
-        - If selected_function_id is provided:
-            - Super admin: allow any.
-            - Normal user: only allow if it is in access['function_ids'], else AND 1=0.
-        - If no selected_function_id:
-            - Super admin: no filter.
-            - Normal user: EXISTS RiskFunctions rf with function_id IN (user functions).
+        - If selected_function_ids is non-empty: restrict after access check.
+        - Otherwise: super admin sees all; normal user sees only assigned functions.
         """
-        # Normalize selected_function_id
-        if selected_function_id is not None:
-            selected_function_id = selected_function_id.strip() or None
+        sel = [str(x).strip() for x in (selected_function_ids or []) if x and str(x).strip()]
+        sel = list(dict.fromkeys(sel))
 
-        # Specific selection has priority
-        if selected_function_id:
-            if (not access.get("is_super_admin")) and (selected_function_id not in access.get("function_ids", [])):
-                return " AND 1 = 0"
-            # Use LTRIM(RTRIM()) to handle spaces in function_id column
+        if sel:
+            if not access.get("is_super_admin"):
+                allowed = set(access.get("function_ids") or [])
+                if not all(s in allowed for s in sel):
+                    return " AND 1 = 0"
+            in_sql = ",".join(f"'{self._sql_escape_function_id(fid)}'" for fid in sel)
+            rf_tbl = self.get_fully_qualified_table_name("RiskFunctions")
             return f"""
             AND EXISTS (
               SELECT 1
-              FROM dbo.[RiskFunctions] rf
+              FROM {rf_tbl} rf
               WHERE rf.risk_id = {table_alias}.id
-                AND LTRIM(RTRIM(rf.function_id)) = '{selected_function_id}'
+                AND LTRIM(RTRIM(rf.function_id)) IN ({in_sql})
                 AND rf.deletedAt IS NULL
             )
             """
 
-        # No specific selection → default by access
         if access.get("is_super_admin"):
             return ""
 
@@ -140,12 +144,12 @@ class RiskService:
         if not function_ids:
             return " AND 1 = 0"
 
-        ids = ",".join(f"'{fid}'" for fid in function_ids)
-        # Use LTRIM(RTRIM()) to handle spaces in function_id column
+        ids = ",".join(f"'{self._sql_escape_function_id(fid)}'" for fid in function_ids)
+        rf_tbl = self.get_fully_qualified_table_name("RiskFunctions")
         return f"""
         AND EXISTS (
           SELECT 1
-          FROM dbo.[RiskFunctions] rf
+          FROM {rf_tbl} rf
           WHERE rf.risk_id = {table_alias}.id
             AND LTRIM(RTRIM(rf.function_id)) IN ({ids})
             AND rf.deletedAt IS NULL
@@ -222,6 +226,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get risks grouped by category"""
         date_filter = ""
@@ -233,7 +238,7 @@ class RiskService:
             date_filter = f"AND r.created_at <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -258,6 +263,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get risks grouped by event type"""
         date_filter = ""
@@ -269,7 +275,7 @@ class RiskService:
             date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -294,6 +300,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get list of risks filtered by inherent_value level (e.g., 'High', 'Medium', 'Low')."""
         date_filter = ""
@@ -305,7 +312,7 @@ class RiskService:
             date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -330,6 +337,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get list of all risks (filtered by date if provided)."""
         date_filter = ""
@@ -341,7 +349,7 @@ class RiskService:
             date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT 
@@ -367,6 +375,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get total risks count"""
         date_filter = ""
@@ -378,7 +387,7 @@ class RiskService:
             date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT r.code, r.name, FORMAT(CONVERT(datetime, r.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
@@ -398,6 +407,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get high risks count"""
         date_filter = ""
@@ -409,7 +419,7 @@ class RiskService:
             date_filter = f"AND createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT r.code, r.name, r.inherent_value,
@@ -430,6 +440,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get medium risks count"""
         date_filter = ""
@@ -441,7 +452,7 @@ class RiskService:
             date_filter = f"AND createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT r.code, r.name, r.inherent_value,
@@ -462,6 +473,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get low risks count"""
         date_filter = ""
@@ -473,7 +485,7 @@ class RiskService:
             date_filter = f"AND createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT r.code, r.name, r.inherent_value,
@@ -493,9 +505,10 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ):
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT COUNT(*) as total 
@@ -539,6 +552,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Return list of risks with reduction (inherent > residual), matching Node getRiskReduction.
@@ -546,7 +560,7 @@ class RiskService:
         otherwise all reduced risks are returned so export count matches dashboard card.
         """
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
 
         residual_date_filter = ""
         params = []
@@ -594,6 +608,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get new risks this month count"""
         date_filter = ""
@@ -605,7 +620,7 @@ class RiskService:
             date_filter = f"AND createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT r.code, r.name, FORMAT(CONVERT(datetime, r.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
@@ -633,6 +648,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get risks grouped by category"""
         date_filter = ""
@@ -644,7 +660,7 @@ class RiskService:
             date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -668,6 +684,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get risks by event type for charts"""
         date_filter = ""
@@ -679,7 +696,7 @@ class RiskService:
             date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -702,6 +719,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get created and deleted risks per quarter"""
         date_filter = ""
@@ -713,7 +731,7 @@ class RiskService:
             date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         # Compute current year for labeling and filtering
         current_year = datetime.now().year
@@ -756,6 +774,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get quarterly risk creation trends"""
         date_filter = ""
@@ -767,7 +786,7 @@ class RiskService:
             date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -795,6 +814,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get risk approval status distribution"""
         date_filter = ""
@@ -806,7 +826,7 @@ class RiskService:
             date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -836,6 +856,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get risk distribution by financial impact level"""
         date_filter = ""
@@ -847,7 +868,7 @@ class RiskService:
             date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -881,6 +902,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get total number of risks per department, filtered by function access"""
         date_filter = ""
@@ -892,7 +914,7 @@ class RiskService:
             date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT
@@ -916,6 +938,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get number of risks per business process"""
         date_filter = ""
@@ -927,7 +950,7 @@ class RiskService:
             date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -951,6 +974,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get inherent risk & residual risk comparison"""
         date_filter = ""
@@ -962,7 +986,7 @@ class RiskService:
             date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -987,6 +1011,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get high residual risk overview"""
         date_filter = ""
@@ -998,7 +1023,7 @@ class RiskService:
             date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -1077,6 +1102,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get risks and their controls count"""
         date_filter = ""
@@ -1088,7 +1114,7 @@ class RiskService:
             date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -1113,6 +1139,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get controls and risk count"""
         date_filter = ""
@@ -1126,7 +1153,7 @@ class RiskService:
         # Note: This query is about Controls, but we filter by Risks that are linked
         # So we still need to filter the Risks side
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
         SELECT 
@@ -1151,6 +1178,7 @@ class RiskService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get all risks details - matches frontend allRisks table structure, filtered by function"""
         date_filter = ""
@@ -1162,7 +1190,7 @@ class RiskService:
             date_filter = f"AND r.createdAt <= '{end_date}'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, function_id)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT
