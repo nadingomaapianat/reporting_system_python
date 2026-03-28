@@ -21,9 +21,10 @@ class APIService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids_csv: Optional[str] = None,
     ) -> Dict[str, str]:
-        """startDate/endDate/functionId normalized like Node GRC (ISO dates, trimmed function id)."""
-        from utils.node_grc_query import grc_iso_date_param, grc_function_id_param
+        """startDate/endDate + function filter like Node GRC (ISO dates; single functionId or comma functionIds)."""
+        from utils.node_grc_query import grc_iso_date_param, grc_merge_function_query_params
 
         params: Dict[str, str] = {}
         sd = grc_iso_date_param(start_date)
@@ -36,9 +37,7 @@ class APIService:
             params["userId"] = user_id
         if group_name:
             params["groupName"] = group_name
-        fid = grc_function_id_param(function_id)
-        if fid:
-            params["functionId"] = fid
+        params.update(grc_merge_function_query_params(function_id, function_ids_csv))
         return params
     
     async def get_risks_data(
@@ -337,10 +336,14 @@ class APIService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids_csv: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
+        extra_query: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """Get full GRC Comply dashboard from Node (same data as UI). Forward Cookie/Authorization for JWT."""
         try:
+            from utils.node_grc_query import grc_merge_function_query_params
+
             url = f"{self.node_api_url}/api/grc/comply"
             params: Dict[str, str] = {}
             if start_date:
@@ -351,8 +354,11 @@ class APIService:
                 params["userId"] = user_id
             if group_name:
                 params["groupName"] = group_name
-            if function_id:
-                params["functionId"] = function_id
+            params.update(grc_merge_function_query_params(function_id, function_ids_csv))
+            if extra_query:
+                for k, v in extra_query.items():
+                    if v is not None and str(v).strip() != "":
+                        params[str(k)] = str(v)
             request_headers = dict(headers) if headers else None
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 async with session.get(url, params=params, headers=request_headers) as response:

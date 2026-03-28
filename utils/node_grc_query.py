@@ -9,7 +9,7 @@ References:
 from __future__ import annotations
 
 import re
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 _ISO_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
@@ -40,6 +40,31 @@ def grc_function_id_param(s: Optional[str]) -> Optional[str]:
     """Non-empty function id after norm (matches comply /all `id && id.length > 0`)."""
     t = norm_grc_query_string(s) if s else None
     return t if t else None
+
+
+def grc_merge_function_query_params(
+    function_id: Optional[str],
+    function_ids_csv: Optional[str],
+) -> Dict[str, str]:
+    """
+    Match Node `parseGrcFunctionIdsFromQueries`: one id → `functionId`; several → `functionIds` (comma-separated).
+    Merges optional single `functionId` with comma-separated `functionIds` (deduped, order preserved).
+    """
+    seen: List[str] = []
+    csv_raw = norm_grc_query_string(function_ids_csv) if function_ids_csv else ""
+    if csv_raw:
+        for part in csv_raw.split(","):
+            t = grc_function_id_param(part.strip() if part else None)
+            if t and t not in seen:
+                seen.append(t)
+    single = grc_function_id_param(function_id)
+    if single and single not in seen:
+        seen.insert(0, single)
+    if not seen:
+        return {}
+    if len(seen) == 1:
+        return {"functionId": seen[0]}
+    return {"functionIds": ",".join(seen)}
 
 
 def comply_filters_matching_node_all(
