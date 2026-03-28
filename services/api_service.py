@@ -80,11 +80,14 @@ class APIService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids_csv: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Get controls data from Node.js API with fallback"""
         try:
             url = f"{self.node_api_url}/api/grc/controls"
-            params = self._node_grc_filter_params(start_date, end_date, user_id, group_name, function_id)
+            params = self._node_grc_filter_params(
+                start_date, end_date, user_id, group_name, function_id, function_ids_csv
+            )
             
             # Increase timeout for complex queries
             timeout = aiohttp.ClientTimeout(total=self.timeout, connect=10)
@@ -144,6 +147,7 @@ class APIService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids_csv: Optional[str] = None,
     ) -> List[Dict[str, Any]] | Dict[str, Any]:
         """Get specific controls chart data from Node.js API; returns list or dict depending on endpoint."""
         try:
@@ -164,17 +168,9 @@ class APIService:
             }
             endpoint = charts_map.get(chart_type, f"charts/{chart_type}")
             url = f"{self.node_api_url}/api/grc/controls/{endpoint}"
-            params = {}
-            if start_date:
-                params['startDate'] = start_date
-            if end_date:
-                params['endDate'] = end_date
-            if user_id:
-                params['userId'] = user_id
-            if group_name:
-                params['groupName'] = group_name
-            if function_id:
-                params['functionId'] = function_id
+            params = self._node_grc_filter_params(
+                start_date, end_date, user_id, group_name, function_id, function_ids_csv
+            )
 
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout, connect=10)) as session:
                 async with session.get(url, params=params) as response:
@@ -199,6 +195,7 @@ class APIService:
         user_id: Optional[str] = None,
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
+        function_ids_csv: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get specific controls card data from Node.js API"""
         try:
@@ -220,7 +217,11 @@ class APIService:
             url = f"{self.node_api_url}/api/grc/controls/{endpoint}"
             # Request a large page size to retrieve all rows for export
             params: Dict[str, Any] = {'page': 1, 'limit': 10000}
-            params.update(self._node_grc_filter_params(start_date, end_date, user_id, group_name, function_id))
+            params.update(
+                self._node_grc_filter_params(
+                    start_date, end_date, user_id, group_name, function_id, function_ids_csv
+                )
+            )
             
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 async with session.get(url, params=params) as response:
