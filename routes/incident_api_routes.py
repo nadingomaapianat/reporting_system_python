@@ -8,7 +8,7 @@ import os
 import httpx
 from fastapi import APIRouter, Query, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import Response, FileResponse, StreamingResponse
-from typing import Optional
+from typing import Any, List, Optional
 
 from services import APIService, PDFService, ExcelService, IncidentService
 from services.bank_check_service import BankCheckService
@@ -46,6 +46,53 @@ def _forward_auth_headers(request: Request) -> dict:
     return out
 
 
+async def _load_incident_dashboard_table_rows(
+    card_type: str,
+    request: Request,
+    start_date: Optional[str],
+    end_date: Optional[str],
+    user_id: Optional[str],
+    group_name: Optional[str],
+    function_id: Optional[str],
+    function_ids: Optional[str],
+    incident_action_plan_override: Any,
+    overdue_incidents_override: Any,
+) -> List[Any]:
+    """
+    Incident Action Plan / Overdue Incidents rows for PDF & Excel exports.
+    Same rules as the dashboard: optional POST body overrides, else Node GET /api/grc/incidents
+    with the same date and function filters.
+    """
+    forward_headers = _forward_auth_headers(request)
+    if card_type == "incidentActionPlan":
+        if incident_action_plan_override is not None:
+            return list(incident_action_plan_override) if isinstance(incident_action_plan_override, list) else []
+        full = await api_service.get_incidents_data(
+            start_date,
+            end_date,
+            user_id=user_id,
+            group_name=group_name,
+            function_id=function_id,
+            function_ids=function_ids,
+            headers=forward_headers,
+        )
+        return (full.get("incidentActionPlan") or []) if isinstance(full, dict) else []
+    if card_type == "overdueIncidents":
+        if overdue_incidents_override is not None:
+            return list(overdue_incidents_override) if isinstance(overdue_incidents_override, list) else []
+        full = await api_service.get_incidents_data(
+            start_date,
+            end_date,
+            user_id=user_id,
+            group_name=group_name,
+            function_id=function_id,
+            function_ids=function_ids,
+            headers=forward_headers,
+        )
+        return (full.get("overdueIncidents") or []) if isinstance(full, dict) else []
+    return []
+
+
 # Incidents: PDF export
 
 
@@ -67,13 +114,16 @@ async def export_incidents_pdf(
         description="Comma-separated function IDs (multi-select); mirrors Node dashboard filters",
     ),
 ):
-    """Export incidents report in PDF format (GET or POST with optional body.incidentActionPlan for Incident Action Plan)."""
+    """Export incidents report in PDF format (GET or POST with optional body rows for Incident Action Plan / Overdue Incidents)."""
     incident_action_plan_override = None
+    overdue_incidents_override = None
     if request.method == "POST":
         try:
             body = await request.json()
             if isinstance(body, dict) and "incidentActionPlan" in body:
                 incident_action_plan_override = body.get("incidentActionPlan")
+            if isinstance(body, dict) and "overdueIncidents" in body:
+                overdue_incidents_override = body.get("overdueIncidents")
         except Exception:
             pass
     try:
@@ -224,14 +274,33 @@ async def export_incidents_pdf(
         elif cardType == 'comprehensiveOperationalLoss':
             data = await incident_service.get_comprehensive_operational_loss(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
 
-        # Incident Action Plan table (from dashboard payload; forward auth so Node returns data, or use body override from frontend)
+        # Incident Action Plan / Overdue: shared loader so PDF matches Excel and dashboard (Node + filters + POST overrides)
         elif cardType == 'incidentActionPlan':
-            if incident_action_plan_override is not None:
-                data = list(incident_action_plan_override) if isinstance(incident_action_plan_override, list) else []
-            else:
-                forward_headers = _forward_auth_headers(request)
-                full = await api_service.get_incidents_data(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, headers=forward_headers)
-                data = (full.get('incidentActionPlan') or []) if isinstance(full, dict) else []
+            data = await _load_incident_dashboard_table_rows(
+                "incidentActionPlan",
+                request,
+                startDate,
+                endDate,
+                user_id,
+                group_name,
+                function_id,
+                function_ids,
+                incident_action_plan_override,
+                overdue_incidents_override,
+            )
+        elif cardType == 'overdueIncidents':
+            data = await _load_incident_dashboard_table_rows(
+                "overdueIncidents",
+                request,
+                startDate,
+                endDate,
+                user_id,
+                group_name,
+                function_id,
+                function_ids,
+                incident_action_plan_override,
+                overdue_incidents_override,
+            )
           
         """
         elif cardType == 'createdDeletedIncidentsPerQuarter':
@@ -325,13 +394,16 @@ async def export_incidents_excel(
         description="Comma-separated function IDs (multi-select); mirrors Node dashboard filters",
     ),
 ):
-    """Export incidents report in Excel format (GET or POST with optional body.incidentActionPlan for Incident Action Plan)."""
+    """Export incidents report in Excel format (GET or POST with optional body rows for Incident Action Plan / Overdue Incidents)."""
     incident_action_plan_override = None
+    overdue_incidents_override = None
     if request.method == "POST":
         try:
             body = await request.json()
             if isinstance(body, dict) and "incidentActionPlan" in body:
                 incident_action_plan_override = body.get("incidentActionPlan")
+            if isinstance(body, dict) and "overdueIncidents" in body:
+                overdue_incidents_override = body.get("overdueIncidents")
         except Exception:
             pass
     try:
@@ -481,6 +553,13 @@ async def export_incidents_excel(
                 forward_headers = _forward_auth_headers(request)
                 full = await api_service.get_incidents_data(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, headers=forward_headers)
                 data = (full.get('incidentActionPlan') or []) if isinstance(full, dict) else []
+        elif cardType == 'overdueIncidents':
+            if overdue_incidents_override is not None:
+                data = list(overdue_incidents_override) if isinstance(overdue_incidents_override, list) else []
+            else:
+                forward_headers = _forward_auth_headers(request)
+                full = await api_service.get_incidents_data(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, headers=forward_headers)
+                data = (full.get('overdueIncidents') or []) if isinstance(full, dict) else []
 
        
         elif cardType == 'incidentsReduced':
@@ -492,8 +571,17 @@ async def export_incidents_excel(
 
         
         else:
-            # Fallback to aggregated API data (same date/function scope as dashboard)
-            incidents_data = await api_service.get_incidents_data(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            # Fallback to aggregated API data (same date/function scope and auth as dashboard)
+            forward_headers = _forward_auth_headers(request)
+            incidents_data = await api_service.get_incidents_data(
+                startDate,
+                endDate,
+                user_id=user_id,
+                group_name=group_name,
+                function_id=function_id,
+                function_ids=function_ids,
+                headers=forward_headers,
+            )
             data = incidents_data.get(cardType) or incidents_data.get('statusOverview') or []
 
         incidents_data_wrapped = {cardType or 'overallStatuses': data}

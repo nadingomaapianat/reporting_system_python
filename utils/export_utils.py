@@ -106,6 +106,7 @@ INCIDENT_COLUMNS_UI = [
 
 # Incident Action Plan table (Actionplans linked to Incidents) — matches IncidentsDashboard incidentActionPlan columns
 INCIDENT_ACTION_PLAN_COLUMNS = [
+    ('code', 'Code'),
     ('incident_name', 'Incident Name'),
     ('incident_department', 'Incident Department'),
     ('root_cause', 'Root Cause'),
@@ -115,6 +116,28 @@ INCIDENT_ACTION_PLAN_COLUMNS = [
     ('status', 'Status'),
     ('expected_implementation_date', 'Expected Implementation Date'),
 ]
+
+# Overdue Incidents: same columns as Incident Action Plan (rows filtered server-side)
+OVERDUE_INCIDENTS_COLUMNS = list(INCIDENT_ACTION_PLAN_COLUMNS)
+
+
+def get_overdue_incidents_ordered_keys() -> list:
+    return [k for k, _ in OVERDUE_INCIDENTS_COLUMNS]
+
+
+def get_overdue_incidents_label(key: str) -> str:
+    for k, label in OVERDUE_INCIDENTS_COLUMNS:
+        if k == key:
+            return label
+    import re
+    return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(key)).title()
+
+
+def get_overdue_incidents_cell_value(row: dict, key: str, empty_placeholder: str = 'N/A') -> str:
+    v = row.get(key, '')
+    if v is None or v == '':
+        return empty_placeholder
+    return format_cell_value_for_export(key, v)
 
 
 def get_incident_action_plan_ordered_keys() -> list:
@@ -225,4 +248,8 @@ __all__ = [
     'get_incident_action_plan_ordered_keys',
     'get_incident_action_plan_label',
     'get_incident_action_plan_cell_value',
+    'OVERDUE_INCIDENTS_COLUMNS',
+    'get_overdue_incidents_ordered_keys',
+    'get_overdue_incidents_label',
+    'get_overdue_incidents_cell_value',
 ]

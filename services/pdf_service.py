@@ -233,6 +233,17 @@ class PDFService:
                             for i, row in enumerate(table_rows, 1):
                                 values = [get_incident_action_plan_cell_value(row, k) for k in raw_keys]
                                 data_rows.append([str(i)] + values)
+                        elif card_type == 'overdueIncidents':
+                            from utils.export_utils import (
+                                get_overdue_incidents_ordered_keys,
+                                get_overdue_incidents_label,
+                                get_overdue_incidents_cell_value,
+                            )
+                            raw_keys = get_overdue_incidents_ordered_keys()
+                            columns = ['#'] + [get_overdue_incidents_label(k) for k in raw_keys]
+                            for i, row in enumerate(table_rows, 1):
+                                values = [get_overdue_incidents_cell_value(row, k) for k in raw_keys]
+                                data_rows.append([str(i)] + values)
                         else:
                             from utils.export_utils import get_incident_ordered_keys_pdf, get_incident_label, get_incident_cell_value
                             raw_keys = get_incident_ordered_keys_pdf(first_item)
