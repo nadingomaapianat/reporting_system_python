@@ -2658,11 +2658,14 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     
     # Import Arabic text support
     try:
-        from utils.pdf_utils import shape_text_for_arabic, ARABIC_FONT_NAME, DEFAULT_FONT_NAME
+        from utils.pdf_utils import paragraph_cell_text, ARABIC_FONT_NAME, DEFAULT_FONT_NAME
     except ImportError:
-        # Fallback if pdf_utils is not available
-        def shape_text_for_arabic(text: str) -> str:
-            return text
+        from xml.sax.saxutils import escape as _xml_escape_rl_fallback
+
+        def paragraph_cell_text(text: str) -> str:
+            s = '' if text is None else str(text)
+            return _xml_escape_rl_fallback(s)
+
         ARABIC_FONT_NAME = None
         DEFAULT_FONT_NAME = 'Helvetica'
     
@@ -2950,12 +2953,12 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     )
     
     # Process columns with Paragraph objects for multi-line support
-    processed_columns = [Paragraph(shape_text_for_arabic(str(col)), header_style) for col in columns]
+    processed_columns = [Paragraph(paragraph_cell_text(str(col)), header_style) for col in columns]
     
     # Process data rows with Paragraph objects for multi-line support
     processed_data_rows = []
     for row in data_rows:
-        processed_row = [Paragraph(shape_text_for_arabic(str(cell)), data_style) for cell in row]
+        processed_row = [Paragraph(paragraph_cell_text(str(cell)), data_style) for cell in row]
         processed_data_rows.append(processed_row)
     
     table_data = [processed_columns] + processed_data_rows
@@ -2965,7 +2968,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     if isinstance(footer_totals_cols, list) and len(footer_totals_cols) > 0:
         name_to_index = {str(col): idx for idx, col in enumerate(columns)}
         totals_row = [Paragraph("", data_style)] * len(columns)
-        totals_row[0] = Paragraph(shape_text_for_arabic("Total"), data_style)
+        totals_row[0] = Paragraph(paragraph_cell_text("Total"), data_style)
         for col_name in footer_totals_cols:
             if str(col_name) in name_to_index:
                 idx = name_to_index[str(col_name)]
@@ -2978,7 +2981,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
                         s += float(str(val).replace(',', ''))
                     except Exception:
                         pass
-                totals_row[idx] = Paragraph(shape_text_for_arabic(f"{s:,.2f}"), data_style)
+                totals_row[idx] = Paragraph(paragraph_cell_text(f"{s:,.2f}"), data_style)
         table_data.append(totals_row)
     
     # Create table with configuration-based styling and column widths

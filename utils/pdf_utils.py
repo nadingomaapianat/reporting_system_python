@@ -6,6 +6,7 @@ import os
 import sys
 import base64
 import re
+from xml.sax.saxutils import escape as _xml_escape_rl
 from datetime import datetime
 from io import BytesIO
 from typing import Dict, Any, Optional, List
@@ -158,6 +159,17 @@ def shape_text_for_arabic(text: str) -> str:
         return bidi_text
     except Exception:
         return text
+
+def escape_for_reportlab_paragraph(text: str) -> str:
+    """Escape &, <, > for ReportLab Paragraph (mini-HTML) so arbitrary DB text is safe."""
+    if text is None:
+        return ''
+    return _xml_escape_rl(str(text))
+
+def paragraph_cell_text(text: str) -> str:
+    """Arabic shaping plus XML escape — use for all dynamic Paragraph cell/header strings."""
+    s = '' if text is None else str(text)
+    return escape_for_reportlab_paragraph(shape_text_for_arabic(s))
 
 def format_column_name(key: str) -> str:
     """Convert snake_case or camelCase to Title Case"""
@@ -350,16 +362,16 @@ def generate_pdf_report(
                 spaceAfter=3
             )
             # Prepend a small bank icon for consistency across dashboards
-            story.append(Paragraph(shape_text_for_arabic(f"🏦 {bank_name}"), bank_style))
+            story.append(Paragraph(paragraph_cell_text(f"🏦 {bank_name}"), bank_style))
             if bank_address:
-                story.append(Paragraph(shape_text_for_arabic(bank_address), bank_style))
+                story.append(Paragraph(paragraph_cell_text(bank_address), bank_style))
             if bank_phone or bank_website:
                 contact = []
                 if bank_phone:
                     contact.append(f"Tel: {bank_phone}")
                 if bank_website:
                     contact.append(f"Web: {bank_website}")
-                story.append(Paragraph(" | ".join(contact), bank_style))
+                story.append(Paragraph(paragraph_cell_text(" | ".join(contact)), bank_style))
             story.append(Spacer(1, 12))
         
         # Title
@@ -372,7 +384,7 @@ def generate_pdf_report(
             spaceAfter=12,
             fontName=ARABIC_FONT_NAME or 'Helvetica-Bold'
         )
-        story.append(Paragraph(shape_text_for_arabic(title), title_style))
+        story.append(Paragraph(paragraph_cell_text(title), title_style))
         
         # Subtitle
         if subtitle:
@@ -385,7 +397,7 @@ def generate_pdf_report(
                 spaceAfter=12,
                 fontName=ARABIC_FONT_NAME or DEFAULT_FONT_NAME
             )
-            story.append(Paragraph(shape_text_for_arabic(subtitle), subtitle_style))
+            story.append(Paragraph(paragraph_cell_text(subtitle), subtitle_style))
         
         # Date
         if header_config.get("showDate", True):
@@ -567,7 +579,7 @@ def generate_pdf_report(
                 text = '' if cell is None else str(cell)
                 if len(text) > max_cell_chars:
                     text = text[:max_cell_chars] + '…'
-                out_row.append(Paragraph(shape_text_for_arabic(text), cell_style))
+                out_row.append(Paragraph(paragraph_cell_text(text), cell_style))
             processed_rows.append(out_row)
         
         # Calculate column widths (full width with margins)
@@ -658,7 +670,7 @@ def generate_pdf_report(
             alignment=TA_CENTER,
             fontName=ARABIC_FONT_NAME or DEFAULT_FONT_NAME,
         )
-        story.append(Paragraph(" | ".join(footer_items), footer_style))
+        story.append(Paragraph(paragraph_cell_text(" | ".join(footer_items)), footer_style))
     
     # WATERMARK (if enabled) — draw after content to overlay tables/charts
     def _on_page_end(canv, _doc):
