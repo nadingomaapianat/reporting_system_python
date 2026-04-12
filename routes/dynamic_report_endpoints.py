@@ -575,6 +575,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
         from reportlab.lib.units import inch
         import os
         from datetime import datetime
+        from utils.pdf_utils import paragraph_cell_text, escape_for_reportlab_paragraph
         
         # Create exports directory if it doesn't exist
         export_dir = "exports"
@@ -604,7 +605,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
         if header_config and header_config.get('includeHeader', True):
             # Add title
             title_text = header_config.get('title', 'Dynamic Report')
-            title = Paragraph(title_text, title_style)
+            title = Paragraph(paragraph_cell_text(title_text), title_style)
             story.append(title)
             
             # Add subtitle
@@ -616,11 +617,15 @@ def generate_pdf_report(columns, data_rows, header_config=None):
                 spaceAfter=20,
                 alignment=1  # Center alignment
             )
-            subtitle = Paragraph(subtitle_text, subtitle_style)
+            subtitle = Paragraph(paragraph_cell_text(subtitle_text), subtitle_style)
             story.append(subtitle)
             
-            # Add report info
-            info_text = f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}<br/>Total Records: {len(data_rows)}"
+            # Add report info (escape segments; keep <br/> as markup)
+            ds = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            info_text = (
+                f"{escape_for_reportlab_paragraph(f'Generated on: {ds}')}"
+                f"<br/>{escape_for_reportlab_paragraph(f'Total Records: {len(data_rows)}')}"
+            )
             info = Paragraph(info_text, styles['Normal'])
             story.append(info)
             story.append(Spacer(1, 20))
@@ -630,7 +635,11 @@ def generate_pdf_report(columns, data_rows, header_config=None):
             story.append(title)
             
             # Add report info
-            info_text = f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}<br/>Total Records: {len(data_rows)}"
+            ds = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            info_text = (
+                f"{escape_for_reportlab_paragraph(f'Generated on: {ds}')}"
+                f"<br/>{escape_for_reportlab_paragraph(f'Total Records: {len(data_rows)}')}"
+            )
             info = Paragraph(info_text, styles['Normal'])
             story.append(info)
             story.append(Spacer(1, 20))
