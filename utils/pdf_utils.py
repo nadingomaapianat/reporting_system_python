@@ -5,7 +5,6 @@ Supports: Arabic text, tables, charts, logos, watermarks, custom styling, and mo
 import os
 import sys
 import base64
-import html
 import re
 from datetime import datetime
 from io import BytesIO
@@ -351,16 +350,16 @@ def generate_pdf_report(
                 spaceAfter=3
             )
             # Prepend a small bank icon for consistency across dashboards
-            story.append(Paragraph(paragraph_cell_text(f"🏦 {bank_name}"), bank_style))
+            story.append(Paragraph(shape_text_for_arabic(f"🏦 {bank_name}"), bank_style))
             if bank_address:
-                story.append(Paragraph(paragraph_cell_text(bank_address), bank_style))
+                story.append(Paragraph(shape_text_for_arabic(bank_address), bank_style))
             if bank_phone or bank_website:
                 contact = []
                 if bank_phone:
                     contact.append(f"Tel: {bank_phone}")
                 if bank_website:
                     contact.append(f"Web: {bank_website}")
-                story.append(Paragraph(escape_for_reportlab_paragraph(" | ".join(contact)), bank_style))
+                story.append(Paragraph(" | ".join(contact), bank_style))
             story.append(Spacer(1, 12))
         
         # Title
@@ -373,7 +372,7 @@ def generate_pdf_report(
             spaceAfter=12,
             fontName=ARABIC_FONT_NAME or 'Helvetica-Bold'
         )
-        story.append(Paragraph(paragraph_cell_text(title), title_style))
+        story.append(Paragraph(shape_text_for_arabic(title), title_style))
         
         # Subtitle
         if subtitle:
@@ -386,7 +385,7 @@ def generate_pdf_report(
                 spaceAfter=12,
                 fontName=ARABIC_FONT_NAME or DEFAULT_FONT_NAME
             )
-            story.append(Paragraph(paragraph_cell_text(subtitle), subtitle_style))
+            story.append(Paragraph(shape_text_for_arabic(subtitle), subtitle_style))
         
         # Date
         if header_config.get("showDate", True):
@@ -399,7 +398,7 @@ def generate_pdf_report(
                 spaceAfter=12
             )
             current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            story.append(Paragraph(escape_for_reportlab_paragraph(f"Generated on: {current_date}"), date_style))
+            story.append(Paragraph(f"Generated on: {current_date}", date_style))
         
         story.append(Spacer(1, 20))
     
@@ -555,7 +554,7 @@ def generate_pdf_report(
         
         # Process headers
         processed_headers = [
-            Paragraph(paragraph_cell_text(h), header_style)
+            Paragraph(shape_text_for_arabic(str(h)), header_style) 
             for h in column_headers
         ]
         
@@ -568,7 +567,7 @@ def generate_pdf_report(
                 text = '' if cell is None else str(cell)
                 if len(text) > max_cell_chars:
                     text = text[:max_cell_chars] + '…'
-                out_row.append(Paragraph(paragraph_cell_text(text), cell_style))
+                out_row.append(Paragraph(shape_text_for_arabic(text), cell_style))
             processed_rows.append(out_row)
         
         # Calculate column widths (full width with margins)
@@ -659,7 +658,7 @@ def generate_pdf_report(
             alignment=TA_CENTER,
             fontName=ARABIC_FONT_NAME or DEFAULT_FONT_NAME,
         )
-        story.append(Paragraph(escape_for_reportlab_paragraph(" | ".join(footer_items)), footer_style))
+        story.append(Paragraph(" | ".join(footer_items), footer_style))
     
     # WATERMARK (if enabled) — draw after content to overlay tables/charts
     def _on_page_end(canv, _doc):
