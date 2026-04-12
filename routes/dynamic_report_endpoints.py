@@ -4,7 +4,7 @@ import json
 import logging
 import traceback
 from config import get_db_connection
-from utils.export_utils import get_default_header_config
+from utils.export_utils import get_default_header_config, filter_export_columns_rows
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -298,6 +298,8 @@ async def generate_dynamic_report(request: Request):
             data_rows = []
             for row in rows:
                 data_rows.append([str(cell) if cell is not None else '' for cell in row])
+            
+            columns, data_rows = filter_export_columns_rows(columns, data_rows)
             
             print(f"[DynamicReport] Generating {format_type} report...")
             # Get default header config and merge with user config

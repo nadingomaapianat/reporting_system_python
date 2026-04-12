@@ -3,7 +3,10 @@ Export utilities - re-exports for backward compatibility.
 Header config is defined in config.settings.
 merge_header_config lives in routes.route_utils; re-export here for services that expect it from export_utils.
 """
-from datetime import datetime
+import re
+import uuid as _uuid_mod
+from typing import Any, List, Sequence, Tuple, Union
+from datetime import datetime, date
 from config import get_default_header_config
 
 try:
@@ -21,9 +24,14 @@ DATE_KEYS = frozenset({
     'expected_implementation_date', 'implementation_date', 'createdAt', 'created_at',
     'updatedAt', 'updated_at', 'date', 'meeting_date', 'due_date', 'target_date',
     'occurrenceDate', 'reportedDate',
+    # SQL aliases with spaces, e.g. AS [Created At]
+    'created at', 'updated at', 'deleted at',
 })
 # Keys that are date+time (show time in exports)
-DATETIME_KEYS = frozenset({'createdAt', 'created_at', 'updatedAt', 'updated_at'})
+DATETIME_KEYS = frozenset({
+    'createdAt', 'created_at', 'updatedAt', 'updated_at',
+    'created at', 'updated at', 'deleted at',
+})
 DATETIME_KEYS_LOWER = frozenset(k.lower() for k in DATETIME_KEYS)
 
 
@@ -33,18 +41,30 @@ def _try_format_date(value, include_time: bool = False) -> str:
         if isinstance(value, (int, float)) and value > 0:
             dt = datetime.utcfromtimestamp(value / 1000.0 if value > 1e12 else value)
             return dt.strftime('%d/%m/%Y %H:%M') if include_time else dt.strftime('%d/%m/%Y')
+        if isinstance(value, datetime):
+            return value.strftime('%d/%m/%Y %H:%M') if include_time else value.strftime('%d/%m/%Y')
+        if isinstance(value, date):
+            return value.strftime('%d/%m/%Y')
         if isinstance(value, str):
             s = value.strip()
             if len(s) >= 10 and s[4] == '-' and s[7] == '-':
-                if include_time and 'T' in s:
+                if include_time:
+                    norm = s.replace('Z', '').split('+')[0].strip().replace('T', ' ').replace('t', ' ')
+                    for fmt in ('%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S'):
+                        for n in (norm, norm[:26], norm[:19]):
+                            if not n or len(n) < 10:
+                                continue
+                            try:
+                                dt = datetime.strptime(n.strip(), fmt)
+                                return dt.strftime('%d/%m/%Y %H:%M')
+                            except Exception:
+                                continue
                     try:
-                        # Parse full ISO datetime e.g. 2026-03-04T14:30:00.000Z
-                        s_iso = s.replace('Z', '').split('+')[0].split('.')[0].strip()
-                        dt = datetime.fromisoformat(s_iso)
+                        dt = datetime.fromisoformat(s.replace('Z', '').split('+')[0])
                         return dt.strftime('%d/%m/%Y %H:%M')
                     except Exception:
                         pass
-                date_part = s.split('T')[0].strip()[:10]
+                date_part = s.replace('T', ' ').split(' ')[0].strip()[:10]
                 dt = datetime.strptime(date_part, '%Y-%m-%d')
                 return dt.strftime('%d/%m/%Y')
         if hasattr(value, 'strftime'):
@@ -54,11 +74,124 @@ def _try_format_date(value, include_time: bool = False) -> str:
     return None
 
 
-def format_cell_value_for_export(key: str, value) -> str:
+def _column_key_tokens(key: str) -> list:
+    """Split column name into lowercase alphanumeric tokens (handles camelCase, spaces, dots)."""
+    s = re.sub(r'[\[\]]', ' ', str(key))
+    parts = re.split(r'[^a-z0-9]+', s.lower())
+    return [p for p in parts if p]
+
+
+def is_hidden_export_column_key(key: str) -> bool:
+    """True for id / UUID / guid columns that should not appear in PDF/Excel exports."""
+    k = str(key).strip().lower()
+    if not k:
+        return False
+    if k == 'id':
+        return True
+    if k.endswith(' id'):
+        return True
+    if k.endswith('_id'):
+        return True
+    if k in ('guid', 'uuid', 'rowguid', 'uniqueidentifier'):
+        return True
+    # token-based: hide ..._uuid, my_uuid, "Row Guid", etc.; avoid matching 'guidance' (no standalone guid/uuid token)
+    toks = _column_key_tokens(key)
+    if 'uuid' in toks or 'guid' in toks:
+        return True
+    if any(t.endswith('uuid') or t.endswith('guid') for t in toks):
+        return True
+    return False
+
+
+def _normalize_column_label_for_filter(col: Union[str, dict, Any]) -> str:
+    """Last segment after '.' for dbo.Table.Id -> Id."""
+    if isinstance(col, dict):
+        h = col.get('label') or col.get('key') or col.get('name') or ''
+    else:
+        h = str(col)
+    h = h.strip()
+    if '.' in h:
+        h = h.rsplit('.', 1)[-1].strip()
+    return h
+
+
+def filter_export_columns_rows(
+    columns: Sequence,
+    data_rows: Sequence[Sequence[Any]],
+) -> Tuple[List, List[List[Any]]]:
+    """
+    Drop hidden id/uuid columns by index so Excel/PDF tables stay aligned.
+    Safe when columns is a list of str or dicts with label/key (dynamic reports).
+    """
+    if not columns or not data_rows:
+        return list(columns), [list(r) for r in data_rows]
+    keep: List[int] = []
+    for i, col in enumerate(columns):
+        raw = str(col).strip() if not isinstance(col, dict) else str(col.get('label') or col.get('key') or '')
+        norm = _normalize_column_label_for_filter(col)
+        if is_hidden_export_column_key(raw) or is_hidden_export_column_key(norm):
+            continue
+        keep.append(i)
+    if len(keep) == len(columns):
+        return list(columns), [list(r) for r in data_rows]
+    new_cols = [columns[i] for i in keep]
+    new_rows: List[List[Any]] = []
+    for row in data_rows:
+        row = list(row) if row is not None else []
+        new_rows.append([row[i] if i < len(row) else '' for i in keep])
+    return new_cols, new_rows
+
+
+def _value_is_uuid_like(value) -> bool:
+    """True if value is a standard string or bytes form of a UUID."""
+    if isinstance(value, _uuid_mod.UUID):
+        return True
+    if isinstance(value, (bytes, memoryview)) and len(bytes(value)) == 16:
+        return True
+    if value is None:
+        return False
+    s = str(value).strip()
+    if len(s) < 32:
+        return False
+    try:
+        _uuid_mod.UUID(s)
+        return True
+    except Exception:
+        pass
+    if len(s) == 32 and re.fullmatch(r'[0-9a-fA-F]{32}', s):
+        try:
+            _uuid_mod.UUID(hex=s)
+            return True
+        except Exception:
+            pass
+    return False
+
+
+def redact_uuid_like_for_export(value) -> str:
+    """Replace UUID-like scalars with empty string for exports (no raw ids)."""
+    if _value_is_uuid_like(value):
+        return ''
+    return str(value) if value is not None else ''
+
+
+def format_cell_value_for_export(key: str, value, _from_bytes: int = 0) -> str:
     """Convert a table cell value to string; format date-like keys as readable DD/MM/YYYY (or with time for createdAt etc.)."""
     if value is None or value == '':
         return 'N/A' if value is None else ''
-    key_lower = str(key).lower()
+
+    if isinstance(value, (bytes, memoryview)):
+        b = bytes(value)
+        if len(b) == 16:
+            # 16-byte SQL uniqueidentifier — do not print as UUID in exports
+            return ''
+        if _from_bytes < 3:
+            try:
+                return format_cell_value_for_export(key, b.decode('utf-8'), _from_bytes + 1)
+            except Exception:
+                pass
+        return ''
+
+    key_lower = str(key).lower().strip()
     include_time = key_lower in DATETIME_KEYS_LOWER
     # Format if key looks like a date field
     if key_lower in DATE_KEYS or key_lower.endswith('_date') or key_lower.endswith('date'):
@@ -66,10 +199,12 @@ def format_cell_value_for_export(key: str, value) -> str:
         if formatted is not None:
             return formatted
     # Also try to format any value that looks like an ISO date string
-    if isinstance(value, str) and 'T' in value and value.strip()[4:5] == '-':
+    if isinstance(value, str) and len(value) >= 10 and value.strip()[4:5] == '-':
         formatted = _try_format_date(value, include_time=include_time)
         if formatted is not None:
             return formatted
+    if _value_is_uuid_like(value):
+        return ''
     return str(value)
 
 
@@ -190,7 +325,7 @@ def get_incident_ordered_keys_pdf(first_row: dict) -> list:
 def get_incident_ordered_keys(first_row: dict) -> list:
     """Return ordered list of keys for incident export: UI order first, then any extra keys from data. One 'function_name' covers functionName."""
     ui_keys = [k for k, _ in INCIDENT_COLUMNS_UI]
-    data_keys = [k for k in first_row.keys() if str(k).lower() != 'id' and k != 'functionName']
+    data_keys = [k for k in first_row.keys() if not is_hidden_export_column_key(k) and k != 'functionName']
     has_function = 'function_name' in first_row or 'functionName' in first_row
     seen = set()
     ordered = []
@@ -235,6 +370,9 @@ __all__ = [
     'get_default_header_config',
     'merge_header_config',
     'format_cell_value_for_export',
+    'is_hidden_export_column_key',
+    'filter_export_columns_rows',
+    'redact_uuid_like_for_export',
     'DATE_KEYS',
     'DATETIME_KEYS',
     'INCIDENT_COLUMNS_UI',

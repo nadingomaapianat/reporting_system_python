@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')
 
+from utils.export_utils import format_cell_value_for_export, is_hidden_export_column_key
+
 class ExcelService:
     def __init__(self):
         self.api_service = None
@@ -134,12 +136,12 @@ class ExcelService:
                 if isinstance(data, list) and len(data) > 0:
                     first_item = data[0]
                     if isinstance(first_item, dict):
-                        raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
+                        raw_keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
                         columns = ['#'] + [format_column_name(k) for k in raw_keys]
                         data_rows = []
                         for i, row in enumerate(data, 1):
                             if isinstance(row, dict):
-                                values = [str(row.get(k, '')) for k in raw_keys]
+                                values = [format_cell_value_for_export(k, row.get(k, '')) for k in raw_keys]
                                 data_rows.append([str(i)] + values)
                             elif isinstance(row, (list, tuple)):
                                 vals = [str(v) for v in row]
@@ -182,12 +184,12 @@ class ExcelService:
                             data_rows.append([str(i), str(item)])
                     elif isinstance(first_item, dict):
                         # All control cards: export all columns from data (match UI); never export id
-                        raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
+                        raw_keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
                         columns = ["#"] + [format_column_name(k) for k in raw_keys]
                         data_rows = []
                         for i, item in enumerate(data, 1):
                             if isinstance(item, dict):
-                                values = [str(item.get(k, '')) for k in raw_keys]
+                                values = [format_cell_value_for_export(k, item.get(k, '')) for k in raw_keys]
                                 data_rows.append([str(i)] + values)
                             else:
                                 data_rows.append([str(i)] + [''] * len(raw_keys))
@@ -685,14 +687,17 @@ class ExcelService:
                     first_item = table_rows[0]
                     if isinstance(first_item, dict):
                         # Exclude nested keys (e.g. kriDetailsWithActionPlans has valuesByPeriod)
-                        exclude_keys = {'id', 'valuesbyperiod'}
-                        raw_keys = [k for k in first_item.keys() if str(k).lower() not in exclude_keys]
+                        exclude_keys = {'valuesbyperiod'}
+                        raw_keys = [
+                            k for k in first_item.keys()
+                            if str(k).lower() not in exclude_keys and not is_hidden_export_column_key(k)
+                        ]
                         columns = ['#'] + [format_column_name(k) for k in raw_keys]
                         # Add "Values & Action Plans" column for this table (periods ; separated, action plans | separated)
                         if card_type == 'kriDetailsWithActionPlans':
                             columns.append('Values & Action Plans')
                         for i, row in enumerate(table_rows, 1):
-                            values = [str(row.get(k, '')) for k in raw_keys]
+                            values = [format_cell_value_for_export(k, row.get(k, '')) for k in raw_keys]
                             if card_type == 'kriDetailsWithActionPlans':
                                 values.append(format_values_by_period(row))
                             data_rows.append([str(i)] + values)
@@ -721,10 +726,10 @@ class ExcelService:
                     if data:  # Non-empty list
                         first_item = data[0]
                         if isinstance(first_item, dict):
-                            raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
+                            raw_keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
                             columns = ['#'] + [format_column_name(k) for k in raw_keys]
                             for i, item in enumerate(data, 1):
-                                values = [str(item.get(k, 'N/A')) for k in raw_keys]
+                                values = [format_cell_value_for_export(k, item.get(k, 'N/A')) for k in raw_keys]
                                 data_rows.append([str(i)] + values)
                         else:
                             columns = ['#', 'Value']
@@ -898,7 +903,7 @@ class ExcelService:
                                 ])
                         else:
                             from utils.export_utils import format_cell_value_for_export
-                            raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
+                            raw_keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
                             columns = ['#'] + [format_column_name(k) for k in raw_keys]
                             data_rows = []
                             for i, row in enumerate(data, 1):
@@ -935,7 +940,7 @@ class ExcelService:
                 if isinstance(data, list) and data:
                     first_item = data[0]
                     if isinstance(first_item, dict):
-                        raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
+                        raw_keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
                         columns = ['#'] + [format_column_name(k) for k in raw_keys]
                         data_rows = []
                         for i, item in enumerate(data, 1):
@@ -1088,7 +1093,7 @@ class ExcelService:
                     if isinstance(first_item, dict):
                         from utils.export_utils import format_cell_value_for_export
 
-                        raw_keys = [k for k in first_item.keys() if str(k).lower() != "id"]
+                        raw_keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
                         columns = ["#"] + [format_column_name(k) for k in raw_keys]
                         data_rows = []
                         for i, row in enumerate(data, 1):
@@ -1123,7 +1128,7 @@ class ExcelService:
                 if isinstance(data, list) and data:
                     first_item = data[0]
                     if isinstance(first_item, dict):
-                        raw_keys = [k for k in first_item.keys() if str(k).lower() != "id"]
+                        raw_keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
                         columns = ["#"] + [format_column_name(k) for k in raw_keys]
                         data_rows = []
                         for i, item in enumerate(data, 1):

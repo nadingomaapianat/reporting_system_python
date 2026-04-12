@@ -16,6 +16,7 @@ from datetime import datetime
 
 # Import PDF utilities
 from utils.pdf_utils import shape_text_for_arabic, generate_pdf_report
+from utils.export_utils import format_cell_value_for_export, is_hidden_export_column_key
 
 def write_debug(msg):
     """Write debug message to file and stderr with timestamp"""
@@ -165,7 +166,7 @@ class PDFService:
                     if isinstance(data, list) and data:
                         first_item = data[0]
                         if isinstance(first_item, dict):
-                            keys = [k for k in first_item.keys() if str(k).lower() != 'id']
+                            keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
                             if len(keys) >= 2:
                                 key1 = keys[0]
                                 key2 = keys[-1]
@@ -461,7 +462,7 @@ class PDFService:
                     if isinstance(kris_data, list) and kris_data:
                         first_item = kris_data[0]
                         if isinstance(first_item, dict):
-                            keys = [k for k in first_item.keys() if str(k).lower() != 'id']
+                            keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
                             if len(keys) >= 2:
                                 key1 = keys[0]
                                 key2 = keys[-1]
@@ -518,8 +519,11 @@ class PDFService:
                     first_item = table_rows[0]
                     if isinstance(first_item, dict):
                         # Exclude nested/complex keys from table (e.g. kriDetailsWithActionPlans has valuesByPeriod)
-                        exclude_keys = {'id', 'valuesbyperiod'}
-                        raw_keys = [k for k in first_item.keys() if str(k).lower() not in exclude_keys]
+                        exclude_keys = {'valuesbyperiod'}
+                        raw_keys = [
+                            k for k in first_item.keys()
+                            if str(k).lower() not in exclude_keys and not is_hidden_export_column_key(k)
+                        ]
                         def nice(k: str) -> str:
                             if k == 'function_name':
                                 return 'Function'
@@ -570,7 +574,7 @@ class PDFService:
                                 return " ; ".join(parts) if parts else 'No values'
                             columns.append('Values & Action Plans')
                         for i, row in enumerate(table_rows, 1):
-                            values = [str(row.get(k, '')) for k in raw_keys]
+                            values = [format_cell_value_for_export(k, row.get(k, '')) for k in raw_keys]
                             if card_type == 'kriDetailsWithActionPlans':
                                 values.append(format_values_by_period_pdf(row))
                             data_rows.append([str(i)] + values)
@@ -609,10 +613,13 @@ class PDFService:
                                 pdf_keys = ['code', 'kri_name', 'function_name', 'frequency', 'threshold', 'status', 'createdAt']
                                 raw_keys = [k for k in pdf_keys if k in first_item]
                             else:
-                                raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
+                                raw_keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
                             columns = ['#'] + [nice(k) for k in raw_keys]
                             for i, item in enumerate(kris_data, 1):
-                                values = [str(item.get(k, 'N/A'))[:200] for k in raw_keys]  # truncate long text for PDF
+                                values = [
+                                    (format_cell_value_for_export(k, item.get(k, 'N/A')) or 'N/A')[:200]
+                                    for k in raw_keys
+                                ]  # truncate long text for PDF
                                 data_rows.append([str(i)] + values)
                         else:
                             columns = ['#', 'Value']
@@ -815,7 +822,7 @@ class PDFService:
                 if isinstance(data, list) and len(data) > 0:
                     first_item = data[0]
                     if isinstance(first_item, dict):
-                        raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
+                        raw_keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
                         # Human-readable column labels (Function for function_name to match UI)
                         def nice(k: str) -> str:
                             if k == 'function_name':
@@ -824,7 +831,7 @@ class PDFService:
                         columns = ['#'] + [nice(k) for k in raw_keys]
                         data_rows = []
                         for i, row in enumerate(data, 1):
-                            values = [str(row.get(k, '')) for k in raw_keys]
+                            values = [format_cell_value_for_export(k, row.get(k, '')) for k in raw_keys]
                             data_rows.append([str(i)] + values)
                     elif isinstance(first_item, (list, tuple)):
                         # If rows are arrays, label columns generically C1..Cn
@@ -957,7 +964,7 @@ class PDFService:
                 if isinstance(data, list) and data:
                     first_item = data[0]
                     if isinstance(first_item, dict):
-                        keys = [k for k in first_item.keys() if str(k).lower() != 'id']
+                        keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
                         def fmt(k: str) -> str:
                             return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', k).title()
                         
@@ -1066,14 +1073,14 @@ class PDFService:
                                     map_financial(row.get('InherentFinancialValue', '')),
                                 ])
                         else:
-                            raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
+                            raw_keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
                             def nice(k: str) -> str:
                                 if k == 'function_name':
                                     return 'Function'
                                 return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
                             columns = ['#'] + [nice(k) for k in raw_keys]
                             for i, row in enumerate(data, 1):
-                                values = [str(row.get(k, '')) for k in raw_keys]
+                                values = [format_cell_value_for_export(k, row.get(k, '')) for k in raw_keys]
                                 data_rows.append([str(i)] + values)
                     elif isinstance(first_item, (list, tuple)):
                         num_cols = len(first_item)
@@ -1090,7 +1097,6 @@ class PDFService:
 
             # CARD SUMMARY EXPORT
             elif only_card and card_type:
-                from utils.export_utils import format_cell_value_for_export
                 write_debug("DEBUG: ===== only_card START =====")
                 write_debug(f"  - data type: {type(data)}")
                 if isinstance(data, list) and data:
@@ -1100,7 +1106,7 @@ class PDFService:
                             if k == 'function_name':
                                 return 'Function'
                             return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
-                        raw_keys = [k for k in first_item.keys() if str(k).lower() != 'id']
+                        raw_keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
                         columns = ['#'] + [nice(k) for k in raw_keys]
                         for i, item in enumerate(data, 1):
                             values = [format_cell_value_for_export(k, item.get(k)) or str(item.get(k, 'N/A')) for k in raw_keys]
@@ -1178,7 +1184,7 @@ class PDFService:
                 if isinstance(data, list) and data:
                     first_item = data[0]
                     if isinstance(first_item, dict):
-                        keys = [k for k in first_item.keys() if str(k).lower() != "id"]
+                        keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
 
                         def fmt(k: str) -> str:
                             return re.sub(r"[_]|([a-z])([A-Z])", r"\1 \2", str(k)).title()
@@ -1260,7 +1266,7 @@ class PDFService:
                 if isinstance(data, list) and data:
                     first_item = data[0]
                     if isinstance(first_item, dict):
-                        raw_keys = [k for k in first_item.keys() if str(k).lower() != "id"]
+                        raw_keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
 
                         def nice(k: str) -> str:
                             if k == "function_name":
@@ -1299,7 +1305,7 @@ class PDFService:
                                 return "Function"
                             return re.sub(r"[_]|([a-z])([A-Z])", r"\1 \2", str(k)).title()
 
-                        raw_keys = [k for k in first_item.keys() if str(k).lower() != "id"]
+                        raw_keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
                         columns = ["#"] + [nice2(k) for k in raw_keys]
                         for i, item in enumerate(data, 1):
                             values = [

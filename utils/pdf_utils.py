@@ -228,6 +228,9 @@ def generate_pdf_report(
         from utils.export_utils import get_default_header_config
         header_config = get_default_header_config("dynamic")
     
+    from utils.export_utils import filter_export_columns_rows
+    columns, data_rows = filter_export_columns_rows(columns or [], data_rows or [])
+    
     # Extract configuration values
     include_header = header_config.get("includeHeader", True)
     title = header_config.get("title", "Report")
