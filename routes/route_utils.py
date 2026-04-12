@@ -2656,32 +2656,15 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     except Exception:
         PILImage = None
     
-    # Import Arabic text support and safe Paragraph text helpers
+    # Import Arabic text support
     try:
-        from utils.pdf_utils import (
-            shape_text_for_arabic,
-            ARABIC_FONT_NAME,
-            DEFAULT_FONT_NAME,
-            paragraph_cell_text,
-            escape_for_reportlab_paragraph,
-        )
+        from utils.pdf_utils import shape_text_for_arabic, ARABIC_FONT_NAME, DEFAULT_FONT_NAME
     except ImportError:
-        import html as _html
-
+        # Fallback if pdf_utils is not available
         def shape_text_for_arabic(text: str) -> str:
-            return text if text is not None else ""
-
-        def escape_for_reportlab_paragraph(text) -> str:
-            if text is None:
-                return ""
-            return _html.escape(str(text), quote=False)
-
-        def paragraph_cell_text(text) -> str:
-            raw = "" if text is None else str(text)
-            return escape_for_reportlab_paragraph(shape_text_for_arabic(raw))
-
+            return text
         ARABIC_FONT_NAME = None
-        DEFAULT_FONT_NAME = "Helvetica"
+        DEFAULT_FONT_NAME = 'Helvetica'
     
     # Get default header config if none provided
     if not header_config:
@@ -2874,29 +2857,29 @@ def generate_pdf_report(columns, data_rows, header_config=None):
                 pass
         # Add bank information at top if configured
         if show_bank_info and bank_name and bank_info_location == "top":
-            story.append(Paragraph(paragraph_cell_text(f"🏦 {bank_name}"), bank_style))
+            story.append(Paragraph(f"🏦 {bank_name}", bank_style))
             if bank_address:
-                story.append(Paragraph(paragraph_cell_text(bank_address), bank_style))
+                story.append(Paragraph(bank_address, bank_style))
             if bank_phone or bank_website:
                 contact_info = []
                 if bank_phone:
                     contact_info.append(f"Tel: {bank_phone}")
                 if bank_website:
                     contact_info.append(f"Web: {bank_website}")
-                story.append(Paragraph(escape_for_reportlab_paragraph(" | ".join(contact_info)), bank_style))
+                story.append(Paragraph(" | ".join(contact_info), bank_style))
             story.append(Spacer(1, 12))
         
         # Add title
-        story.append(Paragraph(paragraph_cell_text(title), title_style))
+        story.append(Paragraph(title, title_style))
         
         # Add subtitle
         if subtitle:
-            story.append(Paragraph(paragraph_cell_text(subtitle), subtitle_style))
+            story.append(Paragraph(subtitle, subtitle_style))
         
         # Add generation date
         if show_date:
             current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            story.append(Paragraph(escape_for_reportlab_paragraph(f"Generated on: {current_date}"), date_style))
+            story.append(Paragraph(f"Generated on: {current_date}", date_style))
         
         story.append(Spacer(1, 20))
     
@@ -2967,12 +2950,12 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     )
     
     # Process columns with Paragraph objects for multi-line support
-    processed_columns = [Paragraph(paragraph_cell_text(col), header_style) for col in columns]
+    processed_columns = [Paragraph(shape_text_for_arabic(str(col)), header_style) for col in columns]
     
     # Process data rows with Paragraph objects for multi-line support
     processed_data_rows = []
     for row in data_rows:
-        processed_row = [Paragraph(paragraph_cell_text(cell), data_style) for cell in row]
+        processed_row = [Paragraph(shape_text_for_arabic(str(cell)), data_style) for cell in row]
         processed_data_rows.append(processed_row)
     
     table_data = [processed_columns] + processed_data_rows
@@ -2982,7 +2965,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     if isinstance(footer_totals_cols, list) and len(footer_totals_cols) > 0:
         name_to_index = {str(col): idx for idx, col in enumerate(columns)}
         totals_row = [Paragraph("", data_style)] * len(columns)
-        totals_row[0] = Paragraph(paragraph_cell_text("Total"), data_style)
+        totals_row[0] = Paragraph(shape_text_for_arabic("Total"), data_style)
         for col_name in footer_totals_cols:
             if str(col_name) in name_to_index:
                 idx = name_to_index[str(col_name)]
@@ -2995,7 +2978,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
                         s += float(str(val).replace(',', ''))
                     except Exception:
                         pass
-                totals_row[idx] = Paragraph(paragraph_cell_text(f"{s:,.2f}"), data_style)
+                totals_row[idx] = Paragraph(shape_text_for_arabic(f"{s:,.2f}"), data_style)
         table_data.append(totals_row)
     
     # Create table with configuration-based styling and column widths
@@ -3055,16 +3038,16 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     # Add bank information at bottom if configured
     if show_bank_info and bank_name and bank_info_location == "bottom":
         story.append(Spacer(1, 20))
-        story.append(Paragraph(paragraph_cell_text(f"🏦 {bank_name}"), bank_style))
+        story.append(Paragraph(f"🏦 {bank_name}", bank_style))
         if bank_address:
-            story.append(Paragraph(paragraph_cell_text(bank_address), bank_style))
+            story.append(Paragraph(bank_address, bank_style))
         if bank_phone or bank_website:
             contact_info = []
             if bank_phone:
                 contact_info.append(f"Tel: {bank_phone}")
             if bank_website:
                 contact_info.append(f"Web: {bank_website}")
-            story.append(Paragraph(escape_for_reportlab_paragraph(" | ".join(contact_info)), bank_style))
+            story.append(Paragraph(" | ".join(contact_info), bank_style))
 
     # Add footer elements
     if footer_show_date or footer_show_confidentiality or footer_show_page_numbers:
@@ -3088,15 +3071,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
             footer_text.append("Page &P of &N")
         
         if footer_text:
-            # Preserve ReportLab page placeholders (&P, &N); escape user/config strings only
-            _page_marker = "Page &P of &N"
-            escaped_footer = []
-            for ft in footer_text:
-                if ft == _page_marker:
-                    escaped_footer.append(ft)
-                else:
-                    escaped_footer.append(escape_for_reportlab_paragraph(ft))
-            story.append(Paragraph(" | ".join(escaped_footer), footer_style))
+            story.append(Paragraph(" | ".join(footer_text), footer_style))
     
     # Build PDF and return bytes (NOT file path - file saving and DB logging handled by save_and_log_export)
     doc.build(story)
