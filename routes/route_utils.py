@@ -808,6 +808,9 @@ def generate_excel_report(columns, data_rows, header_config=None):
     
     write_debug(f"generate_excel_report called with columns={columns}, data_rows count={len(data_rows)}")
     
+    from utils.export_utils import filter_export_columns_rows
+    columns, data_rows = filter_export_columns_rows(columns or [], data_rows or [])
+    
     # Get default header config if none provided
     if not header_config:
         write_debug("header_config is None, creating default")
@@ -2673,6 +2676,9 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     if not header_config:
         from utils.export_utils import get_default_header_config
         header_config = get_default_header_config("dynamic")
+    
+    from utils.export_utils import filter_export_columns_rows
+    columns, data_rows = filter_export_columns_rows(columns or [], data_rows or [])
     
     base_dir = os.path.dirname(os.path.dirname(__file__))
     # Create PDF in memory (BytesIO) - NOT to disk (file saving is handled by save_and_log_export in the route)

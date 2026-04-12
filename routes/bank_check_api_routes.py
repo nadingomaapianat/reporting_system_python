@@ -325,6 +325,7 @@ async def create_enhanced_bank_check_report(
                 wb = Workbook()
                 ws = wb.active
                 ws.title = 'Bank Check Records'
+                from utils.export_utils import filter_export_columns_rows
 
                 # Determine headers and rows
                 if rows and columns:
@@ -341,6 +342,8 @@ async def create_enhanced_bank_check_report(
                                 headers.append(k)
                                 seen.add(k)
                     data_rows = [[str(rec.get(h, '')) for h in headers] for rec in records]
+
+                headers, data_rows = filter_export_columns_rows(headers, data_rows)
 
                 # Custom header block
                 title_font = Font(name='Calibri', size=14, bold=True, color='003366')

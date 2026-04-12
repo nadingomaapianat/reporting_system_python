@@ -1198,8 +1198,7 @@ class ControlService:
         query = f"""
         SELECT 
             c.name AS [Control Name],
-            c.createdAt AS [Created At],
-            c.id AS [Control ID],
+            FORMAT(c.createdAt, 'yyyy-MM-dd HH:mm:ss') AS [Created At],
             c.code AS [Code],
             t.preparerStatus AS [Preparer Status],
             t.checkerStatus AS [Checker Status],
