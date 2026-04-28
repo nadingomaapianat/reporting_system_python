@@ -22,6 +22,7 @@ from config.settings import log_database_config
 log_database_config()
 from utils.csrf import CSRFMiddleware, create_csrf_token, set_csrf_cookie
 from utils.auth import JWTAuthMiddleware
+from utils.permissions_middleware import DccPermissionMiddleware
 api_router = api_routes.router
 print("DEBUG: main.py - All routers imported (consolidated in api_router)")
 
@@ -77,7 +78,8 @@ def create_app() -> FastAPI:
 
     csrf_cookie_secure = os.getenv("CSRF_COOKIE_SECURE", "true").lower() == "true"
 
-    # Add JWT authentication middleware (before CSRF)
+    # Inner → outer: CORS, CSRF, JWT, DCC permissions (permissions run after JWT toward the app)
+    app.add_middleware(DccPermissionMiddleware)
     app.add_middleware(JWTAuthMiddleware)
 
     app.add_middleware(
