@@ -10,7 +10,7 @@ except ImportError:
 
 # Ensure process cwd is project root so relative paths (debug_log, reports_export) and env are consistent
 os.chdir(_root)
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -82,35 +82,31 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CSRFMiddleware,
-        exempt_paths=(
-            "/csrf/token",
-            "/docs",
-            "/redoc",
-            "/openapi.json",
-            "/exports",
-            # Dynamic report export / preview / execute-sql are called via trusted backends (Node/Next),
-            # which already enforce auth and CSRF. Skip Python-side CSRF here to avoid 403s.
-            "/api/reports/dynamic",
-            "/api/reports/dynamic/preview",
-            "/api/reports/execute-sql",
-        ),
+        exempt_paths=("/csrf/token",),
     )
 
     # CORS MUST be the outermost middleware so it can handle preflight (OPTIONS) before auth/CSRF
     # Build from .env: CORS_ORIGINS (comma-separated) or FRONTEND_ORIGIN; fallback to localhost
     _cors_env = os.getenv("CORS_ORIGINS", "").strip()
-    if _cors_env:
-        allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
-    else:
-        allowed_origins = [
-           
-            os.getenv("FRONTEND_ORIGIN", "http://localhost:3000").strip(),
-            "http://127.0.0.1:3000",
-            "http://localhost:3000",
-        ]
-    _extra = os.getenv("FRONTEND_ORIGIN")
-    if _extra and _extra not in allowed_origins and _extra != "*":
+    allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()] if _cors_env else []
+
+    # Always include local dev origins for frontend on :3000.
+    # This prevents CORS blocks when .env contains only production domains.
+    local_dev_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+    for origin in local_dev_origins:
+        if origin not in allowed_origins:
+            allowed_origins.append(origin)
+
+    _extra = (os.getenv("FRONTEND_ORIGIN") or "").strip()
+    if _extra and _extra != "*" and _extra not in allowed_origins:
         allowed_origins.append(_extra)
+
+    # Final fallback: if env is empty and FRONTEND_ORIGIN is not set.
+    if not allowed_origins:
+        allowed_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
     app.add_middleware(
         CORSMiddleware,
@@ -123,6 +119,23 @@ def create_app() -> FastAPI:
 
     # Include consolidated API router (contains all sub-routers)
     app.include_router(api_router)
+
+    @app.post("/parse-template")
+    async def legacy_parse_template(
+        template: UploadFile | None = File(default=None),
+        file: UploadFile | None = File(default=None),
+    ):
+        """
+        Backward-compatible alias for older clients still posting to /parse-template.
+        New endpoint is /word-template/analyze.
+        """
+        upload = template or file
+        if upload is None:
+            raise HTTPException(status_code=400, detail="No file provided")
+
+        from routes.word_template_routes import analyze_template
+
+        return await analyze_template(upload)
 
     @app.get("/csrf/token")
     async def get_csrf_token(response: Response):

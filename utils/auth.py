@@ -14,29 +14,10 @@ JWT_ALGORITHM = "HS256"
 
 security = HTTPBearer(auto_error=False)
 
-# Public paths that don't require authentication
+# Public paths that don't require authentication (CSRF bootstrap + token validation only).
 PUBLIC_PATHS = [
     "/csrf/token",
     "/api/auth/validate-token",
-    "/docs",
-    "/redoc",
-    "/openapi.json",
-    "/exports",
-    # Reporting exports & dynamic/dynamic-dashboard/execute-sql endpoints are read-only or proxied via secured backends.
-    # Allow them without JWT so the reporting frontend can load dashboards/reports in dev/embedded mode.
-    "/api/exports",
-    "/api/reports/dynamic",
-    "/api/reports/dynamic-dashboard",  # Includes chart endpoints: /charts, /save-chart, /charts/{id}
-    "/api/reports/execute-sql",
-    # Bank check reports (auth handled upstream via cookies)
-    "/api/reports/bank-check",
-    "/api/reports/enhanced-bank-check",
-    # GRC export endpoints (PDF/Excel exports for incidents, risks, KRIs, controls)
-    # These are called from the frontend which handles authentication via cookies/CSRF
-    "/api/grc/incidents/export",
-    "/api/grc/risks/export",
-    "/api/grc/kris/export",
-    "/api/grc/controls/export",
 ]
 
 

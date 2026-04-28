@@ -3,6 +3,8 @@ from fastapi.responses import Response, JSONResponse
 from io import BytesIO
 import logging
 import traceback
+import re
+import zipfile
 from docx import Document
 from docx.document import Document as DocType
 from docx.oxml.text.paragraph import CT_P
@@ -18,6 +20,27 @@ from config import get_db_connection
 
 router = APIRouter(prefix="/word-template", tags=["word-template"])
 logger = logging.getLogger(__name__)
+
+
+def extract_all_placeholders_from_docx_bytes(file_content: bytes):
+	"""Extract all {{ ... }} placeholders from all XML parts inside DOCX."""
+	try:
+		all_text = []
+		with zipfile.ZipFile(BytesIO(file_content)) as zf:
+			for name in zf.namelist():
+				if name.endswith('.xml'):
+					try:
+						all_text.append(zf.read(name).decode('utf-8', errors='ignore'))
+					except Exception:
+						continue
+		combined = '\n'.join(all_text)
+		matches = re.findall(r'\{\{\s*[^{}]+?\s*\}\}', combined)
+		# Keep insertion order and uniqueness
+		unique = list(dict.fromkeys(matches))
+		return unique, len(matches)
+	except Exception as e:
+		logger.warning(f"Failed to extract raw placeholders from DOCX zip: {e}")
+		return [], 0
 
 
 def extract_sections_from_docx(doc: DocType):
@@ -418,12 +441,15 @@ async def analyze_template(template: UploadFile = File(...)):
 				'order': 1
 			}]
 		
+		all_placeholders, total_placeholders = extract_all_placeholders_from_docx_bytes(file_content)
 		return JSONResponse(
 			status_code=200,
 			content={
 				'success': True,
 				'sections': sections,
-				'total_sections': len(sections)
+				'total_sections': len(sections),
+				'all_placeholders': all_placeholders,
+				'total_placeholders': total_placeholders,
 			}
 		)
 		
