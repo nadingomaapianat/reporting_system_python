@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-import os
 from jose import jwt, JWTError
 from typing import Dict, Any, Optional
 from fastapi import HTTPException, Depends, status, Request
@@ -9,16 +7,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-# JWT Configuration — same env keys as reporting-node (`src/auth/jwt-secret.ts`)
-def _jwt_secret() -> str:
-    s = (os.getenv("JWT_SECRET") or os.getenv("JWT_SECRET_KEY") or "").strip()
-    if s:
-        return s
-    if os.getenv("NODE_ENV", "").lower() == "production" or os.getenv("ENVIRONMENT", "").lower() == "production":
-        raise RuntimeError("JWT_SECRET or JWT_SECRET_KEY must be set in production")
-    return "GRC_ADIB_2025"
-
-
+# JWT Configuration - matching v2_backend
+# Tokens are generated in v2_backend, we only validate them here
+JWT_SECRET = "GRC_ADIB_2025"
 JWT_ALGORITHM = "HS256"
 
 security = HTTPBearer(auto_error=False)
@@ -27,17 +18,13 @@ security = HTTPBearer(auto_error=False)
 PUBLIC_PATHS = [
     "/csrf/token",
     "/api/auth/validate-token",
-    "/docs",
-    "/openapi.json",
-    "/redoc",
-    "/health",
 ]
 
 
 def verify_token(token: str) -> Dict[str, Any]:
     """Verify and decode a JWT token."""
     try:
-        payload = jwt.decode(token, _jwt_secret(), algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return payload
     except JWTError:
         raise HTTPException(
@@ -91,11 +78,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         
         try:
             payload = verify_token(token)
-            from utils.db_permissions import merge_permissions_into_user
-
-            request.state.user = await asyncio.to_thread(
-                merge_permissions_into_user, dict(payload)
-            )
+            # Attach user to request
+            request.state.user = payload
         except HTTPException as e:
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
