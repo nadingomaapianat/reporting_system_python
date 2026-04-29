@@ -1,32 +1,45 @@
-# Python reporting API – DB via pymssql (NTLM/FreeTDS, no ODBC driver required)
-# Set DB_BACKEND=pymssql and DB_DOMAIN, DB_USERNAME, DB_PASSWORD for NTLM in Docker
+# Python reporting API — pymssql / FreeTDS (no ODBC)
 
-FROM python:3.11-slim
+FROM python:3.11-slim AS base
 
 WORKDIR /app
 
-# pymssql uses FreeTDS; install for SQL Server connectivity (no Microsoft ODBC repo)
-# Install fonts so PDFs render correctly (avoid hollow squares for text on live)
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Build deps for pymssql wheels / source builds + runtime FreeTDS + fonts for PDFs
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        freetds-dev pkg-config \
+        freetds-bin \
+        freetds-common \
+        pkg-config \
+        build-essential \
+        freetds-dev \
         fonts-dejavu-core \
         fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
-# Python env
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-# Install dependencies
+# Dependencies first (better layer cache)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Copy application
+# Application code last
 COPY . .
 
-# App listens on 8000; override with PORT env
+# Drop root (UID/GID 1000 — adjust if your host bind-mounts need another uid)
+RUN useradd --create-home --uid 1000 appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8000
 
-# Same DB env as Node: DB_HOST, DB_PORT, DB_NAME, DB_USE_WINDOWS_AUTH=0, DB_DOMAIN, DB_USERNAME, DB_PASSWORD
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Respect PORT (e.g. Cloud Run / platforms that set PORT)
+ENV PORT=8000
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
+
+# Optional: basic health signal for orchestrators (adjust path if needed)
+# HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+#   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${PORT}/health', timeout=3)" || exit 1
