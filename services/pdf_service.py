@@ -282,7 +282,6 @@ class PDFService:
                         
                         # Status cards: compact columns with Function and readable Created At
                         if card_type in ['pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance']:
-                            from utils.export_utils import format_cell_value_for_export
                             columns = ["#", "Code", "Title", "Function", "Status", "Created At"]
                             data_rows = []
                             for i, item in enumerate(data, 1):
@@ -1038,7 +1037,6 @@ class PDFService:
 
             # TABLE EXPORT
             elif only_overall_table:
-                from utils.export_utils import format_cell_value_for_export
                 write_debug("DEBUG: ===== only_overall_table START =====")
                 write_debug(f"  - data type: {type(data)}")
                 if isinstance(data, list) and data:
@@ -1260,8 +1258,6 @@ class PDFService:
                 header_config["chart_type"] = resolved_chart_type
 
             elif only_overall_table:
-                from utils.export_utils import format_cell_value_for_export
-
                 write_debug("DEBUG: comply PDF only_overall_table")
                 if isinstance(data, list) and data:
                     first_item = data[0]
@@ -1294,8 +1290,6 @@ class PDFService:
                     data_rows = [["1", "No data available"]]
 
             elif only_card and card_type:
-                from utils.export_utils import format_cell_value_for_export
-
                 if isinstance(data, list) and data:
                     first_item = data[0]
                     if isinstance(first_item, dict):
