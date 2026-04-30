@@ -1,82 +1,71 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
 import sys
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import unquote
+
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import jwt, JWTError
-from typing import Dict, Any, Optional
-from fastapi import HTTPException, Depends, status, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from utils.jwt_context import set_request_jwt_claims
 
 
-def _cookie_from_header(cookie_header: Optional[str], name: str) -> Optional[str]:
-    """Parse cookie value from raw Cookie header (same as Node)."""
-    if not cookie_header or not cookie_header.strip():
-        return None
-    match = re.search(rf"(?:^|;\s*){re.escape(name)}=([^;]*)", cookie_header.strip())
-    val = match.group(1).strip() if match else None
-    return unquote(val) if val else None
-
-
-def _token_from_split_cookies_in_header(cookie_header: Optional[str], prefix: str) -> Optional[str]:
-    """Get JWT from split cookies (d_c_c_t_p_1/2 or iframe_d_c_c_t_p_1/2) from raw Cookie header."""
-    if not cookie_header or not cookie_header.strip():
-        return None
-    parts = []
-    i = 1
-    while True:
-        v = _cookie_from_header(cookie_header, f"{prefix}_{i}")
-        if not v:
-            break
-        parts.append(v)
-        i += 1
-    if not parts:
-        return None
-    try:
-        return unquote("".join(parts)) or None
-    except Exception:
-        return None
-
-
-def _auth_log(msg: str) -> None:
-    """Print to terminal (stdout) so auth debug appears in console, not in log file."""
-    print(f"[AUTH] {msg}", flush=True, file=sys.stdout)
-
-# JWT Configuration - must match Node (reporting-system-node) so same tokens work for both.
+# =============================================================================
+# Config
+# =============================================================================
 JWT_SECRET = os.getenv("JWT_SECRET", os.getenv("JWT_SECRET_KEY", "GRC_ADIB_2025"))
 JWT_ALGORITHM = "HS256"
 
-# Static cookie name for JWT (same as Node and frontend).
-REPORTING_AUTH_COOKIE_NAME = "reporting_auth_token"
-# Legacy name from reporting_system_node2 auth.controller (still used in some deployments).
-REPORTING_NODE_TOKEN_LEGACY = "reporting_node_token"
+# Cookie names — must match reporting_system_node2 / new_adib_backend.
+REPORTING_AUTH_COOKIE_NAME = "reporting_auth_token"  # legacy single cookie
+REPORTING_NODE_TOKEN_LEGACY = "reporting_node_token"  # current single cookie
+REPORTING_NODE_TOKEN_PREFIX = "reporting_node_token"  # split chunks: _1, _2, …
+IFRAME_COOKIE_PREFIX = "iframe_d_c_c_t_p"
+MAIN_COOKIE_PREFIX = "d_c_c_t_p"
 
-# Set REPORTING_ALLOW_QUERY_TOKEN_AUTH=false in production to disable ?token= / ?access_token= (avoids leaks in logs).
-_ALLOW_QUERY_TOKEN_GET = os.getenv("REPORTING_ALLOW_QUERY_TOKEN_AUTH", "true").lower() in ("true", "1", "yes")
+# Maximum number of split-cookie parts to attempt to reconstruct (matches Node).
+_MAX_SPLIT_PARTS = 64
 
-security = HTTPBearer(auto_error=False)
+# Set REPORTING_ALLOW_QUERY_TOKEN_AUTH=false in production to disable ?token= / ?access_token=
+# (avoids leaks in logs).
+_ALLOW_QUERY_TOKEN_GET = os.getenv("REPORTING_ALLOW_QUERY_TOKEN_AUTH", "true").lower() in (
+    "true", "1", "yes",
+)
 
-# Public paths: only these can be called WITHOUT JWT.
-PUBLIC_PATHS = [
+# Public paths: allowed without a JWT. Extended for debug below.
+PUBLIC_PATHS: List[str] = [
     "/csrf/token",
     "/api/auth/validate-token",
     "/api/auth/logout",
     "/docs",
     "/redoc",
     "/openapi.json",
+    "/health",
 ]
-# Optional echo endpoint for cookie debugging (off unless REPORTING_DEBUG_COOKIES_ENDPOINT=true)
 if os.getenv("REPORTING_DEBUG_COOKIES_ENDPOINT", "").lower() in ("1", "true", "yes"):
     PUBLIC_PATHS.append("/debug/cookies")
 
+# HTTPBearer dependency for `get_current_user` (auto_error=False so we can return
+# a uniform 401 from middleware/dependency without FastAPI's default plain-text 403).
+security = HTTPBearer(auto_error=False)
+
 _LOG_AUTH_HEADERS = os.getenv("REPORTING_LOG_AUTH_HEADERS", "").lower() in ("1", "true", "yes")
 _auth_header_logger = logging.getLogger("reporting.auth.headers")
+
+
+# =============================================================================
+# Logging helpers
+# =============================================================================
+def _auth_log(msg: str) -> None:
+    """Print to stdout so auth debug appears in console (not log file)."""
+    print(f"[AUTH] {msg}", flush=True, file=sys.stdout)
 
 
 def log_incoming_auth_headers(request: Request) -> None:
@@ -103,87 +92,177 @@ def log_incoming_auth_headers(request: Request) -> None:
     )
 
 
-def get_token_from_request(request: Request) -> Optional[str]:
+# =============================================================================
+# Cookie parsing — same priority as reporting_system_node2 `extract-token.ts`
+# =============================================================================
+def _decode_cookie_value(value: str) -> str:
+    v = (value or "").strip()
+    if not v:
+        return ""
+    try:
+        return unquote(v)
+    except Exception:
+        return v
+
+
+def _cookie_from_header(cookie_header: Optional[str], name: str) -> Optional[str]:
+    """Parse cookie value from raw Cookie header (fallback when request.cookies is empty)."""
+    if not cookie_header or not cookie_header.strip():
+        return None
+    match = re.search(rf"(?:^|;\s*){re.escape(name)}=([^;]*)", cookie_header.strip())
+    val = match.group(1).strip() if match else None
+    return unquote(val) if val else None
+
+
+def _read_split_cookies(cookies: Mapping[str, str], prefix: str) -> Optional[str]:
     """
-    Same order as Node: (1) Authorization headers, (2) Cookie, (3) GET query token.
+    Reconstruct a chunked token: prefix_1 + prefix_2 + … then URL-decode the join.
+    Mirrors reporting_node `readSplitCookies` exactly.
     """
-    # 1) Headers first — same as Node (Authorization, then X-Forwarded-Authorization, X-Export-Token)
-    auth_header = request.headers.get("authorization")
-    if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header[7:].strip()
-        if token:
-            _auth_log(f"Token from: Authorization header (path={request.url.path})")
-            return token
-    forwarded = request.headers.get("x-forwarded-authorization")
-    if forwarded and forwarded.startswith("Bearer "):
-        token = forwarded[7:].strip()
-        if token:
-            _auth_log(f"Token from: X-Forwarded-Authorization (path={request.url.path})")
-            return token
+    parts: List[str] = []
+    for i in range(1, _MAX_SPLIT_PARTS + 1):
+        raw = cookies.get(f"{prefix}_{i}")
+        if raw is None or str(raw).strip() == "":
+            break
+        parts.append(str(raw))
+    if not parts:
+        return None
+    joined = "".join(parts)
+    try:
+        return unquote(joined)
+    except Exception:
+        return joined
+
+
+def _split_cookies_from_header(cookie_header: Optional[str], prefix: str) -> Optional[str]:
+    if not cookie_header or not cookie_header.strip():
+        return None
+    parts: List[str] = []
+    for i in range(1, _MAX_SPLIT_PARTS + 1):
+        v = _cookie_from_header(cookie_header, f"{prefix}_{i}")
+        if not v:
+            break
+        parts.append(v)
+    if not parts:
+        return None
+    try:
+        return unquote("".join(parts)) or None
+    except Exception:
+        return None
+
+
+def _reporting_node_token_from_cookies(cookies: Mapping[str, str]) -> Optional[str]:
+    """Single `reporting_node_token` first, then split `reporting_node_token_1`+…"""
+    single = cookies.get(REPORTING_NODE_TOKEN_LEGACY)
+    if single and str(single).strip():
+        return _decode_cookie_value(str(single))
+    return _read_split_cookies(cookies, REPORTING_NODE_TOKEN_PREFIX)
+
+
+def candidate_jwt_strings(request: Request) -> List[str]:
+    """
+    Candidate JWT strings in the same priority order as reporting_node `getCandidateTokens`:
+      1. reporting_node_token (single or split)
+      2. legacy reporting_auth_token
+      3. Authorization: Bearer (and X-Forwarded-Authorization)
+      4. X-Export-Token
+      5. iframe_d_c_c_t_p_* split cookies
+      6. d_c_c_t_p_* split cookies (set by main app on shared parent domain)
+      7. Fallback: parse raw `Cookie` header (some proxies strip request.cookies)
+      8. Optional: ?token= / ?access_token= for GET requests when feature flag enabled
+    """
+    cookies: Mapping[str, str] = request.cookies or {}
+    out: List[str] = []
+    seen: set[str] = set()
+
+    def add(t: Optional[str]) -> None:
+        if not t:
+            return
+        s = t.strip()
+        if not s or s in seen:
+            return
+        seen.add(s)
+        out.append(s)
+
+    # 1. reporting_node_token (single or split)
+    add(_reporting_node_token_from_cookies(cookies))
+
+    # 2. legacy single cookie
+    legacy = cookies.get(REPORTING_AUTH_COOKIE_NAME)
+    if legacy:
+        add(_decode_cookie_value(str(legacy)))
+
+    # 3. Authorization headers
+    auth_header = request.headers.get("authorization") or request.headers.get("Authorization") or ""
+    if auth_header.startswith("Bearer "):
+        add(auth_header.split("Bearer ", 1)[1].strip())
+    fwd = request.headers.get("x-forwarded-authorization") or ""
+    if fwd.startswith("Bearer "):
+        add(fwd.split("Bearer ", 1)[1].strip())
+
+    # 4. Explicit export header
     export_token = request.headers.get("x-export-token")
     if export_token and export_token.strip():
-        _auth_log(f"Token from: X-Export-Token (path={request.url.path})")
-        return export_token.strip()
+        add(export_token.strip())
 
-    # 2) Cookie — same as Node (reporting_auth_token, legacy reporting_node_token, then split cookies)
-    reporting_token = request.cookies.get(REPORTING_AUTH_COOKIE_NAME)
-    if reporting_token:
-        _auth_log(f"Token from: cookie {REPORTING_AUTH_COOKIE_NAME} (path={request.url.path})")
-        return reporting_token
+    # 5. iframe split cookies
+    add(_read_split_cookies(cookies, IFRAME_COOKIE_PREFIX))
 
-    legacy_token = request.cookies.get(REPORTING_NODE_TOKEN_LEGACY)
-    if legacy_token:
-        _auth_log(f"Token from: cookie {REPORTING_NODE_TOKEN_LEGACY} (path={request.url.path})")
-        return legacy_token
+    # 6. main-app split cookies (set by DCC on .pianat.ai / .adib.co.eg)
+    add(_read_split_cookies(cookies, MAIN_COOKIE_PREFIX))
 
-    for prefix in ("iframe_d_c_c_t_p", "d_c_c_t_p"):
-        part1 = request.cookies.get(f"{prefix}_1")
-        part2 = request.cookies.get(f"{prefix}_2") or ""
-        if part1:
-            try:
-                token = unquote(part1 + part2)
-                if token:
-                    _auth_log(f"Token from: cookies {prefix}_* (path={request.url.path})")
-                    return token
-            except Exception:
-                pass
-
+    # 7. Fallback: parse raw Cookie header (some reverse proxies don't populate request.cookies)
     raw_cookie = request.headers.get("cookie")
     if raw_cookie:
-        reporting_from_header = _cookie_from_header(raw_cookie, REPORTING_AUTH_COOKIE_NAME)
-        if reporting_from_header:
-            _auth_log(f"Token from: Cookie header {REPORTING_AUTH_COOKIE_NAME} (path={request.url.path})")
-            return reporting_from_header
-        legacy_from_header = _cookie_from_header(raw_cookie, REPORTING_NODE_TOKEN_LEGACY)
-        if legacy_from_header:
-            _auth_log(f"Token from: Cookie header {REPORTING_NODE_TOKEN_LEGACY} (path={request.url.path})")
-            return legacy_from_header
-        for prefix in ("iframe_d_c_c_t_p", "d_c_c_t_p"):
-            token = _token_from_split_cookies_in_header(raw_cookie, prefix)
-            if token:
-                _auth_log(f"Token from: Cookie header {prefix}_* (path={request.url.path})")
-                return token
+        add(_cookie_from_header(raw_cookie, REPORTING_NODE_TOKEN_LEGACY))
+        add(_split_cookies_from_header(raw_cookie, REPORTING_NODE_TOKEN_PREFIX))
+        add(_cookie_from_header(raw_cookie, REPORTING_AUTH_COOKIE_NAME))
+        add(_split_cookies_from_header(raw_cookie, IFRAME_COOKIE_PREFIX))
+        add(_split_cookies_from_header(raw_cookie, MAIN_COOKIE_PREFIX))
 
-    # 3) GET: query param fallback (optional; disable in prod via REPORTING_ALLOW_QUERY_TOKEN_AUTH=false)
+    # 8. Optional query param fallback (GET only) — disable in prod via env.
     if _ALLOW_QUERY_TOKEN_GET and request.method.upper() == "GET":
-        query_token = request.query_params.get("token") or request.query_params.get("access_token")
-        if query_token and query_token.strip():
-            _auth_log(f"Token from: query param token/access_token (path={request.url.path})")
-            return query_token.strip()
+        qp = request.query_params
+        for key in ("token", "access_token"):
+            v = qp.get(key)
+            if v and v.strip():
+                add(v.strip())
 
-    _auth_log(
-        f"No token found for path={request.url.path} method={request.method} "
-        f"(checked: Authorization, X-Forwarded-Authorization, X-Export-Token, cookies "
-        f"{REPORTING_AUTH_COOKIE_NAME}/{REPORTING_NODE_TOKEN_LEGACY}/d_c_c_t_p_*, "
-        f"{'query token/access_token' if _ALLOW_QUERY_TOKEN_GET else 'query token disabled'})"
-    )
-    return None
+    return out
+
+
+# =============================================================================
+# JWT verify / decode
+# =============================================================================
+def _decode_jwt_payload(token: str) -> Optional[Dict[str, Any]]:
+    """Decode without raising — returns None on any error."""
+    if not token or not token.strip():
+        return None
+    try:
+        return jwt.decode(token.strip(), JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except JWTError:
+        return None
+
+
+def verify_token(token: str) -> Dict[str, Any]:
+    """Verify and decode a JWT token (raises 401 on failure)."""
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except JWTError as e:
+        _auth_log(
+            f"Token verification failed: {e} "
+            f"(token prefix: {token[:20] if len(token) > 20 else token}...)"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
 
 
 def resolve_jwt_token_and_payload(
     request: Request,
-) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
-    """Return the first verifying JWT *string* together with its decoded payload."""
+) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """First candidate that verifies → (token_string, payload); otherwise (None, None)."""
     for raw in candidate_jwt_strings(request):
         payload = _decode_jwt_payload(raw)
         if payload:
@@ -191,38 +270,41 @@ def resolve_jwt_token_and_payload(
     return None, None
 
 
-def verify_token(token: str) -> Dict[str, Any]:
-    """Verify and decode a JWT token."""
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        return payload
-    except JWTError as e:
-        _auth_log(f"Token verification failed: {e} (token prefix: {token[:20] if len(token) > 20 else token}...)")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
-        )
-
-
+# =============================================================================
+# FastAPI dependency
+# =============================================================================
 async def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> Dict[str, Any]:
-    """Dependency to get the current user from JWT token."""
-    if not credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header is missing"
-        )
-    token = credentials.credentials
-    payload = verify_token(token)
-    return payload
+    """
+    Resolve the current user from any supported token source (Authorization or cookies).
+    Prefer Authorization for backwards compatibility, then fall back to cookies.
+    """
+    if credentials and credentials.credentials:
+        return verify_token(credentials.credentials)
+
+    # No Authorization header → try cookies / other candidates so endpoints that depend on this
+    # also work when called via cookies (matches Node behavior).
+    _, payload = resolve_jwt_token_and_payload(request)
+    if payload:
+        return payload
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authorization token is missing",
+    )
 
 
+# =============================================================================
+# Middleware
+# =============================================================================
 class JWTAuthMiddleware(BaseHTTPMiddleware):
     """
-    Validate JWT the same way as reporting-system-node: token from
-    Authorization header OR cookie (REPORTING_AUTH_COOKIE_NAME or d_c_c_t_p_*).
+    Validate JWT the same way as reporting_system_node2: token from
+    Authorization header OR cookie (reporting_node_token / iframe_d_c_c_t_p_* / d_c_c_t_p_*).
     Frontend can call this API the same way it calls Node (same headers/cookies).
+    Also enforces the shared `blocked_tokens` revocation list.
     """
 
     async def dispatch(self, request: Request, call_next):
@@ -238,21 +320,35 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         token_str, payload = resolve_jwt_token_and_payload(request)
-        if not payload:
+        if not payload or not token_str:
+            _auth_log(
+                f"401 path={request.url.path} method={request.method} -> reason: "
+                f"no_valid_jwt cookie_names={list((request.cookies or {}).keys())}"
+            )
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 content={
                     "success": False,
-                    "message": f"Authorization token is missing (use Bearer header, cookies {REPORTING_AUTH_COOKIE_NAME} / d_c_c_t_p_*, or for GET: ?token=)"
+                    "message": (
+                        "Authorization token is missing (use Bearer header, "
+                        f"cookies {REPORTING_NODE_TOKEN_LEGACY} / "
+                        f"{IFRAME_COOKIE_PREFIX}_* / {MAIN_COOKIE_PREFIX}_*"
+                        + (", or for GET: ?token=" if _ALLOW_QUERY_TOKEN_GET else "")
+                        + ")"
+                    ),
                 },
             )
 
-        # Reject revoked tokens (DCC adds JWTs to `blocked_tokens` on logout / force-logout).
+        # Reject revoked tokens (DCC inserts JWTs into `blocked_tokens` on logout / force-logout).
         try:
             from utils.token_blocklist import is_token_blocked
 
             blocked = await asyncio.to_thread(is_token_blocked, token_str)
             if blocked:
+                _auth_log(
+                    f"401 path={request.url.path} method={request.method} -> reason: "
+                    f"token_revoked user={payload.get('id') or payload.get('sub') or '?'}"
+                )
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     content={
@@ -262,31 +358,24 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
                 )
         except Exception:
             # Fail-open on unexpected errors so DB blip does not lock everyone out;
-            # the inner function already swallows DB errors with a warning.
+            # `is_token_blocked` already swallows DB errors with a warning.
             pass
 
-        try:
-            payload = verify_token(token)
-            request.state.user = payload
-            set_request_jwt_claims(payload)
-        except HTTPException as e:
-            _auth_log(f"401 path={request.url.path} method={request.method} -> reason: token invalid or expired")
-            return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content={"success": False, "message": e.detail or "Invalid token"},
-            )
-
+        request.state.user = payload
+        set_request_jwt_claims(payload)
         return await call_next(request)
 
 
+# =============================================================================
+# Used by /api/auth/validate-token endpoint
+# =============================================================================
 def validate_token(token: str) -> Dict[str, Any]:
-    """Validate a token and return the decoded payload - matching v2_backend format exactly."""
+    """Validate a token and return the decoded payload — matches v2_backend response shape."""
     if not token:
         return {"success": False, "message": "Token is required"}
-    
+
     try:
         payload = verify_token(token)
-        # Extract user info from token - matching v2_backend format exactly
         return {
             "success": True,
             "data": {
@@ -294,10 +383,9 @@ def validate_token(token: str) -> Dict[str, Any]:
                 "title": payload.get("title"),
                 "name": payload.get("name"),
                 "id": payload.get("id"),
-            }
+            },
         }
     except HTTPException as e:
         return {"success": False, "message": e.detail}
-    except Exception as e:
+    except Exception:
         return {"success": False, "message": "Invalid or expired token"}
-
