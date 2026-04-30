@@ -129,6 +129,17 @@ def resolve_jwt_payload(request: Request) -> Optional[Dict[str, Any]]:
     return None
 
 
+def resolve_jwt_token_and_payload(
+    request: Request,
+) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """Return the first verifying JWT *string* together with its decoded payload."""
+    for raw in candidate_jwt_strings(request):
+        payload = _decode_jwt_payload(raw)
+        if payload:
+            return raw, payload
+    return None, None
+
+
 def verify_token(token: str) -> Dict[str, Any]:
     """Verify and decode a JWT token."""
     try:
@@ -162,7 +173,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         if any(request.url.path.startswith(path) for path in PUBLIC_PATHS):
             return await call_next(request)
 
-        payload = resolve_jwt_payload(request)
+        token_str, payload = resolve_jwt_token_and_payload(request)
         if not payload:
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -171,6 +182,24 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
                     "message": "Missing or invalid session (no valid JWT in cookies or Authorization)",
                 },
             )
+
+        # Reject revoked tokens (DCC adds JWTs to `blocked_tokens` on logout / force-logout).
+        try:
+            from utils.token_blocklist import is_token_blocked
+
+            blocked = await asyncio.to_thread(is_token_blocked, token_str)
+            if blocked:
+                return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content={
+                        "success": False,
+                        "message": "Session has been revoked. Please sign in again.",
+                    },
+                )
+        except Exception:
+            # Fail-open on unexpected errors so DB blip does not lock everyone out;
+            # the inner function already swallows DB errors with a warning.
+            pass
 
         try:
             from utils.db_permissions import merge_permissions_into_user
