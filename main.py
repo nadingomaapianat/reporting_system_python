@@ -99,15 +99,15 @@ def create_app() -> FastAPI:
     if _cors_env:
         allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
     else:
-        _fe = os.getenv("FRONTEND_ORIGIN", "https://grc-reporting.adib.co.eg").strip()
+        _fe = os.getenv("FRONTEND_ORIGIN", "https://dcc-reporting.theubeg.ub.dom").strip()
         allowed_origins = list(
             dict.fromkeys(
                 [
-                    "https://grc-reporting.adib.co.eg",
-                    "https://GRCAPP01.adib.co.eg",
+                    "https://dcc-reporting.theubeg.ub.dom",
+                    "https://dcc-grc.theubeg.ub.dom",
                     _fe,
                     "http://127.0.0.1:3000",
-                    "https://grc-reporting-node.adib.co.eg",
+                    "https://dcc-reporting-api-node.theubeg.ub.dom",
                 ]
             )
         )

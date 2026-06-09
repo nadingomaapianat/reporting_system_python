@@ -152,8 +152,8 @@ def main():
     print("""
 🚀 Next steps:
 1. Start your backend: python main.py
-2. Visit: https://grc-reporting-node.adib.co.eg/api/charts/dashboard
-3. Or use the frontend: https://grc-reporting-node.adib.co.eg/auto-dashboard
+2. Visit: https://dcc-reporting-api-node.theubeg.ub.dom/api/charts/dashboard
+3. Or use the frontend: https://dcc-reporting-api-node.theubeg.ub.dom/auto-dashboard
     """)
 
 if __name__ == "__main__":
