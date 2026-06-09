@@ -384,12 +384,12 @@ def build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filte
 
 default_header_config = {
     "includeHeader": True,
-    "title": "ADIB GRC - Risk & Control Report",
+    "title": "United Bank GRC - Risk & Control Report",
     "subtitle": "Confidential Internal Report",
     "fontColor": "#1F4E79",
     "showDate": True,
     "showBankInfo": True,
-    "bankName": "Abu Dhabi Islamic Bank Egypt",
+    "bankName": "The United Bank",
     "bankAddress": "Head Office: Corniche El Nil, Cairo, Egypt",
     "bankPhone": "+20 2 1234 5678",
     "bankWebsite": "https://www.adib.eg",
