@@ -15,7 +15,7 @@ _db_name = os.getenv('DB_NAME', '')
 _db_domain = (os.getenv('DB_DOMAIN') or os.getenv('DB_Domain') or '').strip()
 _db_username = os.getenv('DB_USERNAME', '')
 _db_password = os.getenv('DB_PASSWORD', '')
-_use_windows_auth = os.getenv('DB_USE_WINDOWS_AUTH', '1').strip().lower() not in ('0', 'false', 'no')
+_use_windows_auth = os.getenv('DB_USE_WINDOWS_AUTH', '0').strip().lower() not in ('0', 'false', 'no')
 # pymssql = NTLM via FreeTDS (no ODBC driver). odbc = pyodbc + Microsoft ODBC Driver.
 _db_backend = (os.getenv('DB_BACKEND', 'pymssql') or 'pymssql').strip().lower()
 # Connection timeout in seconds; when DB is unreachable, fail fast to avoid long waits and 504s (default 10s).
@@ -178,8 +178,8 @@ def get_database_connection_string() -> str:
     if config['trusted_connection'] == 'yes':
         parts.append("Trusted_Connection=yes;")
     else:
-        uid = f"{config['domain']}\\{config['username']}" if config.get('domain') else config['username']
-        parts.append(f"UID={uid};")
+        # SQL auth: plain user + password (no domain prefix).
+        parts.append(f"UID={config['username']};")
         parts.append(f"PWD={config['password']};")
     return "".join(parts)
 
@@ -195,7 +195,7 @@ def get_db_connection():
         import pymssql
         server = config['server']
         port = int(config['port'])
-        user = f"{config['domain']}\\{config['username']}" if config.get('domain') else config['username']
+        user = f"{config['domain']}\\{config['username']}" if (_use_windows_auth and config.get('domain')) else config['username']
         password = config['password']
         database = config['database']
         return pymssql.connect(
