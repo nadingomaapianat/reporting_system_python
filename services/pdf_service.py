@@ -609,7 +609,7 @@ class PDFService:
                                 return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
                             # Total KRIs card: use only a subset of columns in PDF to avoid layout errors (Excel keeps all columns)
                             if card_type == 'totalKris' or card_type == 'krisList':
-                                pdf_keys = ['code', 'kri_name', 'function_name', 'frequency', 'threshold', 'status', 'createdAt']
+                                pdf_keys = ['code', 'kri_name', 'function_name', 'frequency', 'threshold', 'low_risk', 'medium_risk', 'high_risk', 'status', 'createdAt']
                                 raw_keys = [k for k in pdf_keys if k in first_item]
                             else:
                                 raw_keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
@@ -645,6 +645,16 @@ class PDFService:
             # Merge header config for kris
             from utils.export_utils import merge_header_config
             final_config = merge_header_config("kris", header_config)
+            # Total KRIs mirrors the heatmap: colour the risk-band columns (green/yellow/red)
+            if card_type in ('totalKris', 'krisList'):
+                final_config = {
+                    **final_config,
+                    "columnColors": {
+                        "Low Risk": "#92D050",
+                        "Medium Risk": "#F8CE37",
+                        "High Risk": "#EF3D3D",
+                    },
+                }
             write_debug(f"DEBUG: Using PDF config (kris): {final_config}")
 
             result = generate_pdf_report(columns, data_rows, final_config)

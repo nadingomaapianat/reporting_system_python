@@ -612,6 +612,16 @@ def generate_pdf_report(
         if total_rows > 300 and max_rows_per_table >= 20:
             max_rows_per_table = 15
 
+        # Optional per-column background colors: { "Column Name": "#hex" } (opt-in)
+        column_colors_cfg = header_config.get('columnColors', {}) or {}
+        col_color_styles = []
+        if column_colors_cfg:
+            _name_to_idx = {str(name): i for i, name in enumerate(column_headers)}
+            for _cname, _chex in column_colors_cfg.items():
+                _ci = _name_to_idx.get(str(_cname))
+                if _ci is not None:
+                    col_color_styles.append(('BACKGROUND', (_ci, 0), (_ci, -1), hex_to_color(str(_chex))))
+
         while start_idx < total_rows:
             end_idx = min(start_idx + max_rows_per_table, total_rows)
             batch_rows = processed_rows[start_idx:end_idx]
@@ -637,7 +647,7 @@ def generate_pdf_report(
                 ('ALIGN', (0, 1), (-1, -1), 'LEFT'),
                 ('GRID', (0, 0), (-1, -1), 0.5, border_color_rl),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ]))
+            ] + col_color_styles))
 
             # Append table directly; widths already span available width and rows are chunked
             story.append(table)

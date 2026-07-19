@@ -748,6 +748,16 @@ class ExcelService:
                 else:
                     columns = ["Metric", "Value"]
                     data_rows = [["No data available", "No KRIs found matching the criteria"]]
+                # Total KRIs mirrors the heatmap: colour the risk-band columns (green/yellow/red)
+                if card_type in ('totalKris', 'krisList'):
+                    header_config = {
+                        **header_config,
+                        "columnColors": {
+                            "Low Risk": "#92D050",
+                            "Medium Risk": "#F8CE37",
+                            "High Risk": "#EF3D3D",
+                        },
+                    }
                 return generate_excel_report(columns, data_rows, header_config)
 
             # DEFAULT simple workbook if no specific mode
