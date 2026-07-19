@@ -68,6 +68,7 @@ KRI_DISPLAY_NAMES = {
     "overallKris": "Approval KRI Status",
     "kriStatus": "Approval KRI Status",
     "allKrisSubmittedByFunction": "KRIs Submission Status by Function",
+    "monthlyKriSubmissionByFunction": "Monthly KRI Submission by Function",
     "activeKrisDetails": "Active KRIs Details",
     "overdueKrisByDepartment": "KRIs Target Date by Function",
     "kriWithoutLinkedRisks": "KRIs Without Linked Risks",
@@ -253,6 +254,8 @@ async def export_kris_pdf(
             data = await kri_service.get_overdue_kris_by_department(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'allKrisSubmittedByFunction':
             data = await kri_service.get_all_kris_submitted_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'monthlyKriSubmissionByFunction':
+            data = await kri_service.get_monthly_kri_submission_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriRiskRelationships':
             data = await kri_service.get_kri_risk_relationships(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriWithoutLinkedRisks' or cardType == 'krisWithoutLinkedRisks':
@@ -504,6 +507,8 @@ async def export_kris_excel(
             data = await kri_service.get_overdue_kris_by_department(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'allKrisSubmittedByFunction':
             data = await kri_service.get_all_kris_submitted_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'monthlyKriSubmissionByFunction':
+            data = await kri_service.get_monthly_kri_submission_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriRiskRelationships':
             data = await kri_service.get_kri_risk_relationships(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriWithoutLinkedRisks' or cardType == 'krisWithoutLinkedRisks':

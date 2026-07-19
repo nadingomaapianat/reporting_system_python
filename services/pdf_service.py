@@ -551,7 +551,25 @@ class PDFService:
                 write_debug("DEBUG: ===== kris only_overall_table START =====")
                 table_rows = data.get(card_type) or []
 
-                if isinstance(table_rows, list) and table_rows:
+                if card_type == 'monthlyKriSubmissionByFunction':
+                    # Fixed column order and exact headers for this report.
+                    columns = ['KRI Code', 'KRI Name', 'Function', 'Month', 'Year', 'Submitted?']
+                    data_rows = []
+                    if isinstance(table_rows, list):
+                        for item in table_rows:
+                            if not isinstance(item, dict):
+                                continue
+                            data_rows.append([
+                                str(item.get('kri_code', '') or ''),
+                                str(item.get('kri_name', '') or ''),
+                                str(item.get('function_name', '') or ''),
+                                str(item.get('month', '') or ''),
+                                str(item.get('year', '') or ''),
+                                str(item.get('submitted', '') or ''),
+                            ])
+                    if not data_rows:
+                        data_rows = [['', '', '', '', '', 'No data available']]
+                elif isinstance(table_rows, list) and table_rows:
                     first_item = table_rows[0]
                     if isinstance(first_item, dict):
                         # Exclude nested/complex keys from table (e.g. kriDetailsWithActionPlans has valuesByPeriod)

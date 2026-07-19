@@ -723,6 +723,26 @@ class ExcelService:
             elif only_overall_table:
                 table_rows = kris_data.get(card_type) or []
 
+                # Monthly KRI Submission by Function: fixed column order and exact headers.
+                if card_type == 'monthlyKriSubmissionByFunction':
+                    columns = ['KRI Code', 'KRI Name', 'Function', 'Month', 'Year', 'Submitted?']
+                    data_rows = []
+                    if isinstance(table_rows, list):
+                        for item in table_rows:
+                            if not isinstance(item, dict):
+                                continue
+                            data_rows.append([
+                                str(item.get('kri_code', '') or ''),
+                                str(item.get('kri_name', '') or ''),
+                                str(item.get('function_name', '') or ''),
+                                str(item.get('month', '') or ''),
+                                str(item.get('year', '') or ''),
+                                str(item.get('submitted', '') or ''),
+                            ])
+                    if not data_rows:
+                        data_rows = [['', '', '', '', '', 'No data available']]
+                    return generate_excel_report(columns, data_rows, header_config)
+
                 if isinstance(table_rows, list) and len(table_rows) > 0:
                     first_item = table_rows[0]
                     if isinstance(first_item, dict):

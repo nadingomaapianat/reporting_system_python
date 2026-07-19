@@ -997,6 +997,55 @@ class KriService:
         """
         return await self.execute_query(query)
 
+    async def get_monthly_kri_submission_by_function(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Monthly KRI submission by function: one row per KRI per month (all months),
+        ordered by function, with month name, year and Submitted? (Yes/No)."""
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
+
+        query = f"""
+        WITH Months AS (
+          SELECT DISTINCT TRY_CONVERT(int, kv.[year]) AS yr, TRY_CONVERT(int, kv.[month]) AS mo
+          FROM KriValues kv
+          WHERE kv.deletedAt IS NULL AND kv.[year] IS NOT NULL AND kv.[month] IS NOT NULL
+        ),
+        Expected AS (
+          SELECT m.yr, m.mo, k.id AS kri_id, k.code AS kri_code, k.kriName AS kri_name,
+                 ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name
+          FROM Months m
+          INNER JOIN Kris k
+            ON k.isDeleted = 0 AND k.deletedAt IS NULL
+            AND k.createdAt < DATEADD(MONTH, 1, DATEFROMPARTS(m.yr, m.mo, 1))
+            {function_filter}
+          LEFT JOIN KriFunctions kf ON kf.kri_id = k.id AND kf.deletedAt IS NULL
+          LEFT JOIN Functions fkf ON fkf.id = kf.function_id AND fkf.isDeleted = 0 AND fkf.deletedAt IS NULL
+          LEFT JOIN Functions frel ON frel.id = k.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
+        ),
+        Sub AS (
+          SELECT DISTINCT kv.kriId, TRY_CONVERT(int, kv.[year]) AS yr, TRY_CONVERT(int, kv.[month]) AS mo
+          FROM KriValues kv WHERE kv.deletedAt IS NULL
+        )
+        SELECT
+          e.kri_code AS kri_code,
+          e.kri_name AS kri_name,
+          e.function_name AS function_name,
+          DATENAME(MONTH, DATEFROMPARTS(e.yr, e.mo, 1)) AS month,
+          e.yr AS year,
+          CASE WHEN s.kriId IS NOT NULL THEN 'Yes' ELSE 'No' END AS submitted
+        FROM Expected e
+        LEFT JOIN Sub s ON s.kriId = e.kri_id AND s.yr = e.yr AND s.mo = e.mo
+        ORDER BY e.function_name, e.kri_name, e.yr, e.mo
+        """
+        return await self.execute_query(query)
+
     async def get_overdue_kris_by_department(
         self,
         start_date: Optional[str] = None,
