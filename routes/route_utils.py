@@ -808,9 +808,14 @@ def generate_excel_report(columns, data_rows, header_config=None):
     import base64
     
     write_debug(f"generate_excel_report called with columns={columns}, data_rows count={len(data_rows)}")
-    
-    from utils.export_utils import filter_export_columns_rows
-    columns, data_rows = filter_export_columns_rows(columns or [], data_rows or [])
+
+    # Callers that pass an already-final, exact column set (e.g. a heatmap-style mirror
+    # with a visible "KRI ID" column) can opt out of the id/uuid column filter.
+    if header_config and header_config.get("noHiddenColumnFilter"):
+        columns, data_rows = list(columns or []), [list(r) for r in (data_rows or [])]
+    else:
+        from utils.export_utils import filter_export_columns_rows
+        columns, data_rows = filter_export_columns_rows(columns or [], data_rows or [])
     
     # Get default header config if none provided
     if not header_config:
