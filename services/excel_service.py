@@ -714,8 +714,8 @@ class ExcelService:
                     columns = ['#', 'Value']
                     data_rows = [["1", 'No data available']]
 
-                # Active KRIs Details: colour the risk-band columns (green/yellow/red)
-                if card_type == 'activeKrisDetails':
+                # Active KRIs Details / KRIs Target Date: colour the risk-band columns (green/yellow/red)
+                if card_type in ('activeKrisDetails', 'overdueKrisByDepartment'):
                     header_config = {
                         **header_config,
                         "columnColors": {

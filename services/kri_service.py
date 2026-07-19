@@ -940,16 +940,29 @@ class KriService:
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT DISTINCT
-          k.id AS kriId,
+        SELECT
           k.code AS code,
           k.kriName AS kriName,
-          ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name
+          ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name,
+          ISNULL(k.threshold, '') AS threshold,
+          k.low_from AS low_from,
+          k.medium_from AS medium_from,
+          k.high_from AS high_from,
+          CASE
+            WHEN kv.value IS NULL THEN ''
+            WHEN k.typePercentageOrFigure = '%' THEN CAST(kv.value AS NVARCHAR(50)) + '%'
+            ELSE CAST(kv.value AS NVARCHAR(50))
+          END AS monthly_figure,
+          ISNULL(ap.control_procedure, '') AS action_plan,
+          FORMAT(CONVERT(datetime, ap.implementation_date), 'yyyy-MM-dd') AS target_date,
+          CASE
+            WHEN ap.id IS NULL THEN ''
+            WHEN ISNULL(ap.business_unit, '') = '' THEN 'Pending'
+            ELSE ap.business_unit
+          END AS status
         FROM Kris AS k
-        INNER JOIN Actionplans AS ap ON ap.kri_id = k.id
+        LEFT JOIN Actionplans AS ap ON ap.kri_id = k.id
           AND ap.deletedAt IS NULL
-          AND ap.implementation_date < GETDATE()
-          AND (ap.done = 0 OR ap.done IS NULL)
         LEFT JOIN KriFunctions AS kf ON k.id = kf.kri_id
           AND kf.deletedAt IS NULL
         LEFT JOIN Functions AS fkf ON fkf.id = kf.function_id
@@ -958,10 +971,15 @@ class KriService:
         LEFT JOIN Functions AS frel ON frel.id = k.related_function_id
           AND frel.isDeleted = 0
           AND frel.deletedAt IS NULL
+        LEFT JOIN KriValues AS kv ON kv.kriId = k.id
+          AND kv.[year] = ap.[year]
+          AND kv.[month] = ap.[month]
+          AND kv.deletedAt IS NULL
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
           {function_filter}
-        ORDER BY function_name, kriName
+        ORDER BY CASE WHEN ap.implementation_date IS NULL THEN 1 ELSE 0 END,
+                 ap.implementation_date ASC, function_name, kriName
         """
         return await self.execute_query(query)
 

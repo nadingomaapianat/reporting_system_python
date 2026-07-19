@@ -69,7 +69,7 @@ KRI_DISPLAY_NAMES = {
     "kriStatus": "Approval KRI Status",
     "allKrisSubmittedByFunction": "KRIs Submission Status by Function",
     "activeKrisDetails": "Active KRIs Details",
-    "overdueKrisByDepartment": "Overdue KRIs by Function",
+    "overdueKrisByDepartment": "KRIs Target Date by Function",
     "kriWithoutLinkedRisks": "KRIs Without Linked Risks",
     "krisWithoutLinkedRisks": "KRIs Without Linked Risks",
     "kriRiskRelationships": "KRI to Risk Relationships",

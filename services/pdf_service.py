@@ -655,7 +655,7 @@ class PDFService:
                         "High Risk": "#EF3D3D",
                     },
                 }
-            elif card_type == 'activeKrisDetails':
+            elif card_type in ('activeKrisDetails', 'overdueKrisByDepartment'):
                 final_config = {
                     **final_config,
                     "columnColors": {
