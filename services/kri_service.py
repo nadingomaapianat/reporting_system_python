@@ -1392,7 +1392,7 @@ class KriService:
             WHEN ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
             WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
             ELSE 'Unknown'
-          END AS combined_status,
+          END AS approved_status,
           u.name AS assignedPersonId,
           u2.name AS addedBy,
           k.status AS status,
