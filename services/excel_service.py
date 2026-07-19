@@ -743,6 +743,98 @@ class ExcelService:
                         data_rows = [['', '', '', '', '', 'No data available']]
                     return generate_excel_report(columns, data_rows, header_config)
 
+                # KRI Details & Action Plans: exact mirror of the KRI heatmap export.
+                # Base columns follow the heatmap; each month is spread across 5 columns.
+                if card_type == 'kriDetailsWithActionPlans':
+                    from datetime import datetime as _dt
+                    MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+                                   'July', 'August', 'September', 'October', 'November', 'December']
+
+                    def _fmt_date(d):
+                        if not d:
+                            return 'N/A'
+                        try:
+                            if hasattr(d, 'strftime'):
+                                return d.strftime('%b %d, %Y')
+                            s = str(d).split('.')[0][:10]
+                            return _dt.strptime(s, '%Y-%m-%d').strftime('%b %d, %Y')
+                        except Exception:
+                            return str(d)
+
+                    def _periods(row):
+                        return row.get('valuesByPeriod') or row.get('valuesbyperiod') or []
+
+                    rows = table_rows if isinstance(table_rows, list) else []
+                    # Distinct (year, month) across all KRIs -> chronological month columns
+                    month_set = set()
+                    for row in rows:
+                        for p in _periods(row):
+                            try:
+                                y, m = int(p.get('year')), int(p.get('month'))
+                            except Exception:
+                                continue
+                            if 1 <= m <= 12:
+                                month_set.add((y, m))
+                    sorted_months = sorted(month_set)
+                    month_labels = [f"{MONTH_NAMES[m - 1]} {y}" for (y, m) in sorted_months]
+
+                    columns = ['KRI ID', 'Business Unit Name', 'KRI Name', 'Assigned Person', 'Type',
+                               'Added By', 'Status', 'Frequency', 'Measurable Unit',
+                               'Low Risk', 'Medium Risk', 'High Risk', 'Defining Threshold']
+                    for lbl in month_labels:
+                        columns += [lbl, f"Assessment for {lbl}",
+                                    f"Justification and Action Plan for {lbl}",
+                                    f"Action Plan Status for {lbl}", f"Target Date for {lbl}"]
+
+                    data_rows = []
+                    for row in rows:
+                        unit = '%' if str(row.get('measurable_unit') or '').lower() == 'percentage' else ''
+                        cy = cm = None
+                        created = row.get('kri_created_at')
+                        if created:
+                            try:
+                                cdt = _dt.strptime(str(created).split('.')[0][:10], '%Y-%m-%d')
+                                cy, cm = cdt.year, cdt.month
+                            except Exception:
+                                cy = cm = None
+                        by_period = {}
+                        for p in _periods(row):
+                            try:
+                                by_period[(int(p.get('year')), int(p.get('month')))] = p
+                            except Exception:
+                                pass
+                        def _b(key):
+                            v = row.get(key)
+                            return '' if v is None else str(v)
+                        rowvals = [_b('kri_code'), _b('function_name'), _b('kri_name'), _b('assigned_person_name'),
+                                   _b('kri_type'), _b('added_by_name'), _b('kri_status'), _b('kri_frequency'),
+                                   _b('measurable_unit'), _b('low_from'), _b('medium_from'), _b('high_from'),
+                                   _b('defining_threshold')]
+                        for (y, m) in sorted_months:
+                            if cy is not None and (y < cy or (y == cy and m < cm)):
+                                rowvals += ['N/A', 'N/A', 'N/A', 'N/A', 'N/A']
+                                continue
+                            p = by_period.get((y, m))
+                            if p and p.get('value') is not None:
+                                val_str = f"{p.get('value')}{unit}"
+                                assessment = (p.get('assessment') or '').strip() or 'Pending'
+                                aps = p.get('actionPlans') or p.get('actionplans') or []
+                                if aps:
+                                    ap_text = "\n".join(f"Action Plan {i + 1}: {ap.get('control_procedure') or 'N/A'}" for i, ap in enumerate(aps))
+                                    ap_status = "\n".join(f"Action Plan {i + 1}: {ap.get('business_unit') or 'N/A'}" for i, ap in enumerate(aps))
+                                    ap_dates = "\n".join(f"Action Plan {i + 1}: {_fmt_date(ap.get('implementation_date'))}" for i, ap in enumerate(aps))
+                                else:
+                                    ap_text = ap_status = ap_dates = 'N/A'
+                                rowvals += [val_str, assessment, ap_text, ap_status, ap_dates]
+                            else:
+                                rowvals += ['Pending', 'Pending', 'Pending', 'Pending', 'Pending']
+                        data_rows.append(rowvals)
+                    if not data_rows:
+                        data_rows = [[''] * len(columns)]
+                    # Exact columns already built (incl. visible "KRI ID"); skip the id-column filter.
+                    header_config = {**(header_config or {}), "noHiddenColumnFilter": True}
+                    return generate_excel_report(columns, data_rows, header_config)
+
                 if isinstance(table_rows, list) and len(table_rows) > 0:
                     first_item = table_rows[0]
                     if isinstance(first_item, dict):
