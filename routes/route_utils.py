@@ -411,6 +411,7 @@ async def save_and_log_export(
                 "overallKris": "Overall_KRI_Statuses",
                 "kriStatus": "Overall_KRI_Statuses",
                 "allKrisSubmittedByFunction": "KRIs_Submission_Status_by_Function",
+                "monthlyKriSubmissionByFunction": "Monthly_KRI_Submission_by_Function",
                 "activeKrisDetails": "Active_KRIs_Details",
                 "overdueKrisByDepartment": "Overdue_KRIs_by_Function",
                 "kriWithoutLinkedRisks": "KRIs_Without_Linked_Risks",
