@@ -713,7 +713,18 @@ class ExcelService:
                 else:
                     columns = ['#', 'Value']
                     data_rows = [["1", 'No data available']]
-                
+
+                # Active KRIs Details: colour the risk-band columns (green/yellow/red)
+                if card_type == 'activeKrisDetails':
+                    header_config = {
+                        **header_config,
+                        "columnColors": {
+                            "Low From": "#92D050",
+                            "Medium From": "#F8CE37",
+                            "High From": "#EF3D3D",
+                        },
+                    }
+
                 write_debug(f"About to call generate_excel_report for KRIs table")
                 result = generate_excel_report(columns, data_rows, header_config)
                 write_debug(f"KRIs Excel report generated, returning {len(result) if result else 0} bytes")

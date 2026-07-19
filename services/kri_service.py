@@ -1252,9 +1252,9 @@ class KriService:
           k.status AS status,
           k.frequency AS frequency,
           k.threshold AS threshold,
-          k.high_from AS high_from,
+          k.low_from AS low_from,
           k.medium_from AS medium_from,
-          k.low_from AS low_from
+          k.high_from AS high_from
         FROM Kris k
         LEFT JOIN KriFunctions kf ON k.id = kf.kri_id
           AND kf.deletedAt IS NULL
