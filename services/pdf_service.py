@@ -655,6 +655,15 @@ class PDFService:
                         "High Risk": "#EF3D3D",
                     },
                 }
+            elif card_type == 'activeKrisDetails':
+                final_config = {
+                    **final_config,
+                    "columnColors": {
+                        "Low From": "#92D050",
+                        "Medium From": "#F8CE37",
+                        "High From": "#EF3D3D",
+                    },
+                }
             write_debug(f"DEBUG: Using PDF config (kris): {final_config}")
 
             result = generate_pdf_report(columns, data_rows, final_config)
