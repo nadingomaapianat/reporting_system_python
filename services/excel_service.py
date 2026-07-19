@@ -564,6 +564,26 @@ class ExcelService:
                         data_rows = [['', '', '', '', 'No data available']]
                     header_config.pop('chart_data', None)
                     return generate_excel_report(columns, data_rows, header_config)
+                # KRIs Submitted vs Not Submitted (Monthly): export one row per KRI per month
+                # with the fixed columns plus submission status and month (no chart).
+                if card_type == "krisSubmittedMonthly":
+                    columns = ['KRI Code', 'KRI Name', 'Function', 'Status', 'Month']
+                    data_rows = []
+                    if isinstance(data, list):
+                        for item in data:
+                            if not isinstance(item, dict):
+                                continue
+                            data_rows.append([
+                                str(item.get('kri_code', '') or ''),
+                                str(item.get('kri_name', '') or ''),
+                                str(item.get('function_name', '') or ''),
+                                str(item.get('status', '') or ''),
+                                str(item.get('month', '') or ''),
+                            ])
+                    if not data_rows:
+                        data_rows = [['', '', '', '', 'No data available']]
+                    header_config.pop('chart_data', None)
+                    return generate_excel_report(columns, data_rows, header_config)
                 # Special handling for stacked monthly assessment chart
                 if card_type == "kriMonthlyAssessment" and isinstance(data, list) and data:
                     # Transform from long format to wide format (pivot)

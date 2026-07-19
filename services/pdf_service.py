@@ -394,6 +394,24 @@ class PDFService:
                     if not data_rows:
                         data_rows = [['', '', '', '', 'No data available']]
                     header_config.pop('chart_data', None)
+                # KRIs Submitted vs Not Submitted (Monthly): one row per KRI per month
+                elif card_type == "krisSubmittedMonthly":
+                    columns = ['KRI Code', 'KRI Name', 'Function', 'Status', 'Month']
+                    data_rows = []
+                    if isinstance(kris_data, list):
+                        for item in kris_data:
+                            if not isinstance(item, dict):
+                                continue
+                            data_rows.append([
+                                str(item.get('kri_code', '') or ''),
+                                str(item.get('kri_name', '') or ''),
+                                str(item.get('function_name', '') or ''),
+                                str(item.get('status', '') or ''),
+                                str(item.get('month', '') or ''),
+                            ])
+                    if not data_rows:
+                        data_rows = [['', '', '', '', 'No data available']]
+                    header_config.pop('chart_data', None)
                 # Special handling for stacked monthly assessment chart
                 elif card_type == "kriMonthlyAssessment" and isinstance(kris_data, list) and kris_data:
                     # Transform from long format to wide format (pivot)
