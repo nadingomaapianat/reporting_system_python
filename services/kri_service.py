@@ -393,11 +393,11 @@ class KriService:
         # Build query that computes the label and filters to requested status
         query = f"""
         WITH KrisStatus AS (
-            SELECT 
+            SELECT
                 k.code,
                 k.kriName as kri_name,
                 ISNULL(f.name, 'Unknown') AS function_name,
-                CASE 
+                CASE
                     -- 1) Pending preparer: preparerStatus is anything other than 'sent'
                     WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
                     -- 2) Pending checker: preparer sent AND checker not approved AND acceptance not approved
@@ -497,7 +497,7 @@ class KriService:
           k.code             AS code,
           k.kriName          AS kri_name,
           ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name,
-          CASE 
+          CASE
             WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
             WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
             WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
@@ -652,10 +652,11 @@ class KriService:
         
         query = f"""
         SELECT
+          k.code AS code,
           k.kriName,
+          COALESCE(fkf.name, frel.name, 'Unknown') AS function_name,
           k.status,
           COALESCE(k.kri_level, 'Unknown') AS kri_level,
-          COALESCE(fkf.name, frel.name, 'Unknown') AS function_name,
           k.threshold,
           k.frequency
         FROM Kris k
@@ -667,13 +668,13 @@ class KriService:
         LEFT JOIN Functions frel ON frel.id = k.related_function_id
           AND frel.isDeleted = 0
           AND frel.deletedAt IS NULL
-        WHERE k.isDeleted = 0 
+        WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
           {function_filter}
         ORDER BY k.createdAt DESC
         """
         return await self.execute_query(query)
-    
+
     async def get_kri_assessment_count_detailed(
         self,
         start_date: Optional[str] = None,
@@ -895,9 +896,10 @@ class KriService:
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT DISTINCT 
-          k.id AS kriId, 
-          k.kriName AS kriName, 
+        SELECT DISTINCT
+          k.id AS kriId,
+          k.code AS code,
+          k.kriName AS kriName,
           ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name
         FROM Kris AS k
         INNER JOIN Actionplans AS ap ON ap.kri_id = k.id
@@ -1062,7 +1064,7 @@ class KriService:
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT 
+        SELECT
           k.kriName AS kriName,
           COUNT(*) AS count
         FROM Risks r
@@ -1102,7 +1104,7 @@ class KriService:
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT 
+        SELECT
           k.code AS kri_code,
           k.kriName AS kri_name,
           ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name,
@@ -1146,7 +1148,7 @@ class KriService:
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT  
+        SELECT
         k.code AS kriCode,
         k.kriName AS kriName,
         ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name
@@ -1190,8 +1192,10 @@ class KriService:
         
         query = f"""
         SELECT
+          k.code AS code,
           k.kriName AS kriName,
-          CASE 
+          ISNULL(f.name, NULL) AS function_name,
+          CASE
             WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
             WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
             WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
@@ -1206,8 +1210,7 @@ class KriService:
           k.threshold AS threshold,
           k.high_from AS high_from,
           k.medium_from AS medium_from,
-          k.low_from AS low_from,
-          ISNULL(f.name, NULL) AS function_name
+          k.low_from AS low_from
         FROM Kris k
         LEFT JOIN KriFunctions kf ON k.id = kf.kri_id
           AND kf.deletedAt IS NULL
