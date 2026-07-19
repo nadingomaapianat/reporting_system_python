@@ -599,7 +599,8 @@ class KriService:
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return count of KRIs by function (simplified - just count KRIs per function)"""
+        """Return breached KRIs by function: a KRI is breached when its latest
+        assessment sits in the High-risk band (or an explicit High kri_level)."""
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -610,24 +611,53 @@ class KriService:
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
-        
+
         query = f"""
-        SELECT 
-          ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name,
-          COUNT(k.id) AS breached_count
-        FROM Kris k
-        LEFT JOIN KriFunctions kf ON kf.kri_id = k.id
-          AND kf.deletedAt IS NULL
-        LEFT JOIN Functions fkf ON fkf.id = kf.function_id
-          AND fkf.isDeleted = 0
-          AND fkf.deletedAt IS NULL
-        LEFT JOIN Functions frel ON frel.id = k.related_function_id
-          AND frel.isDeleted = 0
-          AND frel.deletedAt IS NULL
-        WHERE k.isDeleted = 0 
-          AND k.deletedAt IS NULL {date_filter}
-          {function_filter}
-        GROUP BY ISNULL(COALESCE(fkf.name, frel.name), 'Unknown')
+        WITH LatestKV AS (
+          SELECT kv.kriId, kv.value,
+                 ROW_NUMBER() OVER (PARTITION BY kv.kriId ORDER BY COALESCE(CONVERT(datetime, CONCAT(kv.[year], '-', kv.[month], '-01')), kv.createdAt) DESC) rn
+          FROM KriValues kv
+          WHERE kv.deletedAt IS NULL
+        ),
+        K AS (
+          SELECT k.id,
+                 ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name,
+                 k.kri_level,
+                 CAST(k.isAscending AS int) AS isAscending,
+                 TRY_CONVERT(float, k.medium_from) AS med_thr,
+                 TRY_CONVERT(float, k.high_from)   AS high_thr
+          FROM Kris k
+          LEFT JOIN KriFunctions kf ON kf.kri_id = k.id AND kf.deletedAt IS NULL
+          LEFT JOIN Functions fkf ON fkf.id = kf.function_id AND fkf.isDeleted = 0 AND fkf.deletedAt IS NULL
+          LEFT JOIN Functions frel ON frel.id = k.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
+          WHERE k.isDeleted = 0
+            AND k.deletedAt IS NULL {date_filter}
+            {function_filter}
+        ),
+        KL AS (
+          SELECT K.id, K.function_name, K.kri_level, K.isAscending, K.med_thr, K.high_thr,
+                 TRY_CONVERT(float, kv.value) AS val
+          FROM K
+          LEFT JOIN LatestKV kv ON kv.kriId = K.id AND kv.rn = 1
+        ),
+        Derived AS (
+          SELECT function_name,
+                 CASE
+                   WHEN kri_level IS NOT NULL AND LTRIM(RTRIM(kri_level)) <> '' THEN kri_level
+                   WHEN val IS NULL OR med_thr IS NULL OR high_thr IS NULL THEN 'Unknown'
+                   WHEN isAscending = 1 AND val >= high_thr THEN 'High'
+                   WHEN isAscending = 1 AND val >= med_thr THEN 'Medium'
+                   WHEN isAscending = 1 THEN 'Low'
+                   WHEN isAscending = 0 AND val <= high_thr THEN 'High'
+                   WHEN isAscending = 0 AND val <= med_thr THEN 'Medium'
+                   ELSE 'Low'
+                 END AS level_bucket
+          FROM KL
+        )
+        SELECT function_name, COUNT(*) AS breached_count
+        FROM Derived
+        WHERE UPPER(LTRIM(RTRIM(level_bucket))) = 'HIGH'
+        GROUP BY function_name
         ORDER BY breached_count DESC
         """
         return await self.execute_query(query)
