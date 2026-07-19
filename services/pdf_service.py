@@ -375,8 +375,27 @@ class PDFService:
 
             # CHART EXPORT
             if only_chart and card_type:
+                # KRIs by Risk Linkage: the on-screen bars are display-only; export the full
+                # KRI -> Risk pairs as a detail table (no chart), with KRI Name and Function.
+                if card_type == "kriRiskLinkageCounts":
+                    columns = ['KRI Code', 'KRI Name', 'Risk Code', 'Risk Name', 'Function']
+                    data_rows = []
+                    if isinstance(kris_data, list):
+                        for item in kris_data:
+                            if not isinstance(item, dict):
+                                continue
+                            data_rows.append([
+                                str(item.get('kri_code', '') or ''),
+                                str(item.get('kri_name', '') or ''),
+                                str(item.get('risk_code', '') or ''),
+                                str(item.get('risk_name', '') or ''),
+                                str(item.get('function_name', '') or ''),
+                            ])
+                    if not data_rows:
+                        data_rows = [['', '', '', '', 'No data available']]
+                    header_config.pop('chart_data', None)
                 # Special handling for stacked monthly assessment chart
-                if card_type == "kriMonthlyAssessment" and isinstance(kris_data, list) and kris_data:
+                elif card_type == "kriMonthlyAssessment" and isinstance(kris_data, list) and kris_data:
                     # Transform from long format to wide format (pivot)
                     grouped: dict = {}
                     assessment_levels = set()
