@@ -405,7 +405,7 @@ async def save_and_log_export(
                 "kriCountsByFrequency": "KRIs_by_Frequency",
                 "kriCountsByMonthYear": "KRIs_Count_by_Month_Year",
                 "kriRiskLinkageCounts": "KRIs_by_Risk_Linkage",
-                "kriOverdueStatusCounts": "KRIs_Overdue_Status",
+                "krisSubmittedMonthly": "KRIs_Submitted_vs_Not_Submitted_Monthly",
                 "kriMonthlyAssessment": "Monthly_KRI_Assessments_stacked",
                 "deletedKrisPerMonth": "Deleted_KRIs_Per_Month",
                 "overallKris": "Overall_KRI_Statuses",

@@ -62,7 +62,7 @@ KRI_DISPLAY_NAMES = {
     "kriCountsByFrequency": "KRIs by Frequency",
     "kriCountsByMonthYear": "KRIs Count by Month/Year",
     "kriRiskLinkageCounts": "KRIs by Risk Linkage",
-    "kriOverdueStatusCounts": "KRIs Overdue Status",
+    "krisSubmittedMonthly": "KRIs Submitted vs Not Submitted (Monthly)",
     "kriMonthlyAssessment": "Monthly KRI Assessments (stacked)",
     "deletedKrisPerMonth": "Deleted KRIs Per Month",
     "overallKris": "Approval KRI Status",
@@ -231,8 +231,9 @@ async def export_kris_pdf(
             data = await kri_service.get_newly_created_kris_per_month(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'deletedKrisPerMonth':
             data = await kri_service.get_deleted_kris_per_month(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'kriOverdueStatusCounts':
-            data = await kri_service.get_kri_overdue_status_counts(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'krisSubmittedMonthly':
+            # Chart shows monthly submitted vs not-submitted counts; export the per-KRI-per-month detail
+            data = await kri_service.get_kris_submission_by_month_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriCountsByMonthYear':
             data = await kri_service.get_kri_counts_by_month_year(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriCountsByFrequency':
@@ -481,8 +482,9 @@ async def export_kris_excel(
             data = await kri_service.get_newly_created_kris_per_month(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'deletedKrisPerMonth':
             data = await kri_service.get_deleted_kris_per_month(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'kriOverdueStatusCounts':
-            data = await kri_service.get_kri_overdue_status_counts(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'krisSubmittedMonthly':
+            # Chart shows monthly submitted vs not-submitted counts; export the per-KRI-per-month detail
+            data = await kri_service.get_kris_submission_by_month_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriCountsByMonthYear':
             data = await kri_service.get_kri_counts_by_month_year(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriCountsByFrequency':
