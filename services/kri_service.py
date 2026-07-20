@@ -1134,7 +1134,10 @@ class KriService:
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return all KRIs submitted by function"""
+        """Return all KRIs submitted by function.
+        Total KRIs = sum, per KRI, of how many months it has been active (createdAt -> now,
+        inclusive) -- total expected monthly reporting slots for that function, not a count of
+        KRI definitions. Submitted KRIs = sum of months that actually have a recorded value."""
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -1145,34 +1148,42 @@ class KriService:
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
-        
+
+        # Function attribution prioritizes related_function_id over KriFunctions, matching the
+        # main app/heatmap's authoritative logic (adib_backend kri.service.ts), so a KRI is never
+        # silently reassigned to a different function here than it belongs to there.
         query = f"""
         SELECT
-          ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name,
-          COUNT(k.id) AS total_kris,
-          COUNT(CASE
-            WHEN ISNULL(k.preparerStatus, '') = 'sent'
-            THEN 1 END) AS submitted_kris,
+          ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name,
+          SUM(DATEDIFF(MONTH, k.createdAt, GETDATE()) + 1) AS total_kris,
+          SUM(ISNULL(kv_counts.months_submitted, 0)) AS submitted_kris,
           CASE
-            WHEN COUNT(k.id) = COUNT(CASE
-              WHEN ISNULL(k.preparerStatus, '') = 'sent'
-              THEN 1 END)
+            WHEN SUM(DATEDIFF(MONTH, k.createdAt, GETDATE()) + 1) = SUM(ISNULL(kv_counts.months_submitted, 0))
             THEN 'Yes' ELSE 'No'
           END AS all_submitted
         FROM Kris AS k
-        LEFT JOIN KriFunctions AS kf ON k.id = kf.kri_id
-          AND kf.deletedAt IS NULL
-        LEFT JOIN Functions AS fkf ON fkf.id = kf.function_id
-          AND fkf.isDeleted = 0
-          AND fkf.deletedAt IS NULL
         LEFT JOIN Functions AS frel ON frel.id = k.related_function_id
           AND frel.isDeleted = 0
           AND frel.deletedAt IS NULL
+        OUTER APPLY (
+          -- A KRI can have several KriFunctions rows; TOP 1 keeps this to one row per KRI so
+          -- SUM() below never double/triple-counts a KRI linked to multiple functions.
+          SELECT TOP 1 f2.name
+          FROM KriFunctions kf2
+          INNER JOIN Functions f2 ON f2.id = kf2.function_id AND f2.isDeleted = 0 AND f2.deletedAt IS NULL
+          WHERE kf2.kri_id = k.id AND kf2.deletedAt IS NULL
+          ORDER BY kf2.function_id
+        ) fkf(name)
+        OUTER APPLY (
+          SELECT COUNT(DISTINCT CONCAT(kv.[year], '-', kv.[month])) AS months_submitted
+          FROM KriValues kv
+          WHERE kv.kriId = k.id AND kv.deletedAt IS NULL
+        ) kv_counts
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
           {function_filter}
-        GROUP BY ISNULL(COALESCE(fkf.name, frel.name), 'Unknown')
-        ORDER BY ISNULL(COALESCE(fkf.name, frel.name), 'Unknown')
+        GROUP BY ISNULL(COALESCE(frel.name, fkf.name), 'Unknown')
+        ORDER BY ISNULL(COALESCE(frel.name, fkf.name), 'Unknown')
         """
         return await self.execute_query(query)
 
