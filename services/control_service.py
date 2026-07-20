@@ -213,7 +213,23 @@ class ControlService:
         """SQL fragment for control function name(s), comma-separated (mirrors Node)."""
         cf, f = "cf", "f"
         return f"""(SELECT STRING_AGG({f}.name, ', ') WITHIN GROUP (ORDER BY {f}.name) FROM {self.get_fully_qualified_table_name('ControlFunctions')} {cf} INNER JOIN {self.get_fully_qualified_table_name('Functions')} {f} ON {f}.id = {cf}.function_id WHERE {cf}.control_id = {control_alias}.id AND {cf}.deletedAt IS NULL)"""
-    
+
+    def _control_coso_component_subquery(self, control_alias: str = "c") -> str:
+        """SQL fragment: comma-separated COSO Component name(s) actually mapped to this control (real join, not a placeholder)."""
+        cc, cco, cp, cpr = self.get_fully_qualified_table_name('ControlCosos'), self.get_fully_qualified_table_name('CosoComponents'), self.get_fully_qualified_table_name('CosoPoints'), self.get_fully_qualified_table_name('CosoPrinciples')
+        return f"""(SELECT STRING_AGG(comp.name, ', ') FROM {cc} ccx2 JOIN {cp} cp2 ON cp2.id = ccx2.coso_id AND cp2.deletedAt IS NULL JOIN {cpr} cpr2 ON cpr2.id = cp2.principle_id AND cpr2.deletedAt IS NULL JOIN {cco} comp ON comp.id = cpr2.component_id AND comp.deletedAt IS NULL WHERE ccx2.control_id = {control_alias}.id AND ccx2.deletedAt IS NULL)"""
+
+    def _control_coso_principle_subquery(self, control_alias: str = "c") -> str:
+        """SQL fragment: comma-separated COSO Principle name(s) actually mapped to this control (real join, not a placeholder)."""
+        cc, cp, cpr = self.get_fully_qualified_table_name('ControlCosos'), self.get_fully_qualified_table_name('CosoPoints'), self.get_fully_qualified_table_name('CosoPrinciples')
+        return f"""(SELECT STRING_AGG(cpr2.name, ', ') FROM {cc} ccx2 JOIN {cp} cp2 ON cp2.id = ccx2.coso_id AND cp2.deletedAt IS NULL JOIN {cpr} cpr2 ON cpr2.id = cp2.principle_id AND cpr2.deletedAt IS NULL WHERE ccx2.control_id = {control_alias}.id AND ccx2.deletedAt IS NULL)"""
+
+    def _control_coso_point_subquery(self, control_alias: str = "c") -> str:
+        """SQL fragment: comma-separated COSO Point of focus name(s) actually mapped to this control (real join, not a placeholder)."""
+        cc, cp = self.get_fully_qualified_table_name('ControlCosos'), self.get_fully_qualified_table_name('CosoPoints')
+        return f"""(SELECT STRING_AGG(cp2.name, ', ') FROM {cc} ccx2 JOIN {cp} cp2 ON cp2.id = ccx2.coso_id AND cp2.deletedAt IS NULL WHERE ccx2.control_id = {control_alias}.id AND ccx2.deletedAt IS NULL)"""
+
+
     async def execute_query(self, query: str, params: Optional[List] = None) -> List[Dict[str, Any]]:
         """Execute a SQL query and return results"""
         
@@ -429,8 +445,9 @@ class ControlService:
           c.name as control_name,
           ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS function_name,
           a.name as assertion_name, a.account_type as assertion_type,
-          'Not Mapped' as coso_component,
-          'Not Mapped' as coso_point
+          ISNULL({self._control_coso_component_subquery('c')}, 'Not Mapped') as coso_component,
+          ISNULL({self._control_coso_principle_subquery('c')}, 'Not Mapped') as coso_principle,
+          ISNULL({self._control_coso_point_subquery('c')}, 'Not Mapped') as coso_point
         FROM {self.get_fully_qualified_table_name('Controls')} c
         JOIN {self.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id
         WHERE c.isDeleted = 0 AND c.icof_id IS NOT NULL
@@ -565,8 +582,9 @@ class ControlService:
           c.name as control_name,
           ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS function_name,
           a.name as assertion_name, a.account_type as assertion_type,
-          'Not Mapped' as coso_component,
-          'Not Mapped' as coso_point
+          ISNULL({self._control_coso_component_subquery('c')}, 'Not Mapped') as coso_component,
+          ISNULL({self._control_coso_principle_subquery('c')}, 'Not Mapped') as coso_principle,
+          ISNULL({self._control_coso_point_subquery('c')}, 'Not Mapped') as coso_point
         FROM {self.get_fully_qualified_table_name('Controls')} c
         LEFT JOIN {self.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id
         WHERE c.isDeleted = 0
