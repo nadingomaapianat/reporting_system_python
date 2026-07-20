@@ -824,7 +824,16 @@ class ExcelService:
                     if not data_rows:
                         data_rows = [[''] * len(columns)]
                     # Exact columns already built (incl. visible "KRI ID"); skip the id-column filter.
-                    header_config = {**(header_config or {}), "noHiddenColumnFilter": True}
+                    # Colour the risk-band columns green/yellow/red, matching the heatmap.
+                    header_config = {
+                        **(header_config or {}),
+                        "noHiddenColumnFilter": True,
+                        "columnColors": {
+                            "Low Risk": "#92D050",
+                            "Medium Risk": "#F8CE37",
+                            "High Risk": "#EF3D3D",
+                        },
+                    }
                     return generate_excel_report(columns, data_rows, header_config)
 
                 if isinstance(table_rows, list) and len(table_rows) > 0:
