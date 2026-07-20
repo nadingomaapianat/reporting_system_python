@@ -1038,7 +1038,7 @@ class KriService:
           CASE WHEN s.is_approved = 1 THEN 'Yes' ELSE 'No' END AS approved
         FROM Expected e
         LEFT JOIN Sub s ON s.kriId = e.kri_id AND s.yr = e.yr AND s.mo = e.mo
-        ORDER BY e.yr, e.mo, e.function_name, e.kri_name
+        ORDER BY e.function_name, e.kri_code, e.yr, e.mo
         OPTION (MAXRECURSION 1000)
         """
         return await self.execute_query(query)
