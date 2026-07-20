@@ -246,12 +246,25 @@ class PDFService:
                                 values = [get_overdue_incidents_cell_value(row, k) for k in raw_keys]
                                 data_rows.append([str(i)] + values)
                         else:
-                            from utils.export_utils import get_incident_ordered_keys_pdf, get_incident_label, get_incident_cell_value
-                            raw_keys = get_incident_ordered_keys_pdf(first_item)
-                            columns = ['#'] + [get_incident_label(k) for k in raw_keys]
-                            for i, row in enumerate(table_rows, 1):
-                                values = [get_incident_cell_value(row, k) for k in raw_keys]
-                                data_rows.append([str(i)] + values)
+                            from utils.export_utils import (
+                                get_incident_table_ordered_keys_pdf,
+                                get_incident_table_label_pdf,
+                                get_incident_ordered_keys_pdf,
+                                get_incident_label,
+                                get_incident_cell_value,
+                            )
+                            raw_keys = get_incident_table_ordered_keys_pdf(card_type, first_item)
+                            if raw_keys is not None:
+                                columns = ['#'] + [get_incident_table_label_pdf(card_type, k) for k in raw_keys]
+                                for i, row in enumerate(table_rows, 1):
+                                    values = [get_incident_cell_value(row, k) for k in raw_keys]
+                                    data_rows.append([str(i)] + values)
+                            else:
+                                raw_keys = get_incident_ordered_keys_pdf(first_item)
+                                columns = ['#'] + [get_incident_label(k) for k in raw_keys]
+                                for i, row in enumerate(table_rows, 1):
+                                    values = [get_incident_cell_value(row, k) for k in raw_keys]
+                                    data_rows.append([str(i)] + values)
                     elif isinstance(first_item, (list, tuple)):
                         num_cols = len(first_item)
                         columns = ['#'] + [f'C{idx+1}' for idx in range(num_cols)]
@@ -279,7 +292,7 @@ class PDFService:
                     
                     if isinstance(first_item, dict):
                         write_debug(f"DEBUG: first_item keys: {list(first_item.keys())}")
-                        
+
                         # Status cards: compact columns with Function and readable Created At
                         if card_type in ['pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance']:
                             columns = ["#", "Code", "Title", "Function", "Status", "Created At"]
@@ -873,32 +886,19 @@ class PDFService:
                         # Data is list of dicts
                         write_debug(f"  - Data is list of dicts")
                         write_debug(f"  - first_item keys: {list(first_item.keys())}")
-                        # Determine columns based on cardType
-                        if cardType in ['pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance', 'testsPendingPreparer', 'testsPendingChecker', 'testsPendingReviewer', 'testsPendingAcceptance','unmappedControls','unmappedIcofrControls','unmappedNonIcofrControls','totalControls']:
-                            write_debug(f"  - Creating columns: ['#', 'Control Code', 'Control Name', 'Function']")
-                            columns = ["#", "Control Code", "Control Name", "Function"]
-                            data_rows = []
-                            for i, item in enumerate(data, 1):
-                                data_rows.append([
-                                    str(i),
-                                    item.get('control_code', item.get('code', 'N/A')),
-                                    item.get('control_name', item.get('name', 'N/A')),
-                                    str(item.get('function_name', ''))
-                                ])
-                            write_debug(f"  - Created {len(data_rows)} rows with columns: {columns}")
-                        else:
-                            # Generic handling for other card types
-                            write_debug(f"  - Generic handling")
-                            columns = ["#", "Code", "Name", "Function"]
-                            data_rows = []
-                            for i, item in enumerate(data, 1):
-                                data_rows.append([
-                                    str(i),
-                                    item.get('code', 'N/A'),
-                                    item.get('name', 'N/A'),
-                                    str(item.get('function_name', ''))
-                                ])
-                            write_debug(f"  - Created {len(data_rows)} rows with columns: {columns}")
+                        # All control cards: export all columns from data (match UI); never export id.
+                        # Mirrors generate_controls_excel so PDF/Excel/on-screen table always show the same fields.
+                        def _nice(k: str) -> str:
+                            if k == 'function_name':
+                                return 'Function'
+                            return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
+                        raw_keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
+                        columns = ["#"] + [_nice(k) for k in raw_keys]
+                        data_rows = []
+                        for i, item in enumerate(data, 1):
+                            values = [format_cell_value_for_export(k, item.get(k, '')) for k in raw_keys]
+                            data_rows.append([str(i)] + values)
+                        write_debug(f"  - Created {len(data_rows)} rows with columns: {columns}")
                 elif isinstance(data, dict):
                     columns = ["Metric", "Value"]
                     data_rows = [[key, str(value)] for key, value in data.items()]

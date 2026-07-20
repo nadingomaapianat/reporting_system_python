@@ -211,12 +211,16 @@ class IncidentService:
             ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
             ISNULL(i.rootCause, '') AS rootCause,
             ISNULL(rc.name, '') AS causeName,
+            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+            ISNULL(kr.kriName, '') AS kriName,
+            ISNULL(dt.name, '') AS discoveredType,
             ISNULL(i.total_loss, 0) AS totalLoss,
             ISNULL(i.recovery_amount, 0) AS recoveryAmount,
             ISNULL(i.net_loss, 0) AS netLoss,
             ISNULL(fi.name, '') AS financialImpactName,
             ISNULL(cu.name, '') AS currencyName,
             ISNULL(i.exchange_rate, 0) AS exchangeRate,
+            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
             ISNULL(i.status, '') AS recoveryStatus,
             ISNULL(ie.name, '') AS eventType,
             ISNULL(i.preparerStatus, '') AS preparerStatus,
@@ -233,6 +237,8 @@ class IncidentService:
         LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
         LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
         LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
         WHERE i.isDeleted = 0 AND i.deletedAt IS NULL {date_filter}
         {function_filter}
         ORDER BY i.createdAt DESC
@@ -368,11 +374,37 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
+        SELECT
           i.code,
+          ISNULL(i.importance, '') AS importance,
+          ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
+          ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
+          ISNULL(i.timeFrame, '') AS timeFrame,
+          ISNULL(u.name, '') AS owner,
           i.title,
           f.name AS function_name,
-          CASE 
+          ISNULL(c.name, '') AS categoryName,
+          ISNULL(sc.name, '') AS subCategoryName,
+          ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+          ISNULL(i.rootCause, '') AS rootCause,
+          ISNULL(rc.name, '') AS causeName,
+          (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+          ISNULL(kr.kriName, '') AS kriName,
+          ISNULL(dt.name, '') AS discoveredType,
+          ISNULL(i.total_loss, 0) AS totalLoss,
+          ISNULL(i.recovery_amount, 0) AS recoveryAmount,
+          ISNULL(i.net_loss, 0) AS netLoss,
+          ISNULL(fi.name, '') AS financialImpactName,
+          ISNULL(cu.name, '') AS currencyName,
+          ISNULL(i.exchange_rate, 0) AS exchangeRate,
+          (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+          ISNULL(i.status, '') AS recoveryStatus,
+          ISNULL(ie.name, '') AS eventType,
+          ISNULL(i.preparerStatus, '') AS preparerStatus,
+          ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+          ISNULL(i.checkerStatus, '') AS checkerStatus,
+          ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+          CASE
             WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
             WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
             WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
@@ -385,7 +417,16 @@ class IncidentService:
         LEFT JOIN Functions f ON i.function_id = f.id
           AND f.isDeleted = 0
           AND f.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id AND ie.isDeleted = 0 AND ie.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
           AND i.deletedAt IS NULL
           {date_filter}
           {function_filter}
@@ -418,11 +459,37 @@ class IncidentService:
         # Build query that computes the label and filters to requested status
         query = f"""
         WITH IncidentStatus AS (
-            SELECT 
+            SELECT
                 i.code,
-                i.title,
+                ISNULL(i.importance, '') AS importance,
+                ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
+                ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
+                ISNULL(i.timeFrame, '') AS timeFrame,
+                ISNULL(u.name, '') AS owner,
                 ISNULL(f.name, 'Unknown') AS function_name,
-                CASE 
+                ISNULL(c.name, '') AS categoryName,
+                ISNULL(sc.name, '') AS subCategoryName,
+                i.title,
+                ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+                ISNULL(i.rootCause, '') AS rootCause,
+                ISNULL(rc.name, '') AS causeName,
+                (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+                ISNULL(kr.kriName, '') AS kriName,
+                ISNULL(dt.name, '') AS discoveredType,
+                ISNULL(i.total_loss, 0) AS totalLoss,
+                ISNULL(i.recovery_amount, 0) AS recoveryAmount,
+                ISNULL(i.net_loss, 0) AS netLoss,
+                ISNULL(fi.name, '') AS financialImpactName,
+                ISNULL(cu.name, '') AS currencyName,
+                ISNULL(i.exchange_rate, 0) AS exchangeRate,
+                (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+                ISNULL(i.status, '') AS recoveryStatus,
+                ISNULL(ie.name, '') AS eventType,
+                ISNULL(i.preparerStatus, '') AS preparerStatus,
+                ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+                ISNULL(i.checkerStatus, '') AS checkerStatus,
+                ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+                CASE
                     -- 1) Pending preparer: preparerStatus is anything other than 'sent'
                     WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
                     -- 2) Pending checker: preparer sent AND checker not approved AND acceptance not approved
@@ -438,6 +505,15 @@ class IncidentService:
                 FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
             FROM Incidents i
             LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
+            LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+            LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
+            LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+            LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+            LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id AND ie.isDeleted = 0 AND ie.deletedAt IS NULL
+            LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+            LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+            LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+            LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
             WHERE i.isDeleted = 0 AND i.deletedAt IS NULL {date_filter}
             {function_filter}
         )
@@ -712,21 +788,56 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT 
+        SELECT
+            i.code,
+            ISNULL(i.importance, '') AS importance,
+            ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
+            ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
+            ISNULL(i.timeFrame, '') AS timeFrame,
+            ISNULL(u.name, '') AS owner,
             i.title as incident_title,
             f.name AS function_name,
+            ISNULL(c.name, '') AS categoryName,
+            ISNULL(sc.name, '') AS subCategoryName,
+            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+            ISNULL(i.rootCause, '') AS rootCause,
+            ISNULL(rc.name, '') AS causeName,
+            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+            ISNULL(kr.kriName, '') AS kriName,
+            ISNULL(dt.name, '') AS discoveredType,
+            ISNULL(i.total_loss, 0) AS totalLoss,
             ISNULL(i.net_loss, 0) as net_loss,
-            ISNULL(i.recovery_amount, 0) as recovery_amount
+            ISNULL(i.recovery_amount, 0) as recovery_amount,
+            ISNULL(fi.name, '') AS financialImpactName,
+            ISNULL(cu.name, '') AS currencyName,
+            ISNULL(i.exchange_rate, 0) AS exchangeRate,
+            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+            ISNULL(i.status, '') AS recoveryStatus,
+            ISNULL(ie.name, '') AS eventType,
+            ISNULL(i.preparerStatus, '') AS preparerStatus,
+            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+            ISNULL(i.checkerStatus, '') AS checkerStatus,
+            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id
           AND f.isDeleted = 0
           AND f.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id AND ie.isDeleted = 0 AND ie.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
-            AND i.net_loss > 0
-        ORDER BY i.net_loss DESC
+            AND (i.net_loss IS NOT NULL OR i.recovery_amount IS NOT NULL)
+        ORDER BY i.createdAt DESC
         """
         return await self.execute_query(query)
 
@@ -877,23 +988,60 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
-          i.title AS incident_name, 
+        SELECT
+          i.code,
+          ISNULL(i.importance, '') AS importance,
+          ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
+          ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
+          ISNULL(u.name, '') AS owner,
+          i.title AS incident_name,
+          f.name AS function_name,
+          ISNULL(c.name, '') AS categoryName,
+          ISNULL(sc.name, '') AS subCategoryName,
+          ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+          ISNULL(i.rootCause, '') AS rootCause,
+          ISNULL(rc.name, '') AS causeName,
+          (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+          ISNULL(kr.kriName, '') AS kriName,
+          ISNULL(dt.name, '') AS discoveredType,
+          ISNULL(i.total_loss, 0) AS totalLoss,
+          ISNULL(i.recovery_amount, 0) AS recoveryAmount,
+          ISNULL(i.net_loss, 0) AS netLoss,
+          ISNULL(fi.name, '') AS financialImpactName,
+          ISNULL(cu.name, '') AS currencyName,
+          ISNULL(i.exchange_rate, 0) AS exchangeRate,
+          (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+          ISNULL(i.status, '') AS recoveryStatus,
+          ISNULL(ie.name, '') AS eventType,
+          ISNULL(i.preparerStatus, '') AS preparerStatus,
+          ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+          ISNULL(i.checkerStatus, '') AS checkerStatus,
+          ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
           i.timeFrame AS time_frame,
-          f.name AS function_name
+          FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id
           AND f.isDeleted = 0
           AND f.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id AND ie.isDeleted = 0 AND ie.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
           AND i.deletedAt IS NULL
           {date_filter}
           {function_filter}
-        ORDER BY i.timeFrame DESC
+        ORDER BY i.createdAt DESC
         """
         rows = await self.execute_query(query)
         return [
             {
+                **r,
                 "incident_name": r.get("incident_name") or "Unknown",
                 "time_frame": r.get("time_frame") or "",
                 "function_name": r.get("function_name") or "Unknown",
@@ -917,30 +1065,63 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
-          i.title AS incident_name, 
-          i.rootCause AS rootCause, 
-          f.name AS function_name, 
-          i.net_loss AS netLoss, 
-          i.total_loss AS totalLoss, 
-          i.recovery_amount AS recoveryAmount, 
-          (ISNULL(i.total_loss, 0) + ISNULL(i.recovery_amount, 0)) AS grossAmount, 
-          CASE 
+        SELECT
+          i.code,
+          ISNULL(i.importance, '') AS importance,
+          ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
+          ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
+          ISNULL(i.timeFrame, '') AS timeFrame,
+          ISNULL(u.name, '') AS owner,
+          i.title AS title,
+          f.name AS function_name,
+          ISNULL(c.name, '') AS categoryName,
+          ISNULL(sc.name, '') AS subCategoryName,
+          ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+          i.rootCause AS rootCause,
+          ISNULL(rc.name, '') AS causeName,
+          (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+          ISNULL(kr.kriName, '') AS kriName,
+          ISNULL(dt.name, '') AS discoveredType,
+          i.net_loss AS netLoss,
+          i.total_loss AS totalLoss,
+          i.recovery_amount AS recoveryAmount,
+          (ISNULL(i.total_loss, 0) + ISNULL(i.recovery_amount, 0)) AS grossAmount,
+          ISNULL(fi.name, '') AS financialImpactName,
+          ISNULL(cu.name, '') AS currencyName,
+          ISNULL(i.exchange_rate, 0) AS exchangeRate,
+          (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+          ISNULL(ie.name, '') AS eventType,
+          ISNULL(i.preparerStatus, '') AS preparerStatus,
+          ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+          ISNULL(i.checkerStatus, '') AS checkerStatus,
+          ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+          FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+          CASE
             WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
             WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
             WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
             WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
             WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
             ELSE 'Other'
-          END AS status 
+          END AS status
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id
           AND f.isDeleted = 0
           AND f.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id AND ie.isDeleted = 0 AND ie.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
           AND i.deletedAt IS NULL
           {date_filter}
           {function_filter}
+        ORDER BY i.createdAt DESC
         """
         return await self.execute_query(query)
 
@@ -968,18 +1149,50 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
+        SELECT
             i.code,
+            ISNULL(i.importance, '') AS importance,
+            ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
+            ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
+            ISNULL(i.timeFrame, '') AS timeFrame,
+            ISNULL(u.name, '') AS owner,
+            ISNULL(f.name, 'Unknown') AS function_name,
+            ISNULL(c.name, '') AS categoryName,
+            sc.name AS subCategoryName,
             i.title AS name,
-            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+            ISNULL(i.rootCause, '') AS rootCause,
+            ISNULL(rc.name, '') AS causeName,
+            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+            ISNULL(kr.kriName, '') AS kriName,
+            ISNULL(dt.name, '') AS discoveredType,
+            ISNULL(i.total_loss, 0) AS totalLoss,
             i.net_loss,
             i.recovery_amount,
-            ISNULL(f.name, 'Unknown') AS function_name
+            ISNULL(fi.name, '') AS financialImpactName,
+            ISNULL(cu.name, '') AS currencyName,
+            ISNULL(i.exchange_rate, 0) AS exchangeRate,
+            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+            ISNULL(i.status, '') AS recoveryStatus,
+            ISNULL(ie.name, '') AS eventType,
+            ISNULL(i.preparerStatus, '') AS preparerStatus,
+            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+            ISNULL(i.checkerStatus, '') AS checkerStatus,
+            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
         INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
             AND sc.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id AND ie.isDeleted = 0 AND ie.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
@@ -1010,18 +1223,50 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
+        SELECT
             i.code,
+            ISNULL(i.importance, '') AS importance,
+            ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
+            ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
+            ISNULL(i.timeFrame, '') AS timeFrame,
+            ISNULL(u.name, '') AS owner,
+            ISNULL(f.name, 'Unknown') AS function_name,
+            ISNULL(c.name, '') AS categoryName,
+            ISNULL(sc.name, '') AS subCategoryName,
             i.title AS name,
-            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+            ISNULL(i.rootCause, '') AS rootCause,
+            ISNULL(rc.name, '') AS causeName,
+            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+            ISNULL(kr.kriName, '') AS kriName,
+            ISNULL(dt.name, '') AS discoveredType,
+            ISNULL(i.total_loss, 0) AS totalLoss,
             i.net_loss,
             i.recovery_amount,
-            ISNULL(f.name, 'Unknown') AS function_name
+            ISNULL(fi.name, '') AS financialImpactName,
+            ISNULL(cu.name, '') AS currencyName,
+            ISNULL(i.exchange_rate, 0) AS exchangeRate,
+            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+            ISNULL(i.status, '') AS recoveryStatus,
+            ie.name AS eventType,
+            ISNULL(i.preparerStatus, '') AS preparerStatus,
+            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+            ISNULL(i.checkerStatus, '') AS checkerStatus,
+            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
         INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
             AND ie.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
@@ -1052,18 +1297,50 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
+        SELECT
             i.code,
+            ISNULL(i.importance, '') AS importance,
+            ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
+            ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
+            ISNULL(i.timeFrame, '') AS timeFrame,
+            ISNULL(u.name, '') AS owner,
+            ISNULL(f.name, 'Unknown') AS function_name,
+            ISNULL(c.name, '') AS categoryName,
+            ISNULL(sc.name, '') AS subCategoryName,
             i.title AS name,
-            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+            ISNULL(i.rootCause, '') AS rootCause,
+            ISNULL(rc.name, '') AS causeName,
+            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+            ISNULL(kr.kriName, '') AS kriName,
+            ISNULL(dt.name, '') AS discoveredType,
+            ISNULL(i.total_loss, 0) AS totalLoss,
             i.net_loss,
             i.recovery_amount,
-            ISNULL(f.name, 'Unknown') AS function_name
+            ISNULL(fi.name, '') AS financialImpactName,
+            ISNULL(cu.name, '') AS currencyName,
+            ISNULL(i.exchange_rate, 0) AS exchangeRate,
+            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+            ISNULL(i.status, '') AS recoveryStatus,
+            ie.name AS eventType,
+            ISNULL(i.preparerStatus, '') AS preparerStatus,
+            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+            ISNULL(i.checkerStatus, '') AS checkerStatus,
+            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
         INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
             AND ie.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
@@ -1094,18 +1371,50 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
+        SELECT
             i.code,
+            ISNULL(i.importance, '') AS importance,
+            ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
+            ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
+            ISNULL(i.timeFrame, '') AS timeFrame,
+            ISNULL(u.name, '') AS owner,
+            ISNULL(f.name, 'Unknown') AS function_name,
+            ISNULL(c.name, '') AS categoryName,
+            ISNULL(sc.name, '') AS subCategoryName,
             i.title AS name,
-            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+            ISNULL(i.rootCause, '') AS rootCause,
+            ISNULL(rc.name, '') AS causeName,
+            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+            ISNULL(kr.kriName, '') AS kriName,
+            ISNULL(dt.name, '') AS discoveredType,
+            ISNULL(i.total_loss, 0) AS totalLoss,
             i.net_loss,
             i.recovery_amount,
-            ISNULL(f.name, 'Unknown') AS function_name
+            ISNULL(fi.name, '') AS financialImpactName,
+            ISNULL(cu.name, '') AS currencyName,
+            ISNULL(i.exchange_rate, 0) AS exchangeRate,
+            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+            ISNULL(i.status, '') AS recoveryStatus,
+            ie.name AS eventType,
+            ISNULL(i.preparerStatus, '') AS preparerStatus,
+            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+            ISNULL(i.checkerStatus, '') AS checkerStatus,
+            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
         INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
             AND ie.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
@@ -1136,18 +1445,50 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
+        SELECT
             i.code,
+            ISNULL(i.importance, '') AS importance,
+            ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
+            ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
+            ISNULL(i.timeFrame, '') AS timeFrame,
+            ISNULL(u.name, '') AS owner,
+            ISNULL(f.name, 'Unknown') AS function_name,
+            ISNULL(c.name, '') AS categoryName,
+            sc.name AS subCategoryName,
             i.title AS name,
-            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+            ISNULL(i.rootCause, '') AS rootCause,
+            ISNULL(rc.name, '') AS causeName,
+            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+            ISNULL(kr.kriName, '') AS kriName,
+            ISNULL(dt.name, '') AS discoveredType,
+            ISNULL(i.total_loss, 0) AS totalLoss,
             i.net_loss,
             i.recovery_amount,
-            ISNULL(f.name, 'Unknown') AS function_name
+            ISNULL(fi.name, '') AS financialImpactName,
+            ISNULL(cu.name, '') AS currencyName,
+            ISNULL(i.exchange_rate, 0) AS exchangeRate,
+            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+            ISNULL(i.status, '') AS recoveryStatus,
+            ISNULL(ie.name, '') AS eventType,
+            ISNULL(i.preparerStatus, '') AS preparerStatus,
+            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+            ISNULL(i.checkerStatus, '') AS checkerStatus,
+            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
         INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
             AND sc.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id AND ie.isDeleted = 0 AND ie.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
@@ -1178,15 +1519,50 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
+        SELECT
             i.code,
+            ISNULL(i.importance, '') AS importance,
+            ISNULL(i.timeFrame, '') AS timeFrame,
+            ISNULL(u.name, '') AS owner,
+            ISNULL(f.name, 'Unknown') AS function_name,
+            ISNULL(c.name, '') AS categoryName,
+            ISNULL(sc.name, '') AS subCategoryName,
             i.title AS name,
+            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+            ISNULL(i.rootCause, '') AS rootCause,
+            ISNULL(rc.name, '') AS causeName,
+            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+            ISNULL(kr.kriName, '') AS kriName,
+            ISNULL(dt.name, '') AS discoveredType,
+            ISNULL(i.total_loss, 0) AS totalLoss,
+            ISNULL(i.recovery_amount, 0) AS recoveryAmount,
+            ISNULL(i.net_loss, 0) AS netLoss,
+            ISNULL(fi.name, '') AS financialImpactName,
+            ISNULL(cu.name, '') AS currencyName,
+            ISNULL(i.exchange_rate, 0) AS exchangeRate,
+            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+            ISNULL(i.status, '') AS recoveryStatus,
+            ISNULL(ie.name, '') AS eventType,
+            ISNULL(i.preparerStatus, '') AS preparerStatus,
+            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+            ISNULL(i.checkerStatus, '') AS checkerStatus,
+            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
             FORMAT(i.occurrence_date, 'yyyy-MM-dd') as occurrence_date,
             FORMAT(i.reported_date, 'yyyy-MM-dd') as reported_date,
             DATEDIFF(DAY, i.occurrence_date, i.reported_date) AS recognition_days,
             CAST(DATEDIFF(DAY, i.occurrence_date, i.reported_date) AS FLOAT) / 30.44 AS recognition_months
         FROM Incidents i
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id AND ie.isDeleted = 0 AND ie.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
@@ -1463,10 +1839,37 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
-          i.title AS title, 
-          ISNULL(fi.name, 'Unknown') AS financial_impact_name, 
-          ISNULL(f.name, 'Unknown') AS function_name 
+        SELECT
+          i.code,
+          ISNULL(i.importance, '') AS importance,
+          ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
+          ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
+          ISNULL(i.timeFrame, '') AS timeFrame,
+          ISNULL(u.name, '') AS owner,
+          i.title AS title,
+          ISNULL(f.name, 'Unknown') AS function_name,
+          ISNULL(c.name, '') AS categoryName,
+          ISNULL(sc.name, '') AS subCategoryName,
+          ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+          ISNULL(i.rootCause, '') AS rootCause,
+          ISNULL(rc.name, '') AS causeName,
+          (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+          ISNULL(kr.kriName, '') AS kriName,
+          ISNULL(dt.name, '') AS discoveredType,
+          ISNULL(i.total_loss, 0) AS totalLoss,
+          ISNULL(i.recovery_amount, 0) AS recoveryAmount,
+          ISNULL(i.net_loss, 0) AS netLoss,
+          ISNULL(fi.name, 'Unknown') AS financial_impact_name,
+          ISNULL(cu.name, '') AS currencyName,
+          ISNULL(i.exchange_rate, 0) AS exchangeRate,
+          (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+          ISNULL(i.status, '') AS recoveryStatus,
+          ISNULL(ie.name, '') AS eventType,
+          ISNULL(i.preparerStatus, '') AS preparerStatus,
+          ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+          ISNULL(i.checkerStatus, '') AS checkerStatus,
+          ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+          FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id
           AND fi.isDeleted = 0
@@ -1474,10 +1877,19 @@ class IncidentService:
         LEFT JOIN Functions f ON i.function_id = f.id
           AND f.isDeleted = 0
           AND f.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id AND ie.isDeleted = 0 AND ie.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
           AND i.deletedAt IS NULL
           {date_filter}
           {function_filter}
+        ORDER BY i.createdAt DESC
         """
         return await self.execute_query(query)
 
@@ -1505,18 +1917,50 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
+        SELECT
             i.code,
+            ISNULL(i.importance, '') AS importance,
+            ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
+            ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
+            ISNULL(i.timeFrame, '') AS timeFrame,
+            ISNULL(u.name, '') AS owner,
+            ISNULL(f.name, 'Unknown') AS function_name,
+            ISNULL(c.name, '') AS categoryName,
+            sc.name AS subCategoryName,
             i.title AS name,
-            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+            ISNULL(i.rootCause, '') AS rootCause,
+            ISNULL(rc.name, '') AS causeName,
+            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+            ISNULL(kr.kriName, '') AS kriName,
+            ISNULL(dt.name, '') AS discoveredType,
+            ISNULL(i.total_loss, 0) AS totalLoss,
             i.net_loss,
             i.recovery_amount,
-            ISNULL(f.name, 'Unknown') AS function_name
+            ISNULL(fi.name, '') AS financialImpactName,
+            ISNULL(cu.name, '') AS currencyName,
+            ISNULL(i.exchange_rate, 0) AS exchangeRate,
+            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+            ISNULL(i.status, '') AS recoveryStatus,
+            ISNULL(ie.name, '') AS eventType,
+            ISNULL(i.preparerStatus, '') AS preparerStatus,
+            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+            ISNULL(i.checkerStatus, '') AS checkerStatus,
+            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
         INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
             AND sc.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id AND ie.isDeleted = 0 AND ie.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
@@ -1547,18 +1991,50 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
+        SELECT
             i.code,
+            ISNULL(i.importance, '') AS importance,
+            ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
+            ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
+            ISNULL(i.timeFrame, '') AS timeFrame,
+            ISNULL(u.name, '') AS owner,
+            ISNULL(f.name, 'Unknown') AS function_name,
+            ISNULL(c.name, '') AS categoryName,
+            ISNULL(sc.name, '') AS subCategoryName,
             i.title AS name,
-            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+            ISNULL(i.rootCause, '') AS rootCause,
+            ISNULL(rc.name, '') AS causeName,
+            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+            ISNULL(kr.kriName, '') AS kriName,
+            ISNULL(dt.name, '') AS discoveredType,
+            ISNULL(i.total_loss, 0) AS totalLoss,
             i.net_loss,
             i.recovery_amount,
-            ISNULL(f.name, 'Unknown') AS function_name
+            ISNULL(fi.name, '') AS financialImpactName,
+            ISNULL(cu.name, '') AS currencyName,
+            ISNULL(i.exchange_rate, 0) AS exchangeRate,
+            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+            ISNULL(i.status, '') AS recoveryStatus,
+            ie.name AS eventType,
+            ISNULL(i.preparerStatus, '') AS preparerStatus,
+            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+            ISNULL(i.checkerStatus, '') AS checkerStatus,
+            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
         INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
             AND ie.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
@@ -1589,18 +2065,50 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
+        SELECT
             i.code,
+            ISNULL(i.importance, '') AS importance,
+            ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
+            ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
+            ISNULL(i.timeFrame, '') AS timeFrame,
+            ISNULL(u.name, '') AS owner,
+            ISNULL(f.name, 'Unknown') AS function_name,
+            ISNULL(c.name, '') AS categoryName,
+            ISNULL(sc.name, '') AS subCategoryName,
             i.title AS name,
-            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+            ISNULL(i.rootCause, '') AS rootCause,
+            ISNULL(rc.name, '') AS causeName,
+            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+            ISNULL(kr.kriName, '') AS kriName,
+            ISNULL(dt.name, '') AS discoveredType,
+            ISNULL(i.total_loss, 0) AS totalLoss,
             i.net_loss,
             i.recovery_amount,
-            ISNULL(f.name, 'Unknown') AS function_name
+            ISNULL(fi.name, '') AS financialImpactName,
+            ISNULL(cu.name, '') AS currencyName,
+            ISNULL(i.exchange_rate, 0) AS exchangeRate,
+            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+            ISNULL(i.status, '') AS recoveryStatus,
+            ie.name AS eventType,
+            ISNULL(i.preparerStatus, '') AS preparerStatus,
+            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+            ISNULL(i.checkerStatus, '') AS checkerStatus,
+            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
         INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
             AND ie.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
@@ -1631,18 +2139,50 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
+        SELECT
             i.code,
+            ISNULL(i.importance, '') AS importance,
+            ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
+            ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
+            ISNULL(i.timeFrame, '') AS timeFrame,
+            ISNULL(u.name, '') AS owner,
+            ISNULL(f.name, 'Unknown') AS function_name,
+            ISNULL(c.name, '') AS categoryName,
+            ISNULL(sc.name, '') AS subCategoryName,
             i.title AS name,
-            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+            ISNULL(i.rootCause, '') AS rootCause,
+            ISNULL(rc.name, '') AS causeName,
+            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+            ISNULL(kr.kriName, '') AS kriName,
+            ISNULL(dt.name, '') AS discoveredType,
+            ISNULL(i.total_loss, 0) AS totalLoss,
             i.net_loss,
             i.recovery_amount,
-            ISNULL(f.name, 'Unknown') AS function_name
+            ISNULL(fi.name, '') AS financialImpactName,
+            ISNULL(cu.name, '') AS currencyName,
+            ISNULL(i.exchange_rate, 0) AS exchangeRate,
+            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+            ISNULL(i.status, '') AS recoveryStatus,
+            ie.name AS eventType,
+            ISNULL(i.preparerStatus, '') AS preparerStatus,
+            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+            ISNULL(i.checkerStatus, '') AS checkerStatus,
+            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
         INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
             AND ie.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
@@ -1673,18 +2213,50 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
+        SELECT
             i.code,
+            ISNULL(i.importance, '') AS importance,
+            ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
+            ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
+            ISNULL(i.timeFrame, '') AS timeFrame,
+            ISNULL(u.name, '') AS owner,
+            ISNULL(f.name, 'Unknown') AS function_name,
+            ISNULL(c.name, '') AS categoryName,
+            sc.name AS subCategoryName,
             i.title AS name,
-            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
+            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+            ISNULL(i.rootCause, '') AS rootCause,
+            ISNULL(rc.name, '') AS causeName,
+            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+            ISNULL(kr.kriName, '') AS kriName,
+            ISNULL(dt.name, '') AS discoveredType,
+            ISNULL(i.total_loss, 0) AS totalLoss,
             i.net_loss,
             i.recovery_amount,
-            ISNULL(f.name, 'Unknown') AS function_name
+            ISNULL(fi.name, '') AS financialImpactName,
+            ISNULL(cu.name, '') AS currencyName,
+            ISNULL(i.exchange_rate, 0) AS exchangeRate,
+            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+            ISNULL(i.status, '') AS recoveryStatus,
+            ISNULL(ie.name, '') AS eventType,
+            ISNULL(i.preparerStatus, '') AS preparerStatus,
+            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+            ISNULL(i.checkerStatus, '') AS checkerStatus,
+            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
         INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
             AND sc.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id AND ie.isDeleted = 0 AND ie.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
@@ -1715,15 +2287,50 @@ class IncidentService:
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
+        SELECT
             i.code,
+            ISNULL(i.importance, '') AS importance,
+            ISNULL(i.timeFrame, '') AS timeFrame,
+            ISNULL(u.name, '') AS owner,
+            ISNULL(f.name, 'Unknown') AS function_name,
+            ISNULL(c.name, '') AS categoryName,
+            ISNULL(sc.name, '') AS subCategoryName,
             i.title AS name,
+            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
+            ISNULL(i.rootCause, '') AS rootCause,
+            ISNULL(rc.name, '') AS causeName,
+            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
+            ISNULL(kr.kriName, '') AS kriName,
+            ISNULL(dt.name, '') AS discoveredType,
+            ISNULL(i.total_loss, 0) AS totalLoss,
+            ISNULL(i.recovery_amount, 0) AS recoveryAmount,
+            ISNULL(i.net_loss, 0) AS netLoss,
+            ISNULL(fi.name, '') AS financialImpactName,
+            ISNULL(cu.name, '') AS currencyName,
+            ISNULL(i.exchange_rate, 0) AS exchangeRate,
+            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
+            ISNULL(i.status, '') AS recoveryStatus,
+            ISNULL(ie.name, '') AS eventType,
+            ISNULL(i.preparerStatus, '') AS preparerStatus,
+            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
+            ISNULL(i.checkerStatus, '') AS checkerStatus,
+            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
             FORMAT(i.occurrence_date, 'yyyy-MM-dd') as occurrence_date,
             FORMAT(i.reported_date, 'yyyy-MM-dd') as reported_date,
             DATEDIFF(DAY, i.occurrence_date, i.reported_date) AS recognition_days,
             CAST(DATEDIFF(DAY, i.occurrence_date, i.reported_date) AS FLOAT) / 30.44 AS recognition_months
         FROM Incidents i
-        WHERE i.isDeleted = 0 
+        LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
+        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
+        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
+        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id AND ie.isDeleted = 0 AND ie.deletedAt IS NULL
+        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
+        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
+        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
+        WHERE i.isDeleted = 0
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
