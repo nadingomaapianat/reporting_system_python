@@ -1053,7 +1053,7 @@ class IncidentService:
             {
                 **r,
                 "incident_name": r.get("incident_name") or "Unknown",
-                "time_frame": r.get("time_frame") or "",
+                "time_frame": r.get("time_frame") if r.get("time_frame") is not None else "",
                 "function_name": r.get("function_name") or "Unknown",
             }
             for r in rows

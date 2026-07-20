@@ -41,7 +41,7 @@ router = APIRouter()
 # Display names for controls cards, charts, and tables (used for PDF/Excel title and filenames)
 CONTROLS_DISPLAY_NAMES = {
     "totalControls": "Total Controls",
-    "unmappedControls": "Unmapped Controls",
+    "unmappedControls": "Unmapped Controls to COSO",
     "testsPendingPreparer": "Control Tests Pending Preparer",
     "testsPendingChecker": "Control Tests Pending Checker",
     "testsPendingReviewer": "Control Tests Pending Reviewer",
