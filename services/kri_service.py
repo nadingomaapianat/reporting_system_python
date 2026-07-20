@@ -1074,6 +1074,15 @@ class KriService:
           k.medium_from AS medium_from,
           k.high_from AS high_from,
           CASE
+            -- Actionplans.year/month are 0 (not NULL) as a sentinel on many rows,
+            -- and DATEFROMPARTS errors on an out-of-range month/year, so check ranges
+            -- explicitly rather than just IS NOT NULL.
+            WHEN ap.[month] BETWEEN 1 AND 12 AND ap.[year] BETWEEN 1 AND 9999
+            THEN DATENAME(MONTH, DATEFROMPARTS(ap.[year], ap.[month], 1))
+            ELSE ''
+          END AS month,
+          CASE WHEN ap.[year] BETWEEN 1 AND 9999 THEN CAST(ap.[year] AS VARCHAR(10)) ELSE '' END AS year,
+          CASE
             WHEN kv.value IS NULL THEN ''
             ELSE
               -- Route the float through DECIMAL before stringifying: casting a float
@@ -1085,16 +1094,7 @@ class KriService:
                 ELSE CAST(CAST(kv.value AS DECIMAL(38, 4)) AS VARCHAR(50))
               END
               + CASE WHEN k.typePercentageOrFigure = '%' THEN '%' ELSE '' END
-          END AS monthly_figure,
-          CASE
-            -- Actionplans.year/month are 0 (not NULL) as a sentinel on many rows,
-            -- and DATEFROMPARTS errors on an out-of-range month/year, so check ranges
-            -- explicitly rather than just IS NOT NULL.
-            WHEN ap.[month] BETWEEN 1 AND 12 AND ap.[year] BETWEEN 1 AND 9999
-            THEN DATENAME(MONTH, DATEFROMPARTS(ap.[year], ap.[month], 1))
-            ELSE ''
-          END AS month,
-          CASE WHEN ap.[year] BETWEEN 1 AND 9999 THEN CAST(ap.[year] AS VARCHAR(10)) ELSE '' END AS year,
+          END AS value,
           ISNULL(ap.control_procedure, '') AS action_plan,
           FORMAT(CONVERT(datetime, ap.implementation_date), 'yyyy-MM-dd') AS target_date,
           CASE
