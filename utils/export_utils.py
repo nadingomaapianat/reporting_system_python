@@ -224,12 +224,16 @@ INCIDENT_COLUMNS_UI = [
     ('description', 'Description'),
     ('rootCause', 'Root Cause'),
     ('causeName', 'Cause'),
+    ('rcm', 'RCM'),
+    ('kriName', 'KRI'),
+    ('discoveredType', 'Discovered Type'),
     ('totalLoss', 'Total Loss'),
     ('recoveryAmount', 'Recoveries Amount'),
     ('netLoss', 'Net Loss'),
     ('financialImpactName', 'Financial Impact'),
     ('currencyName', 'Currency'),
     ('exchangeRate', 'Exchange Rate'),
+    ('financialEquivalent', 'Financial Equivalent (LYC)'),
     ('recoveryStatus', 'Recovery Status'),
     ('eventType', 'Event Type'),
     ('preparerStatus', 'Incident Status'),
@@ -252,8 +256,67 @@ INCIDENT_ACTION_PLAN_COLUMNS = [
     ('expected_implementation_date', 'Expected Implementation Date'),
 ]
 
+# Excel only: full field set for Incident Action Plan / Overdue Incidents (matches the on-screen full column set).
+# PDF intentionally keeps using INCIDENT_ACTION_PLAN_COLUMNS (compact) above — do not use this list for PDF.
+INCIDENT_ACTION_PLAN_COLUMNS_FULL = [
+    ('code', 'Code'),
+    ('importance', 'Importance'),
+    ('reportedDate', 'Reported Date'),
+    ('occurrenceDate', 'Occurrence Date'),
+    ('timeFrame', 'Time Frame'),
+    ('owner', 'Incident Owner'),
+    ('incident_name', 'Incident Name'),
+    ('incident_department', 'Incident Department'),
+    ('categoryName', 'Category'),
+    ('subCategoryName', 'Sub Category'),
+    ('root_cause', 'Root Cause'),
+    ('causeName', 'Cause'),
+    ('rcm', 'RCM'),
+    ('kriName', 'KRI'),
+    ('discoveredType', 'Discovered Type'),
+    ('totalLoss', 'Total Loss'),
+    ('recoveryAmount', 'Recoveries Amount'),
+    ('netLoss', 'Net Loss'),
+    ('financialImpactName', 'Financial Impact'),
+    ('currencyName', 'Currency'),
+    ('exchangeRate', 'Exchange Rate'),
+    ('financialEquivalent', 'Financial Equivalent (LYC)'),
+    ('recoveryStatus', 'Recovery Status'),
+    ('eventType', 'Event Type'),
+    ('preparerStatus', 'Preparer Status'),
+    ('reviewerStatus', 'Review'),
+    ('checkerStatus', 'First Approval'),
+    ('acceptanceStatus', 'Second Approval'),
+    ('incident_createdAt', 'Incident Created At'),
+    ('description', 'Description'),
+    ('action_taken', 'Action Taken'),
+    ('action_owner', 'Action Owner'),
+    ('status', 'Status'),
+    ('expected_implementation_date', 'Expected Implementation Date'),
+]
+
+
+def get_incident_action_plan_ordered_keys_full() -> list:
+    """Full column order for Incident Action Plan / Overdue Incidents Excel export (matches on-screen table)."""
+    return [k for k, _ in INCIDENT_ACTION_PLAN_COLUMNS_FULL]
+
+
+def get_incident_action_plan_label_full(key: str) -> str:
+    """UI label for a full Incident Action Plan column key."""
+    for k, label in INCIDENT_ACTION_PLAN_COLUMNS_FULL:
+        if k == key:
+            return label
+    import re
+    return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(key)).title()
+
+
 # Overdue Incidents: same columns as Incident Action Plan (rows filtered server-side)
-OVERDUE_INCIDENTS_COLUMNS = list(INCIDENT_ACTION_PLAN_COLUMNS)
+OVERDUE_INCIDENTS_COLUMNS = [
+    ('code', 'Code'),
+    ('incident_name', 'Incident Name'),
+    ('incident_department', 'Incident Department'),
+    ('root_cause', 'Root Cause'),
+]
 
 
 def get_overdue_incidents_ordered_keys() -> list:
@@ -346,6 +409,152 @@ def get_incident_ordered_keys_full_ui() -> list:
     return [k for k, _ in INCIDENT_COLUMNS_UI if k != 'functionName']
 
 
+# Excel only: each Incidents table has its own on-screen column order (built independently per table),
+# so a single shared list can't match all of them. One dedicated ordered list per table, mirroring
+# IncidentsDashboard.tsx's tableColumns exactly (key, label). PDF is unaffected (keeps its own compact lists).
+INCIDENT_TABLE_COLUMN_ORDERS = {
+    'overallStatuses': [
+        ('code', 'Code'), ('occurrenceDate', 'Occurrence Date'), ('reportedDate', 'Reported Date'),
+        ('title', 'Title'), ('function_name', 'Function'), ('importance', 'Importance'),
+        ('timeFrame', 'Time Frame'), ('owner', 'Owner'), ('categoryName', 'Category'),
+        ('subCategoryName', 'Sub Category'), ('description', 'Description'), ('rootCause', 'Root Cause'),
+        ('causeName', 'Cause'), ('rcm', 'RCM'), ('kriName', 'KRI'), ('discoveredType', 'Discovered Type'),
+        ('totalLoss', 'Total Loss'), ('financialImpactName', 'Financial Impact'), ('currencyName', 'Currency'),
+        ('exchangeRate', 'Exchange Rate'), ('financialEquivalent', 'Financial Equivalent (LYC)'),
+        ('recoveryStatus', 'Recovery Status'), ('eventType', 'Event Type'),
+        ('recoveryAmount', 'Recoveries Amount'), ('netLoss', 'Net Loss'), ('preparerStatus', 'Preparer Status'),
+        ('reviewerStatus', 'Review'), ('checkerStatus', 'First Approval'), ('acceptanceStatus', 'Second Approval'),
+        ('status', 'Status'), ('createdAt', 'Created At'),
+    ],
+    'incidentsFinancialDetails': [
+        ('code', 'Code'), ('occurrenceDate', 'Occurrence Date'), ('reportedDate', 'Reported Date'),
+        ('title', 'Title'), ('function_name', 'Function'), ('importance', 'Importance'),
+        ('timeFrame', 'Time Frame'), ('owner', 'Owner'), ('categoryName', 'Category'),
+        ('subCategoryName', 'Sub Category'), ('description', 'Description'), ('rootCause', 'Root Cause'),
+        ('causeName', 'Cause'), ('rcm', 'RCM'), ('kriName', 'KRI'), ('discoveredType', 'Discovered Type'),
+        ('netLoss', 'Net Loss'), ('totalLoss', 'Total Loss'), ('recoveryAmount', 'Recovery Amount'),
+        ('grossAmount', 'Gross Amount'), ('financialImpactName', 'Financial Impact'), ('currencyName', 'Currency'),
+        ('exchangeRate', 'Exchange Rate'), ('financialEquivalent', 'Financial Equivalent (LYC)'),
+        ('eventType', 'Event Type'), ('preparerStatus', 'Preparer Status'), ('reviewerStatus', 'Review'),
+        ('checkerStatus', 'First Approval'), ('acceptanceStatus', 'Second Approval'), ('status', 'Status'),
+        ('createdAt', 'Created At'),
+    ],
+    'incidentsWithTimeframe': [
+        ('code', 'Code'), ('importance', 'Importance'), ('reportedDate', 'Reported Date'),
+        ('occurrenceDate', 'Occurrence Date'), ('owner', 'Owner'), ('incident_name', 'Incident Name'),
+        ('function_name', 'Function'), ('categoryName', 'Category'), ('subCategoryName', 'Sub Category'),
+        ('description', 'Description'), ('rootCause', 'Root Cause'), ('causeName', 'Cause'), ('rcm', 'RCM'),
+        ('kriName', 'KRI'), ('discoveredType', 'Discovered Type'), ('totalLoss', 'Total Loss'),
+        ('recoveryAmount', 'Recoveries Amount'), ('netLoss', 'Net Loss'),
+        ('financialImpactName', 'Financial Impact'), ('currencyName', 'Currency'),
+        ('exchangeRate', 'Exchange Rate'), ('financialEquivalent', 'Financial Equivalent (LYC)'),
+        ('recoveryStatus', 'Recovery Status'), ('eventType', 'Event Type'), ('preparerStatus', 'Preparer Status'),
+        ('reviewerStatus', 'Review'), ('checkerStatus', 'First Approval'), ('acceptanceStatus', 'Second Approval'),
+        ('time_frame', 'Time Frame (days)'), ('createdAt', 'Created At'),
+    ],
+    'incidentsWithFinancialAndFunction': [
+        ('code', 'Code'), ('occurrenceDate', 'Occurrence Date'), ('reportedDate', 'Reported Date'),
+        ('title', 'Title'), ('function_name', 'Function'), ('financial_impact_name', 'Financial Impact'),
+        ('importance', 'Importance'), ('timeFrame', 'Time Frame'), ('owner', 'Owner'),
+        ('categoryName', 'Category'), ('subCategoryName', 'Sub Category'), ('description', 'Description'),
+        ('rootCause', 'Root Cause'), ('causeName', 'Cause'), ('rcm', 'RCM'), ('kriName', 'KRI'),
+        ('discoveredType', 'Discovered Type'), ('totalLoss', 'Total Loss'), ('currencyName', 'Currency'),
+        ('exchangeRate', 'Exchange Rate'), ('financialEquivalent', 'Financial Equivalent (LYC)'),
+        ('recoveryStatus', 'Recovery Status'), ('eventType', 'Event Type'),
+        ('recoveryAmount', 'Recoveries Amount'), ('netLoss', 'Net Loss'), ('preparerStatus', 'Preparer Status'),
+        ('reviewerStatus', 'Review'), ('checkerStatus', 'First Approval'), ('acceptanceStatus', 'Second Approval'),
+        ('createdAt', 'Created At'),
+    ],
+    'lossByRiskCategory': [
+        ('riskCategory', 'Risk Category'), ('incidentCount', 'Incident Count'),
+        ('totalLoss', 'Total Loss'), ('averageLoss', 'Average Loss'),
+    ],
+    'comprehensiveOperationalLoss': [
+        ('metric', 'Metric'), ('count', 'Count'), ('totalValue', 'Total Value'),
+    ],
+    'netLossAndRecovery': [
+        ('code', 'Code'), ('occurrenceDate', 'Occurrence Date'), ('reportedDate', 'Reported Date'),
+        ('incident_title', 'Incident'), ('function_name', 'Function'), ('importance', 'Importance'),
+        ('timeFrame', 'Time Frame'), ('owner', 'Owner'), ('categoryName', 'Category'),
+        ('subCategoryName', 'Sub Category'), ('description', 'Description'), ('rootCause', 'Root Cause'),
+        ('causeName', 'Cause'), ('rcm', 'RCM'), ('kriName', 'KRI'), ('discoveredType', 'Discovered Type'),
+        ('totalLoss', 'Total Loss'), ('financialImpactName', 'Financial Impact'), ('currencyName', 'Currency'),
+        ('exchangeRate', 'Exchange Rate'), ('financialEquivalent', 'Financial Equivalent (LYC)'),
+        ('recoveryStatus', 'Recovery Status'), ('eventType', 'Event Type'), ('net_loss', 'Net Loss'),
+        ('recovery_amount', 'Recovery Amount'), ('preparerStatus', 'Preparer Status'), ('reviewerStatus', 'Review'),
+        ('checkerStatus', 'First Approval'), ('acceptanceStatus', 'Second Approval'), ('createdAt', 'Created At'),
+    ],
+}
+
+
+def get_incident_table_ordered_keys(card_type: str) -> list:
+    """Ordered column keys for a specific Incidents table (Excel). Falls back to the generic full-UI order if unknown."""
+    order = INCIDENT_TABLE_COLUMN_ORDERS.get(card_type)
+    if order is not None:
+        return [k for k, _ in order]
+    return get_incident_ordered_keys_full_ui()
+
+
+def get_incident_table_label(card_type: str, key: str) -> str:
+    """UI label for a column key within a specific Incidents table (Excel)."""
+    order = INCIDENT_TABLE_COLUMN_ORDERS.get(card_type)
+    if order is not None:
+        for k, label in order:
+            if k == key:
+                return label
+    return get_incident_label(key)
+
+
+# PDF only: compact, explicit per-table column set for the Incidents dashboard tables (fewer columns than Excel by design).
+INCIDENT_TABLE_COLUMN_ORDERS_PDF = {
+    'overallStatuses': [
+        ('code', 'Code'), ('title', 'Title'), ('function_name', 'Function'), ('status', 'Status'),
+    ],
+    'incidentsFinancialDetails': [
+        ('title', 'Title'), ('rootCause', 'Root Cause'), ('function_name', 'Function'),
+        ('netLoss', 'Net Loss'), ('totalLoss', 'Total Loss'), ('recoveryAmount', 'Recovery Amount'),
+        ('grossAmount', 'Gross Amount'), ('status', 'Status'),
+    ],
+    'incidentsWithTimeframe': [
+        ('incident_name', 'Incident Name'), ('function_name', 'Function'), ('time_frame', 'Time Frame (days)'),
+    ],
+    'incidentsWithFinancialAndFunction': [
+        ('title', 'Title'), ('financial_impact_name', 'Financial Impact'), ('function_name', 'Function'),
+    ],
+    'lossByRiskCategory': [
+        ('riskCategory', 'Risk Category'), ('incidentCount', 'Incident Count'),
+        ('totalLoss', 'Total Loss'), ('averageLoss', 'Average Loss'),
+    ],
+    'comprehensiveOperationalLoss': [
+        ('metric', 'Metric'), ('count', 'Count'), ('totalValue', 'Total Value'),
+    ],
+    'netLossAndRecovery': [
+        ('incident_title', 'Incident'), ('function_name', 'Function'),
+        ('net_loss', 'Net Loss'), ('recovery_amount', 'Recovery Amount'),
+    ],
+}
+
+
+def get_incident_table_ordered_keys_pdf(card_type: str, first_row: dict = None) -> list:
+    """Ordered column keys for a specific Incidents table (PDF, compact). None if card_type has no dedicated PDF layout."""
+    order = INCIDENT_TABLE_COLUMN_ORDERS_PDF.get(card_type)
+    if order is None:
+        return None
+    if first_row is None:
+        return [k for k, _ in order]
+    return [k for k, _ in order if k in first_row]
+
+
+def get_incident_table_label_pdf(card_type: str, key: str) -> str:
+    """UI label for a column key within a specific Incidents table (PDF)."""
+    order = INCIDENT_TABLE_COLUMN_ORDERS_PDF.get(card_type)
+    if order is not None:
+        for k, label in order:
+            if k == key:
+                return label
+    return get_incident_label(key)
+
+
 def get_incident_label(key: str) -> str:
     """Return UI label for an incident column key."""
     for k, label in INCIDENT_COLUMNS_UI:
@@ -377,7 +586,16 @@ __all__ = [
     'DATETIME_KEYS',
     'INCIDENT_COLUMNS_UI',
     'INCIDENT_COLUMNS_PDF',
+    'INCIDENT_TABLE_COLUMN_ORDERS',
+    'get_incident_table_ordered_keys',
+    'get_incident_table_label',
+    'INCIDENT_TABLE_COLUMN_ORDERS_PDF',
+    'get_incident_table_ordered_keys_pdf',
+    'get_incident_table_label_pdf',
     'INCIDENT_ACTION_PLAN_COLUMNS',
+    'INCIDENT_ACTION_PLAN_COLUMNS_FULL',
+    'get_incident_action_plan_ordered_keys_full',
+    'get_incident_action_plan_label_full',
     'get_incident_ordered_keys',
     'get_incident_ordered_keys_pdf',
     'get_incident_ordered_keys_full_ui',

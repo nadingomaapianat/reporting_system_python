@@ -589,7 +589,7 @@ class RiskService:
             ({inherent_case}) AS inherent_value,
             ({residual_case}) AS residual_value,
             (({inherent_case}) - ({residual_case})) AS reduction,
-            rr.createdAt AS created_at
+            FORMAT(CONVERT(datetime, rr.createdAt), 'yyyy-MM-dd HH:mm:ss') AS created_at
         FROM {risks_t} r
         INNER JOIN {residual_t} rr ON r.id = rr.riskId AND rr.isDeleted = 0
         WHERE r.isDeleted = 0

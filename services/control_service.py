@@ -303,10 +303,9 @@ class ControlService:
         write_debug(f"[get_total_controls] function_filter: {function_filter}")
 
         query = f"""
-        SELECT 
-            c.name, 
-            c.code, 
-            CASE WHEN c.createdAt IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(c.createdAt AS DATETIME), 105) ELSE NULL END AS createdAt,
+        SELECT
+            c.code AS control_code,
+            c.name AS control_name,
             ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS function_name
         FROM {self.get_fully_qualified_table_name('Controls')} c
         WHERE c.isDeleted = 0 AND c.deletedAt IS NULL {date_filter}
@@ -404,10 +403,9 @@ class ControlService:
             return []
 
         query = f"""
-        SELECT 
+        SELECT
             c.code as control_code,
             c.name as control_name,
-            c.{status_field} as status,
             ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS function_name
         FROM {self.get_fully_qualified_table_name('Controls')} c
         WHERE c.isDeleted = 0 AND c.deletedAt IS NULL {date_filter}
@@ -436,13 +434,16 @@ class ControlService:
         function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT c.id, c.name as control_name, c.code as control_code, a.name as assertion_name, a.account_type as assertion_type,
+        SELECT c.id,
+          c.code as control_code,
+          c.name as control_name,
+          ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS function_name,
+          a.name as assertion_name, a.account_type as assertion_type,
           'Not Mapped' as coso_component,
-          'Not Mapped' as coso_point,
-          ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS function_name
-        FROM {self.get_fully_qualified_table_name('Controls')} c 
-        JOIN {self.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id 
-        WHERE c.isDeleted = 0 AND c.icof_id IS NOT NULL 
+          'Not Mapped' as coso_point
+        FROM {self.get_fully_qualified_table_name('Controls')} c
+        JOIN {self.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id
+        WHERE c.isDeleted = 0 AND c.icof_id IS NOT NULL
         AND NOT EXISTS (SELECT 1 FROM {self.get_fully_qualified_table_name('ControlCosos')} ccx WHERE ccx.control_id = c.id AND ccx.deletedAt IS NULL) 
         AND ((a.C = 1 OR a.E = 1 OR a.A = 1 OR a.V = 1 OR a.O = 1 OR a.P = 1) 
              AND a.account_type IN ('Balance Sheet', 'Income Statement')) 
@@ -501,32 +502,23 @@ class ControlService:
         # above the RCM total (a pending subset must never exceed the RCM count).
         latest_where_clause = where_clause.replace("t.", "latest.")
         query = f"""
-        SELECT latest.id, latest.code, latest.control_name, latest.status, latest.function_name
-        FROM (
-            SELECT
-                t.id,
-                c.code,
-                c.name as control_name,
-                t.{status_column} as status,
-                f.name as function_name,
-                t.preparerStatus, t.checkerStatus, t.reviewerStatus, t.acceptanceStatus,
-                t.createdAt,
-                ROW_NUMBER() OVER (
-                    PARTITION BY t.control_id, t.function_id, t.risk_id, t.year, t.quarter
-                    ORDER BY t.createdAt DESC
-                ) AS rn
-            FROM {self.get_fully_qualified_table_name('ControlDesignTests')} t
-            INNER JOIN {self.get_fully_qualified_table_name('Controls')} c ON c.id = t.control_id
-            INNER JOIN {self.get_fully_qualified_table_name('Functions')} f ON t.function_id = f.id
-            WHERE t.function_id IS NOT NULL
-              AND c.isDeleted = 0
-              AND c.deletedAt IS NULL
-              AND t.deletedAt IS NULL
-            {date_filter}
-            {function_filter}
-        ) latest
-        WHERE latest.rn = 1 AND {latest_where_clause}
-        ORDER BY latest.createdAt DESC, latest.control_name
+        SELECT
+            t.id,
+            c.code as control_code,
+            c.name as control_name,
+            f.name as function_name,
+            t.{status_column} as {status_column}
+        FROM {self.get_fully_qualified_table_name('ControlDesignTests')} t
+        INNER JOIN {self.get_fully_qualified_table_name('Controls')} c ON c.id = t.control_id
+        INNER JOIN {self.get_fully_qualified_table_name('Functions')} f ON t.function_id = f.id
+        WHERE {where_clause}
+          AND t.function_id IS NOT NULL 
+          AND c.isDeleted = 0
+          AND c.deletedAt IS NULL
+          AND t.deletedAt IS NULL
+        {date_filter}
+        {function_filter}
+        ORDER BY t.createdAt DESC, c.name
         """
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
@@ -583,13 +575,16 @@ class ControlService:
         function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT c.id, c.name as control_name, c.code as control_code, a.name as assertion_name, a.account_type as assertion_type,
+        SELECT c.id,
+          c.code as control_code,
+          c.name as control_name,
+          ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS function_name,
+          a.name as assertion_name, a.account_type as assertion_type,
           'Not Mapped' as coso_component,
-          'Not Mapped' as coso_point,
-          ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS function_name
-        FROM {self.get_fully_qualified_table_name('Controls')} c 
-        LEFT JOIN {self.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id 
-        WHERE c.isDeleted = 0 
+          'Not Mapped' as coso_point
+        FROM {self.get_fully_qualified_table_name('Controls')} c
+        LEFT JOIN {self.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id
+        WHERE c.isDeleted = 0
         AND NOT EXISTS (SELECT 1 FROM {self.get_fully_qualified_table_name('ControlCosos')} ccx WHERE ccx.control_id = c.id AND ccx.deletedAt IS NULL) 
         AND (c.icof_id IS NULL OR ((a.C IS NULL OR a.C = 0) AND (a.E IS NULL OR a.E = 0) AND (a.A IS NULL OR a.A = 0) 
              AND (a.V IS NULL OR a.V = 0) AND (a.O IS NULL OR a.O = 0) AND (a.P IS NULL OR a.P = 0) 
@@ -1153,13 +1148,14 @@ class ControlService:
         function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT 
-            c.code as code,
-            c.name as name,
-            c.preparerStatus,
-            c.checkerStatus,
-            c.reviewerStatus,
-            c.acceptanceStatus
+        SELECT
+            c.code AS [Code],
+            c.name AS [Control Name],
+            ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS [Business Unit],
+            c.preparerStatus AS [Preparer Status],
+            c.checkerStatus AS [Checker Status],
+            c.reviewerStatus AS [Reviewer Status],
+            c.acceptanceStatus AS [Acceptance Status]
         FROM {self.get_fully_qualified_table_name('Controls')} c
         WHERE c.isDeleted = 0
         {date_filter}
@@ -1220,23 +1216,22 @@ class ControlService:
         )
         
         query = f"""
-        SELECT 
-            c.name AS [Control Name],
-            FORMAT(c.createdAt, 'yyyy-MM-dd HH:mm:ss') AS [Created At],
+        SELECT
             c.code AS [Code],
-            t.preparerStatus AS [Preparer Status],
-            t.checkerStatus AS [Checker Status],
-            t.reviewerStatus AS [Reviewer Status],
-            t.acceptanceStatus AS [Acceptance Status],
+            c.name AS [Control Name],
             f.name AS [Business Unit],
-            CASE 
+            CASE
               WHEN ISNULL(t.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
               WHEN ISNULL(t.preparerStatus, '') = 'sent' AND ISNULL(t.checkerStatus, '') <> 'approved' AND ISNULL(t.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
               WHEN ISNULL(t.checkerStatus, '') = 'approved' AND ISNULL(t.reviewerStatus, '') <> 'sent' AND ISNULL(t.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
               WHEN ISNULL(t.reviewerStatus, '') = 'sent' AND ISNULL(t.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
               WHEN ISNULL(t.acceptanceStatus, '') = 'approved' THEN 'Approved'
               ELSE 'Other'
-            END AS [Current Status]
+            END AS [Current Status],
+            t.preparerStatus AS [Preparer Status],
+            t.checkerStatus AS [Checker Status],
+            t.reviewerStatus AS [Reviewer Status],
+            t.acceptanceStatus AS [Acceptance Status]
         FROM {self.get_fully_qualified_table_name('ControlDesignTests')} AS t
         INNER JOIN {self.get_fully_qualified_table_name('Controls')} AS c ON t.control_id = c.id
         INNER JOIN {self.get_fully_qualified_table_name('Functions')} AS f ON t.function_id = f.id
@@ -1340,18 +1335,18 @@ class ControlService:
         function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT 
+        SELECT
             f.name AS [Business Unit],
-            SUM(CASE WHEN c.keyControl = 1 THEN 1 ELSE 0 END) AS [Key Controls],
-            SUM(CASE WHEN c.keyControl = 0 THEN 1 ELSE 0 END) AS [Non-Key Controls],
-            COUNT(c.id) AS [Total Controls]
+            COUNT(DISTINCT CASE WHEN c.keyControl = 1 THEN c.id END) AS [Key Controls],
+            COUNT(DISTINCT CASE WHEN c.keyControl = 0 THEN c.id END) AS [Non-Key Controls],
+            COUNT(DISTINCT c.id) AS [Total Controls]
         FROM {self.get_fully_qualified_table_name('ControlFunctions')} cf
         JOIN {self.get_fully_qualified_table_name('Functions')} f ON cf.function_id = f.id
         JOIN {self.get_fully_qualified_table_name('Controls')} c ON cf.control_id = c.id
-        WHERE c.isDeleted = 0 {date_filter}
+        WHERE c.isDeleted = 0 AND c.deletedAt IS NULL AND cf.deletedAt IS NULL {date_filter}
         {function_filter}
         GROUP BY f.name
-        ORDER BY COUNT(c.id) DESC, f.name
+        ORDER BY COUNT(DISTINCT c.id) DESC, f.name
         """
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
@@ -1373,8 +1368,8 @@ class ControlService:
         function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT 
-            COALESCE(a.name, 'Unassigned Assertion') AS [Assertion Name],
+        SELECT
+            COALESCE(a.name, 'Unassigned Assertion') AS [Account],
             COALESCE(a.account_type, 'Not Specified') AS [Type],
             COUNT(c.id) AS [Control Count]
         FROM {self.get_fully_qualified_table_name('Controls')} c
@@ -1417,7 +1412,7 @@ class ControlService:
                 OR a.account_type NOT IN ('Balance Sheet', 'Income Statement')
               THEN 'Non-ICOFR'
               ELSE 'Other'
-            END AS [IcofrStatus], 
+            END AS [ICOFR Status],
             COUNT(DISTINCT c.id) AS [Control Count]
         FROM {self.get_fully_qualified_table_name('Controls')} c
         LEFT JOIN {self.get_fully_qualified_table_name('Assertions')} a ON c.icof_id = a.id AND (a.isDeleted = 0 OR a.id IS NULL)
@@ -1440,7 +1435,7 @@ class ControlService:
               THEN 'Non-ICOFR'
               ELSE 'Other'
             END
-        ORDER BY comp.name, [IcofrStatus]
+        ORDER BY comp.name, [ICOFR Status]
         """
         write_debug(f"SQL Query: {q}")
         res = await self.execute_query(q)
@@ -1458,23 +1453,27 @@ class ControlService:
     ) -> List[Dict[str, Any]]:
         """Controls not mapped to any Principles (match Node SQL)."""
         date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        if start_date:
+            date_filter += f" AND c.createdAt >= '{start_date}'"
+        if end_date:
+            date_filter += f" AND c.createdAt <= '{end_date} 23:59:59'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
-            c.name AS [Control Name], 
-            f.name AS [Function Name]
+        SELECT
+            c.code AS [Code],
+            c.name AS [Control Name],
+            ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS [Function Name]
         FROM {self.get_fully_qualified_table_name('Controls')} c
-        LEFT JOIN {self.get_fully_qualified_table_name('ControlFunctions')} cf ON cf.control_id = c.id 
-        LEFT JOIN {self.get_fully_qualified_table_name('Functions')} f ON f.id = cf.function_id 
-        LEFT JOIN {self.get_fully_qualified_table_name('ControlCosos')} ccx ON ccx.control_id = c.id AND ccx.deletedAt IS NULL 
-        WHERE ccx.control_id IS NULL AND c.isDeleted = 0 {date_filter}
+        WHERE c.isDeleted = 0 AND c.deletedAt IS NULL {date_filter}
         {function_filter}
-        ORDER BY c.createdAt DESC
+        AND NOT EXISTS (
+            SELECT 1 FROM {self.get_fully_qualified_table_name('ControlCosos')} ccx
+            WHERE ccx.control_id = c.id AND ccx.deletedAt IS NULL
+        )
+        ORDER BY c.createdAt DESC, c.name ASC
         """
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
@@ -1490,22 +1489,23 @@ class ControlService:
     ) -> List[Dict[str, Any]]:
         """Controls not mapped to any Assertions (ICOFR account) - matches Node SQL."""
         date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        if start_date:
+            date_filter += f" AND c.createdAt >= '{start_date}'"
+        if end_date:
+            date_filter += f" AND c.createdAt <= '{end_date} 23:59:59'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        SELECT 
-            c.name AS [Control Name], 
-            f.name AS [Function Name]
+        SELECT
+            c.code AS [Code],
+            c.name AS [Control Name],
+            ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS [Function Name]
         FROM {self.get_fully_qualified_table_name('Controls')} c
-        LEFT JOIN {self.get_fully_qualified_table_name('ControlFunctions')} cf ON cf.control_id = c.id 
-        LEFT JOIN {self.get_fully_qualified_table_name('Functions')} f ON f.id = cf.function_id 
-        WHERE c.icof_id IS NULL AND c.isDeleted = 0 {date_filter}
+        WHERE c.icof_id IS NULL AND c.isDeleted = 0 AND c.deletedAt IS NULL {date_filter}
         {function_filter}
-        ORDER BY c.createdAt DESC
+        ORDER BY c.createdAt DESC, c.name ASC
         """
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
@@ -1534,19 +1534,19 @@ class ControlService:
             ap.factor AS [Factor], 
             ap.riskType AS [Risk Treatment], 
             ap.control_procedure AS [Control Procedure], 
-            ap.[type] AS [Control Procedure Type], 
-            ap.responsible AS [Action Plan Owner], 
-            ap.expected_cost AS [Expected Cost], 
-            ap.business_unit AS [Business Unit Status], 
-            CASE WHEN ap.meeting_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.meeting_date AS DATETIME), 105) ELSE NULL END AS [Meeting Date], 
-            CASE WHEN ap.implementation_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.implementation_date AS DATETIME), 105) ELSE NULL END AS [Expected Implementation Date], 
+            ap.[type] AS [Procedure Type],
+            ap.responsible AS [Action Plan Owner],
+            ap.expected_cost AS [Expected Cost],
+            ap.business_unit AS [Business Unit Status],
+            CASE WHEN ap.meeting_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.meeting_date AS DATETIME), 105) ELSE NULL END AS [Meeting Date],
+            CASE WHEN ap.implementation_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.implementation_date AS DATETIME), 105) ELSE NULL END AS [Implementation Date],
             ap.not_attend AS [Did Not Attend]
         FROM {self.get_fully_qualified_table_name('Actionplans')} ap
-        LEFT JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} cdt ON ap.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL
-        LEFT JOIN {self.get_fully_qualified_table_name('Controls')} c ON cdt.control_id = c.id AND c.isDeleted = 0
-        LEFT JOIN {self.get_fully_qualified_table_name('Functions')} f ON cdt.function_id = f.id AND f.deletedAt IS NULL
-        WHERE ap.[from] = 'adequacy'
-            AND ap.deletedAt IS NULL AND ap.controlDesignTest_id IS NOT NULL AND cdt.function_id IS NOT NULL {date_filter}
+        INNER JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} cdt ON ap.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL AND cdt.function_id IS NOT NULL
+        INNER JOIN {self.get_fully_qualified_table_name('Controls')} c ON cdt.control_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        INNER JOIN {self.get_fully_qualified_table_name('Functions')} f ON cdt.function_id = f.id AND f.deletedAt IS NULL
+        WHERE ap.[from] IN ('Adequacy', 'adequacy')
+            AND ap.deletedAt IS NULL AND ap.controlDesignTest_id IS NOT NULL {date_filter}
         {function_filter}
         ORDER BY ap.createdAt DESC
         """
@@ -1578,20 +1578,19 @@ class ControlService:
             ap.factor AS [Factor], 
             ap.riskType AS [Risk Treatment], 
             ap.control_procedure AS [Control Procedure], 
-            ap.[type] AS [Control Procedure Type], 
-            ap.responsible AS [Action Plan Owner], 
-            ap.expected_cost AS [Expected Cost], 
-            ap.business_unit AS [Business Unit Status], 
-            CASE WHEN ap.meeting_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.meeting_date AS DATETIME), 105) ELSE NULL END AS [Meeting Date], 
-            CASE WHEN ap.implementation_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.implementation_date AS DATETIME), 105) ELSE NULL END AS [Expected Implementation Date], 
+            ap.[type] AS [Procedure Type],
+            ap.responsible AS [Action Plan Owner],
+            ap.expected_cost AS [Expected Cost],
+            ap.business_unit AS [Business Unit Status],
+            CASE WHEN ap.meeting_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.meeting_date AS DATETIME), 105) ELSE NULL END AS [Meeting Date],
+            CASE WHEN ap.implementation_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.implementation_date AS DATETIME), 105) ELSE NULL END AS [Implementation Date],
             ap.not_attend AS [Did Not Attend]
         FROM {self.get_fully_qualified_table_name('Actionplans')} ap
-        LEFT JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} cdt ON ap.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL
-        LEFT JOIN {self.get_fully_qualified_table_name('Controls')} c ON cdt.control_id = c.id AND c.isDeleted = 0
-        LEFT JOIN {self.get_fully_qualified_table_name('ControlFunctions')} cf ON c.id = cf.control_id
-        LEFT JOIN {self.get_fully_qualified_table_name('Functions')} f ON cf.function_id = f.id
-        WHERE ap.[from] = 'effective'
-            AND ap.deletedAt IS NULL AND ap.controlDesignTest_id IS NOT NULL AND cdt.function_id IS NOT NULL {date_filter}
+        INNER JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} cdt ON ap.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL AND cdt.function_id IS NOT NULL
+        INNER JOIN {self.get_fully_qualified_table_name('Controls')} c ON cdt.control_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
+        INNER JOIN {self.get_fully_qualified_table_name('Functions')} f ON cdt.function_id = f.id AND f.deletedAt IS NULL
+        WHERE ap.[from] IN ('effective', 'Effective')
+            AND ap.deletedAt IS NULL AND ap.controlDesignTest_id IS NOT NULL {date_filter}
         {function_filter}
         ORDER BY ap.createdAt DESC
         """
@@ -1608,32 +1607,35 @@ class ControlService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        if start_date:
+            date_filter += f" AND cdt.createdAt >= '{start_date}'"
+        if end_date:
+            date_filter += f" AND cdt.createdAt <= '{end_date} 23:59:59'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
+        function_filter = self._build_direct_function_filter("cdt", "function_id", access, self._selected_function_ids(function_id, function_ids))
 
         q = f"""
-        SELECT 
-            c.name AS [Control Name], 
-            f.name AS [Function Name], 
-            CASE WHEN cdt.quarter = 'quarterOne' THEN 1 
-                 WHEN cdt.quarter = 'quarterTwo' THEN 2 
-                 WHEN cdt.quarter = 'quarterThree' THEN 3 
-                 WHEN cdt.quarter = 'quarterFour' THEN 4 
-                 ELSE NULL END AS [Quarter], 
-            cdt.year AS [Year], 
-            CASE WHEN ( c.preparerStatus = 'sent' AND c.acceptanceStatus = 'approved' ) 
-                 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS [Control Submitted?], 
-            CASE WHEN ( cdt.preparerStatus = 'sent' AND cdt.acceptanceStatus = 'approved' ) 
-                 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS [Test Approved?] 
-        FROM {self.get_fully_qualified_table_name('ControlDesignTests')} cdt 
-        JOIN {self.get_fully_qualified_table_name('Controls')} c ON cdt.control_id = c.id 
-        JOIN {self.get_fully_qualified_table_name('Functions')} f ON cdt.function_id = f.id 
-        WHERE c.isDeleted = 0 AND cdt.deletedAt IS NULL {date_filter}
+        SELECT
+            c.code AS [Code],
+            c.name AS [Control Name],
+            f.name AS [Function Name],
+            CASE WHEN cdt.quarter = 'quarterOne' THEN 1
+                 WHEN cdt.quarter = 'quarterTwo' THEN 2
+                 WHEN cdt.quarter = 'quarterThree' THEN 3
+                 WHEN cdt.quarter = 'quarterFour' THEN 4
+                 ELSE NULL END AS [Quarter],
+            cdt.year AS [Year],
+            CASE WHEN ( c.preparerStatus = 'sent' AND c.acceptanceStatus = 'approved' )
+                 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS [Control Submitted?],
+            CASE WHEN ( cdt.preparerStatus = 'sent' AND cdt.acceptanceStatus = 'approved' )
+                 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS [Test Approved?]
+        FROM {self.get_fully_qualified_table_name('ControlDesignTests')} cdt
+        INNER JOIN {self.get_fully_qualified_table_name('Controls')} c ON cdt.control_id = c.id
+        INNER JOIN {self.get_fully_qualified_table_name('Functions')} f ON cdt.function_id = f.id
+        WHERE c.isDeleted = 0 AND c.deletedAt IS NULL AND cdt.deletedAt IS NULL {date_filter}
         {function_filter}
-        ORDER BY c.createdAt DESC
+        ORDER BY cdt.createdAt DESC, c.name
         """
         write_debug(f"SQL Query: {q}")
         return await self.execute_query(q)
@@ -1648,32 +1650,42 @@ class ControlService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        if start_date:
+            date_filter += f" AND cdt.createdAt >= '{start_date}'"
+        if end_date:
+            date_filter += f" AND cdt.createdAt <= '{end_date} 23:59:59'"
 
         access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
+        function_filter = self._build_direct_function_filter("cdt", "function_id", access, self._selected_function_ids(function_id, function_ids))
 
         q = f"""
-        SELECT 
+        SELECT
             f.name AS [Function Name],
-            CASE WHEN cdt.quarter = 'quarterOne' THEN 1 
-                 WHEN cdt.quarter = 'quarterTwo' THEN 2 
-                 WHEN cdt.quarter = 'quarterThree' THEN 3 
-                 WHEN cdt.quarter = 'quarterFour' THEN 4 
+            CASE WHEN cdt.quarter = 'quarterOne' THEN 1
+                 WHEN cdt.quarter = 'quarterTwo' THEN 2
+                 WHEN cdt.quarter = 'quarterThree' THEN 3
+                 WHEN cdt.quarter = 'quarterFour' THEN 4
                  ELSE NULL END AS [Quarter],
             cdt.year AS [Year],
             COUNT(DISTINCT c.id) AS [Total Controls],
             COUNT(DISTINCT CASE WHEN (c.preparerStatus = 'sent' AND c.acceptanceStatus = 'approved') THEN c.id END) AS [Controls Submitted],
             COUNT(DISTINCT CASE WHEN (cdt.preparerStatus = 'sent' AND cdt.acceptanceStatus = 'approved') THEN c.id END) AS [Tests Approved]
-        FROM {self.get_fully_qualified_table_name('Functions')} AS f 
-        JOIN {self.get_fully_qualified_table_name('ControlFunctions')} AS cf ON f.id = cf.function_id 
-        JOIN {self.get_fully_qualified_table_name('Controls')} AS c ON cf.control_id = c.id AND c.isDeleted = 0 
-        LEFT JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} AS cdt ON cdt.control_id = c.id AND cdt.deletedAt IS NULL AND cdt.function_id IS NOT NULL
-        WHERE 1=1 {date_filter}
+        FROM {self.get_fully_qualified_table_name('ControlDesignTests')} AS cdt
+        INNER JOIN {self.get_fully_qualified_table_name('Controls')} AS c ON c.id = cdt.control_id
+        INNER JOIN {self.get_fully_qualified_table_name('Functions')} AS f ON f.id = cdt.function_id
+        WHERE c.isDeleted = 0
+          AND c.deletedAt IS NULL
+          AND cdt.deletedAt IS NULL {date_filter}
         {function_filter}
         GROUP BY f.name, cdt.quarter, cdt.year
-        ORDER BY f.name, cdt.year, cdt.quarter
+        ORDER BY f.name, cdt.year,
+          CASE cdt.quarter
+            WHEN 'quarterOne' THEN 1
+            WHEN 'quarterTwo' THEN 2
+            WHEN 'quarterThree' THEN 3
+            WHEN 'quarterFour' THEN 4
+            ELSE 5
+          END
         """
         write_debug(f"SQL Query: {q}")
         return await self.execute_query(q)

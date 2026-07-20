@@ -387,32 +387,24 @@ class ExcelService:
                 if isinstance(table_rows, list) and len(table_rows) > 0:
                     first_item = table_rows[0]
                     if isinstance(first_item, dict):
-                        if card_type == 'incidentActionPlan':
+                        if card_type in ('incidentActionPlan', 'overdueIncidents'):
+                            # Excel: full field set (matches on-screen table); PDF keeps the compact list.
                             from utils.export_utils import (
-                                get_incident_action_plan_ordered_keys,
-                                get_incident_action_plan_label,
+                                get_incident_action_plan_ordered_keys_full,
+                                get_incident_action_plan_label_full,
                                 get_incident_action_plan_cell_value,
                             )
-                            ordered_keys = get_incident_action_plan_ordered_keys()
-                            columns = ['#'] + [get_incident_action_plan_label(k) for k in ordered_keys]
+                            ordered_keys = get_incident_action_plan_ordered_keys_full()
+                            columns = ['#'] + [get_incident_action_plan_label_full(k) for k in ordered_keys]
                             for i, row in enumerate(table_rows, 1):
                                 values = [get_incident_action_plan_cell_value(row, k, empty_placeholder='') for k in ordered_keys]
                                 data_rows.append([str(i)] + values)
-                        elif card_type == 'overdueIncidents':
-                            from utils.export_utils import (
-                                get_overdue_incidents_ordered_keys,
-                                get_overdue_incidents_label,
-                                get_overdue_incidents_cell_value,
-                            )
-                            ordered_keys = get_overdue_incidents_ordered_keys()
-                            columns = ['#'] + [get_overdue_incidents_label(k) for k in ordered_keys]
-                            for i, row in enumerate(table_rows, 1):
-                                values = [get_overdue_incidents_cell_value(row, k, empty_placeholder='') for k in ordered_keys]
-                                data_rows.append([str(i)] + values)
                         else:
-                            from utils.export_utils import get_incident_ordered_keys_full_ui, get_incident_label, get_incident_cell_value
-                            ordered_keys = get_incident_ordered_keys_full_ui()
-                            columns = ['#'] + [get_incident_label(k) for k in ordered_keys]
+                            # Each table has its own on-screen column order; dedicated per-table lists (falls
+                            # back to the generic full-UI order for any table not in INCIDENT_TABLE_COLUMN_ORDERS).
+                            from utils.export_utils import get_incident_table_ordered_keys, get_incident_table_label, get_incident_cell_value
+                            ordered_keys = get_incident_table_ordered_keys(card_type)
+                            columns = ['#'] + [get_incident_table_label(card_type, k) for k in ordered_keys]
                             for i, row in enumerate(table_rows, 1):
                                 # Use blank for missing columns so extra UI columns stay empty, not "N/A"
                                 values = [get_incident_cell_value(row, k, empty_placeholder='') for k in ordered_keys]
