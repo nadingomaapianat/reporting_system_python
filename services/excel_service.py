@@ -717,7 +717,7 @@ class ExcelService:
 
                 # Monthly KRI Submission by Function: fixed column order and exact headers.
                 if card_type == 'monthlyKriSubmissionByFunction':
-                    columns = ['KRI Code', 'KRI Name', 'Function', 'Month', 'Year', 'Submitted?']
+                    columns = ['KRI Code', 'KRI Name', 'Function', 'Month', 'Year', 'Submitted?', 'Approved']
                     data_rows = []
                     if isinstance(table_rows, list):
                         for item in table_rows:
@@ -730,9 +730,10 @@ class ExcelService:
                                 str(item.get('month', '') or ''),
                                 str(item.get('year', '') or ''),
                                 str(item.get('submitted', '') or ''),
+                                str(item.get('approved', '') or ''),
                             ])
                     if not data_rows:
-                        data_rows = [['', '', '', '', '', 'No data available']]
+                        data_rows = [['', '', '', '', '', '', 'No data available']]
                     return generate_excel_report(columns, data_rows, header_config)
 
                 # KRI Details & Action Plans: exact mirror of the KRI heatmap export.
