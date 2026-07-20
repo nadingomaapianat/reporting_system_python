@@ -566,7 +566,7 @@ class PDFService:
 
                 if card_type == 'monthlyKriSubmissionByFunction':
                     # Fixed column order and exact headers for this report.
-                    columns = ['KRI Code', 'KRI Name', 'Function', 'Month', 'Year', 'Submitted?']
+                    columns = ['KRI Code', 'KRI Name', 'Function', 'Month', 'Year', 'Submitted?', 'Approved']
                     data_rows = []
                     if isinstance(table_rows, list):
                         for item in table_rows:
@@ -579,9 +579,10 @@ class PDFService:
                                 str(item.get('month', '') or ''),
                                 str(item.get('year', '') or ''),
                                 str(item.get('submitted', '') or ''),
+                                str(item.get('approved', '') or ''),
                             ])
                     if not data_rows:
-                        data_rows = [['', '', '', '', '', 'No data available']]
+                        data_rows = [['', '', '', '', '', '', 'No data available']]
                 elif isinstance(table_rows, list) and table_rows:
                     first_item = table_rows[0]
                     if isinstance(first_item, dict):

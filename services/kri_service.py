@@ -917,15 +917,31 @@ class KriService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return one row per KRI per month: whether the KRI was Submitted (a value was
-        recorded that month) or Not Submitted. Months before a KRI existed are skipped."""
+        recorded that month) or Not Submitted. Months run continuously from the earliest KRI's
+        creation month through the later of "now" or the latest month that actually has data,
+        so zero-submission months still appear and no real submission is ever dropped."""
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        WITH Months AS (
-          SELECT DISTINCT TRY_CONVERT(int, kv.[year]) AS yr, TRY_CONVERT(int, kv.[month]) AS mo
-          FROM KriValues kv
-          WHERE kv.deletedAt IS NULL AND kv.[year] IS NOT NULL AND kv.[month] IS NOT NULL
+        WITH MonthsBase AS (
+          SELECT
+            (SELECT MIN(createdAt) FROM Kris WHERE isDeleted = 0 AND deletedAt IS NULL) AS start_date,
+            (SELECT MAX(DATEFROMPARTS(TRY_CONVERT(int, [year]), TRY_CONVERT(int, [month]), 1))
+             FROM KriValues WHERE deletedAt IS NULL AND [year] IS NOT NULL AND [month] IS NOT NULL) AS max_data_period
+        ),
+        Months AS (
+          SELECT
+            YEAR(DATEFROMPARTS(YEAR(start_date), MONTH(start_date), 1)) AS yr,
+            MONTH(DATEFROMPARTS(YEAR(start_date), MONTH(start_date), 1)) AS mo,
+            DATEFROMPARTS(YEAR(start_date), MONTH(start_date), 1) AS period,
+            CASE WHEN max_data_period > DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)
+                 THEN max_data_period ELSE DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) END AS end_period
+          FROM MonthsBase
+          UNION ALL
+          SELECT YEAR(DATEADD(MONTH, 1, period)), MONTH(DATEADD(MONTH, 1, period)), DATEADD(MONTH, 1, period), end_period
+          FROM Months
+          WHERE period < end_period
         ),
         Expected AS (
           SELECT m.yr, m.mo, k.id AS kri_id,
@@ -953,6 +969,7 @@ class KriService:
         FROM Expected e
         LEFT JOIN Sub s ON s.kriId = e.kri_id AND s.yr = e.yr AND s.mo = e.mo
         ORDER BY e.yr, e.mo, e.kri_name
+        OPTION (MAXRECURSION 1000)
         """
         return await self.execute_query(query)
 
@@ -966,15 +983,32 @@ class KriService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Monthly KRI submission by function: one row per KRI per month (all months),
-        ordered by function, with month name, year and Submitted? (Yes/No)."""
+        ordered by function, with month name, year, Submitted? (Yes/No) and Approved (Yes/No)."""
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        WITH Months AS (
-          SELECT DISTINCT TRY_CONVERT(int, kv.[year]) AS yr, TRY_CONVERT(int, kv.[month]) AS mo
-          FROM KriValues kv
-          WHERE kv.deletedAt IS NULL AND kv.[year] IS NOT NULL AND kv.[month] IS NOT NULL
+        WITH MonthsBase AS (
+          SELECT
+            (SELECT MIN(createdAt) FROM Kris WHERE isDeleted = 0 AND deletedAt IS NULL) AS start_date,
+            (SELECT MAX(DATEFROMPARTS(TRY_CONVERT(int, [year]), TRY_CONVERT(int, [month]), 1))
+             FROM KriValues WHERE deletedAt IS NULL AND [year] IS NOT NULL AND [month] IS NOT NULL) AS max_data_period
+        ),
+        Months AS (
+          -- Continuous calendar months from the earliest KRI's creation month through the later
+          -- of "now" or the latest month that actually has data, so zero-submission months still
+          -- appear (as Not Submitted) and no real (even future-dated) submission is ever dropped.
+          SELECT
+            YEAR(DATEFROMPARTS(YEAR(start_date), MONTH(start_date), 1)) AS yr,
+            MONTH(DATEFROMPARTS(YEAR(start_date), MONTH(start_date), 1)) AS mo,
+            DATEFROMPARTS(YEAR(start_date), MONTH(start_date), 1) AS period,
+            CASE WHEN max_data_period > DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)
+                 THEN max_data_period ELSE DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) END AS end_period
+          FROM MonthsBase
+          UNION ALL
+          SELECT YEAR(DATEADD(MONTH, 1, period)), MONTH(DATEADD(MONTH, 1, period)), DATEADD(MONTH, 1, period), end_period
+          FROM Months
+          WHERE period < end_period
         ),
         Expected AS (
           SELECT m.yr, m.mo, k.id AS kri_id, k.code AS kri_code, k.kriName AS kri_name,
@@ -989,8 +1023,10 @@ class KriService:
           LEFT JOIN Functions frel ON frel.id = k.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
         ),
         Sub AS (
-          SELECT DISTINCT kv.kriId, TRY_CONVERT(int, kv.[year]) AS yr, TRY_CONVERT(int, kv.[month]) AS mo
+          SELECT kv.kriId, TRY_CONVERT(int, kv.[year]) AS yr, TRY_CONVERT(int, kv.[month]) AS mo,
+                 MAX(CASE WHEN kv.acceptanceStatus = 'approved' THEN 1 ELSE 0 END) AS is_approved
           FROM KriValues kv WHERE kv.deletedAt IS NULL
+          GROUP BY kv.kriId, TRY_CONVERT(int, kv.[year]), TRY_CONVERT(int, kv.[month])
         )
         SELECT
           e.kri_code AS kri_code,
@@ -998,10 +1034,12 @@ class KriService:
           e.function_name AS function_name,
           DATENAME(MONTH, DATEFROMPARTS(e.yr, e.mo, 1)) AS month,
           e.yr AS year,
-          CASE WHEN s.kriId IS NOT NULL THEN 'Yes' ELSE 'No' END AS submitted
+          CASE WHEN s.kriId IS NOT NULL THEN 'Yes' ELSE 'No' END AS submitted,
+          CASE WHEN s.is_approved = 1 THEN 'Yes' ELSE 'No' END AS approved
         FROM Expected e
         LEFT JOIN Sub s ON s.kriId = e.kri_id AND s.yr = e.yr AND s.mo = e.mo
-        ORDER BY e.function_name, e.kri_name, e.yr, e.mo
+        ORDER BY e.yr, e.mo, e.function_name, e.kri_name
+        OPTION (MAXRECURSION 1000)
         """
         return await self.execute_query(query)
 
@@ -1037,9 +1075,26 @@ class KriService:
           k.high_from AS high_from,
           CASE
             WHEN kv.value IS NULL THEN ''
-            WHEN k.typePercentageOrFigure = '%' THEN CAST(kv.value AS NVARCHAR(50)) + '%'
-            ELSE CAST(kv.value AS NVARCHAR(50))
+            ELSE
+              -- Route the float through DECIMAL before stringifying: casting a float
+              -- straight to NVARCHAR caps at 6 significant digits and can silently
+              -- switch to scientific notation (e.g. 2300517 -> '2.30052e+006', which
+              -- rounds to the wrong number). DECIMAL -> VARCHAR never does that.
+              CASE
+                WHEN kv.value = ROUND(kv.value, 0) THEN CAST(CAST(kv.value AS DECIMAL(38, 0)) AS VARCHAR(50))
+                ELSE CAST(CAST(kv.value AS DECIMAL(38, 4)) AS VARCHAR(50))
+              END
+              + CASE WHEN k.typePercentageOrFigure = '%' THEN '%' ELSE '' END
           END AS monthly_figure,
+          CASE
+            -- Actionplans.year/month are 0 (not NULL) as a sentinel on many rows,
+            -- and DATEFROMPARTS errors on an out-of-range month/year, so check ranges
+            -- explicitly rather than just IS NOT NULL.
+            WHEN ap.[month] BETWEEN 1 AND 12 AND ap.[year] BETWEEN 1 AND 9999
+            THEN DATENAME(MONTH, DATEFROMPARTS(ap.[year], ap.[month], 1))
+            ELSE ''
+          END AS month,
+          CASE WHEN ap.[year] BETWEEN 1 AND 9999 THEN CAST(ap.[year] AS VARCHAR(10)) ELSE '' END AS year,
           ISNULL(ap.control_procedure, '') AS action_plan,
           FORMAT(CONVERT(datetime, ap.implementation_date), 'yyyy-MM-dd') AS target_date,
           CASE
