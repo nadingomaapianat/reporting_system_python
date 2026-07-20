@@ -61,15 +61,16 @@ KRI_DISPLAY_NAMES = {
     "kriAssessmentCount": "KRI Assessment Count by Function",
     "kriCountsByFrequency": "KRIs by Frequency",
     "kriCountsByMonthYear": "KRIs Count by Month/Year",
-    "kriRisksByKriName": "Risks by KRI Name",
-    "kriOverdueStatusCounts": "KRIs Overdue Status",
+    "kriRiskLinkageCounts": "KRIs by Risk Linkage",
+    "krisSubmittedMonthly": "KRIs Submitted vs Not Submitted (Monthly)",
     "kriMonthlyAssessment": "Monthly KRI Assessments (stacked)",
     "deletedKrisPerMonth": "Deleted KRIs Per Month",
-    "overallKris": "Overall KRI Statuses",
-    "kriStatus": "Overall KRI Statuses",
+    "overallKris": "Approval KRI Status",
+    "kriStatus": "Approval KRI Status",
     "allKrisSubmittedByFunction": "KRIs Submission Status by Function",
+    "monthlyKriSubmissionByFunction": "Monthly KRI Submission by Function",
     "activeKrisDetails": "Active KRIs Details",
-    "overdueKrisByDepartment": "Overdue KRIs by Function",
+    "overdueKrisByDepartment": "KRIs Target Date by Function",
     "kriWithoutLinkedRisks": "KRIs Without Linked Risks",
     "krisWithoutLinkedRisks": "KRIs Without Linked Risks",
     "kriRiskRelationships": "KRI to Risk Relationships",
@@ -231,14 +232,16 @@ async def export_kris_pdf(
             data = await kri_service.get_newly_created_kris_per_month(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'deletedKrisPerMonth':
             data = await kri_service.get_deleted_kris_per_month(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'kriOverdueStatusCounts':
-            data = await kri_service.get_kri_overdue_status_counts(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'krisSubmittedMonthly':
+            # Chart shows monthly submitted vs not-submitted counts; export the per-KRI-per-month detail
+            data = await kri_service.get_kris_submission_by_month_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriCountsByMonthYear':
             data = await kri_service.get_kri_counts_by_month_year(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriCountsByFrequency':
             data = await kri_service.get_kri_counts_by_frequency(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'kriRisksByKriName':
-            data = await kri_service.get_kri_risks_by_kri_name(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'kriRiskLinkageCounts':
+            # Chart shows linked vs not-linked counts; export the underlying KRI -> Risk pairs
+            data = await kri_service.get_kri_risk_relationships(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         
         # Tables
         elif cardType == 'overallKris' or cardType == 'kriStatus':
@@ -251,6 +254,8 @@ async def export_kris_pdf(
             data = await kri_service.get_overdue_kris_by_department(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'allKrisSubmittedByFunction':
             data = await kri_service.get_all_kris_submitted_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'monthlyKriSubmissionByFunction':
+            data = await kri_service.get_monthly_kri_submission_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriRiskRelationships':
             data = await kri_service.get_kri_risk_relationships(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriWithoutLinkedRisks' or cardType == 'krisWithoutLinkedRisks':
@@ -480,14 +485,16 @@ async def export_kris_excel(
             data = await kri_service.get_newly_created_kris_per_month(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'deletedKrisPerMonth':
             data = await kri_service.get_deleted_kris_per_month(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'kriOverdueStatusCounts':
-            data = await kri_service.get_kri_overdue_status_counts(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'krisSubmittedMonthly':
+            # Chart shows monthly submitted vs not-submitted counts; export the per-KRI-per-month detail
+            data = await kri_service.get_kris_submission_by_month_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriCountsByMonthYear':
             data = await kri_service.get_kri_counts_by_month_year(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriCountsByFrequency':
             data = await kri_service.get_kri_counts_by_frequency(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'kriRisksByKriName':
-            data = await kri_service.get_kri_risks_by_kri_name(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'kriRiskLinkageCounts':
+            # Chart shows linked vs not-linked counts; export the underlying KRI -> Risk pairs
+            data = await kri_service.get_kri_risk_relationships(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         
         # Tables
         elif cardType == 'overallKris' or cardType == 'kriStatus':
@@ -500,6 +507,8 @@ async def export_kris_excel(
             data = await kri_service.get_overdue_kris_by_department(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'allKrisSubmittedByFunction':
             data = await kri_service.get_all_kris_submitted_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'monthlyKriSubmissionByFunction':
+            data = await kri_service.get_monthly_kri_submission_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriRiskRelationships':
             data = await kri_service.get_kri_risk_relationships(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriWithoutLinkedRisks' or cardType == 'krisWithoutLinkedRisks':

@@ -404,13 +404,14 @@ async def save_and_log_export(
                 "kriAssessmentCount": "KRI_Assessment_Count_by_Function",
                 "kriCountsByFrequency": "KRIs_by_Frequency",
                 "kriCountsByMonthYear": "KRIs_Count_by_Month_Year",
-                "kriRisksByKriName": "Risks_by_KRI_Name",
-                "kriOverdueStatusCounts": "KRIs_Overdue_Status",
+                "kriRiskLinkageCounts": "KRIs_by_Risk_Linkage",
+                "krisSubmittedMonthly": "KRIs_Submitted_vs_Not_Submitted_Monthly",
                 "kriMonthlyAssessment": "Monthly_KRI_Assessments_stacked",
                 "deletedKrisPerMonth": "Deleted_KRIs_Per_Month",
                 "overallKris": "Overall_KRI_Statuses",
                 "kriStatus": "Overall_KRI_Statuses",
                 "allKrisSubmittedByFunction": "KRIs_Submission_Status_by_Function",
+                "monthlyKriSubmissionByFunction": "Monthly_KRI_Submission_by_Function",
                 "activeKrisDetails": "Active_KRIs_Details",
                 "overdueKrisByDepartment": "Overdue_KRIs_by_Function",
                 "kriWithoutLinkedRisks": "KRIs_Without_Linked_Risks",
@@ -807,9 +808,14 @@ def generate_excel_report(columns, data_rows, header_config=None):
     import base64
     
     write_debug(f"generate_excel_report called with columns={columns}, data_rows count={len(data_rows)}")
-    
-    from utils.export_utils import filter_export_columns_rows
-    columns, data_rows = filter_export_columns_rows(columns or [], data_rows or [])
+
+    # Callers that pass an already-final, exact column set (e.g. a heatmap-style mirror
+    # with a visible "KRI ID" column) can opt out of the id/uuid column filter.
+    if header_config and header_config.get("noHiddenColumnFilter"):
+        columns, data_rows = list(columns or []), [list(r) for r in (data_rows or [])]
+    else:
+        from utils.export_utils import filter_export_columns_rows
+        columns, data_rows = filter_export_columns_rows(columns or [], data_rows or [])
     
     # Get default header config if none provided
     if not header_config:
@@ -914,6 +920,11 @@ def generate_excel_report(columns, data_rows, header_config=None):
     body_bg_rgb = hex_to_rgb(table_body_bg_color)
     background_rgb = hex_to_rgb(background_color)
     border_rgb = hex_to_rgb(border_color)
+
+    # Optional per-column background colors: { "Column Name": "#hex" }.
+    # Opt-in only; exports that don't set columnColors are unaffected.
+    column_colors_cfg = header_config.get("columnColors", {}) or {}
+    column_colors_rgb = {str(k): hex_to_rgb(str(v)) for k, v in column_colors_cfg.items()}
     
     current_row = 1
     
@@ -1025,20 +1036,30 @@ def generate_excel_report(columns, data_rows, header_config=None):
     
     # Table headers
     header_row = current_row
+    # Map column index -> custom color (for columns listed in columnColors)
+    colored_col_idx = {
+        idx: column_colors_rgb[str(col)]
+        for idx, col in enumerate(columns, start=1)
+        if str(col) in column_colors_rgb
+    }
     for idx, col in enumerate(columns, start=1):
         cell = ws.cell(row=header_row, column=idx, value=col)
         cell.font = Font(bold=True, color=header_font_rgb)
-        cell.fill = PatternFill(start_color=header_bg_rgb, end_color=header_bg_rgb, fill_type='solid')
+        hdr_fill = colored_col_idx.get(idx, header_bg_rgb)
+        cell.fill = PatternFill(start_color=hdr_fill, end_color=hdr_fill, fill_type='solid')
         cell.alignment = Alignment(horizontal='center', vertical='center', wrapText=True)
-    
+
     # Data rows
     for row_idx, row_data in enumerate(data_rows, start=header_row + 1):
         for col_idx, value in enumerate(row_data, start=1):
             cell = ws.cell(row=row_idx, column=col_idx, value=value)
             cell.alignment = Alignment(vertical='top', wrapText=True)
-            
-            # Apply zebra stripes if enabled
-            if excel_zebra_stripes and (row_idx - header_row) % 2 == 0:
+
+            # Custom per-column color takes precedence; else optional zebra stripes
+            if col_idx in colored_col_idx:
+                c = colored_col_idx[col_idx]
+                cell.fill = PatternFill(start_color=c, end_color=c, fill_type='solid')
+            elif excel_zebra_stripes and (row_idx - header_row) % 2 == 0:
                 cell.fill = PatternFill(start_color=body_bg_rgb, end_color=body_bg_rgb, fill_type='solid')
 
     # Optional footer totals row
@@ -3032,7 +3053,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
             ('TEXTCOLOR', (0, last_row_index), (-1, last_row_index), header_font_color_rl),
             ('FONTNAME', (0, last_row_index), (-1, last_row_index), DEFAULT_FONT_NAME + '-Bold' if DEFAULT_FONT_NAME != 'Helvetica' else 'Helvetica-Bold'),
         ]
-    
+
     table.setStyle(TableStyle(table_style))
     story.append(table)
     

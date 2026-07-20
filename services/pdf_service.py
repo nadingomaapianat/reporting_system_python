@@ -388,8 +388,45 @@ class PDFService:
 
             # CHART EXPORT
             if only_chart and card_type:
+                # KRIs by Risk Linkage: the on-screen bars are display-only; export the full
+                # KRI -> Risk pairs as a detail table (no chart), with KRI Name and Function.
+                if card_type == "kriRiskLinkageCounts":
+                    columns = ['KRI Code', 'KRI Name', 'Risk Code', 'Risk Name', 'Function']
+                    data_rows = []
+                    if isinstance(kris_data, list):
+                        for item in kris_data:
+                            if not isinstance(item, dict):
+                                continue
+                            data_rows.append([
+                                str(item.get('kri_code', '') or ''),
+                                str(item.get('kri_name', '') or ''),
+                                str(item.get('risk_code', '') or ''),
+                                str(item.get('risk_name', '') or ''),
+                                str(item.get('function_name', '') or ''),
+                            ])
+                    if not data_rows:
+                        data_rows = [['', '', '', '', 'No data available']]
+                    header_config.pop('chart_data', None)
+                # KRIs Submitted vs Not Submitted (Monthly): one row per KRI per month
+                elif card_type == "krisSubmittedMonthly":
+                    columns = ['KRI Code', 'KRI Name', 'Function', 'Status', 'Month']
+                    data_rows = []
+                    if isinstance(kris_data, list):
+                        for item in kris_data:
+                            if not isinstance(item, dict):
+                                continue
+                            data_rows.append([
+                                str(item.get('kri_code', '') or ''),
+                                str(item.get('kri_name', '') or ''),
+                                str(item.get('function_name', '') or ''),
+                                str(item.get('status', '') or ''),
+                                str(item.get('month', '') or ''),
+                            ])
+                    if not data_rows:
+                        data_rows = [['', '', '', '', 'No data available']]
+                    header_config.pop('chart_data', None)
                 # Special handling for stacked monthly assessment chart
-                if card_type == "kriMonthlyAssessment" and isinstance(kris_data, list) and kris_data:
+                elif card_type == "kriMonthlyAssessment" and isinstance(kris_data, list) and kris_data:
                     # Transform from long format to wide format (pivot)
                     grouped: dict = {}
                     assessment_levels = set()
@@ -527,7 +564,25 @@ class PDFService:
                 write_debug("DEBUG: ===== kris only_overall_table START =====")
                 table_rows = data.get(card_type) or []
 
-                if isinstance(table_rows, list) and table_rows:
+                if card_type == 'monthlyKriSubmissionByFunction':
+                    # Fixed column order and exact headers for this report.
+                    columns = ['KRI Code', 'KRI Name', 'Function', 'Month', 'Year', 'Submitted?']
+                    data_rows = []
+                    if isinstance(table_rows, list):
+                        for item in table_rows:
+                            if not isinstance(item, dict):
+                                continue
+                            data_rows.append([
+                                str(item.get('kri_code', '') or ''),
+                                str(item.get('kri_name', '') or ''),
+                                str(item.get('function_name', '') or ''),
+                                str(item.get('month', '') or ''),
+                                str(item.get('year', '') or ''),
+                                str(item.get('submitted', '') or ''),
+                            ])
+                    if not data_rows:
+                        data_rows = [['', '', '', '', '', 'No data available']]
+                elif isinstance(table_rows, list) and table_rows:
                     first_item = table_rows[0]
                     if isinstance(first_item, dict):
                         # Exclude nested/complex keys from table (e.g. kriDetailsWithActionPlans has valuesByPeriod)
@@ -622,7 +677,7 @@ class PDFService:
                                 return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(k)).title()
                             # Total KRIs card: use only a subset of columns in PDF to avoid layout errors (Excel keeps all columns)
                             if card_type == 'totalKris' or card_type == 'krisList':
-                                pdf_keys = ['code', 'kri_name', 'function_name', 'frequency', 'threshold', 'status', 'createdAt']
+                                pdf_keys = ['code', 'kri_name', 'function_name', 'frequency', 'threshold', 'low_risk', 'medium_risk', 'high_risk', 'status', 'createdAt']
                                 raw_keys = [k for k in pdf_keys if k in first_item]
                             else:
                                 raw_keys = [k for k in first_item.keys() if not is_hidden_export_column_key(k)]
@@ -658,6 +713,25 @@ class PDFService:
             # Merge header config for kris
             from utils.export_utils import merge_header_config
             final_config = merge_header_config("kris", header_config)
+            # Total KRIs mirrors the heatmap: colour the risk-band columns (green/yellow/red)
+            if card_type in ('totalKris', 'krisList'):
+                final_config = {
+                    **final_config,
+                    "columnColors": {
+                        "Low Risk": "#92D050",
+                        "Medium Risk": "#F8CE37",
+                        "High Risk": "#EF3D3D",
+                    },
+                }
+            elif card_type in ('activeKrisDetails', 'overdueKrisByDepartment'):
+                final_config = {
+                    **final_config,
+                    "columnColors": {
+                        "Low From": "#92D050",
+                        "Medium From": "#F8CE37",
+                        "High From": "#EF3D3D",
+                    },
+                }
             write_debug(f"DEBUG: Using PDF config (kris): {final_config}")
 
             result = generate_pdf_report(columns, data_rows, final_config)

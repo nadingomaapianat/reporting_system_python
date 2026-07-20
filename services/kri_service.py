@@ -329,6 +329,9 @@ class KriService:
             ISNULL(f.name, '') AS function_name,
             ISNULL(k.frequency, '') AS frequency,
             ISNULL(k.threshold, '') AS threshold,
+            k.low_from AS low_risk,
+            k.medium_from AS medium_risk,
+            k.high_from AS high_risk,
             ISNULL(added_by_u.name, '') AS added_by_name,
             ISNULL(assigned_u.name, '') AS assigned_person_name,
             ISNULL(k.type, '') AS type,
@@ -393,11 +396,11 @@ class KriService:
         # Build query that computes the label and filters to requested status
         query = f"""
         WITH KrisStatus AS (
-            SELECT 
+            SELECT
                 k.code,
                 k.kriName as kri_name,
                 ISNULL(f.name, 'Unknown') AS function_name,
-                CASE 
+                CASE
                     -- 1) Pending preparer: preparerStatus is anything other than 'sent'
                     WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
                     -- 2) Pending checker: preparer sent AND checker not approved AND acceptance not approved
@@ -497,7 +500,7 @@ class KriService:
           k.code             AS code,
           k.kriName          AS kri_name,
           ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name,
-          CASE 
+          CASE
             WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
             WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
             WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
@@ -596,7 +599,8 @@ class KriService:
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return count of KRIs by function (simplified - just count KRIs per function)"""
+        """Return breached KRIs by function: a KRI is breached when its latest
+        assessment sits in the High-risk band (or an explicit High kri_level)."""
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -607,24 +611,53 @@ class KriService:
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
-        
+
         query = f"""
-        SELECT 
-          ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name,
-          COUNT(k.id) AS breached_count
-        FROM Kris k
-        LEFT JOIN KriFunctions kf ON kf.kri_id = k.id
-          AND kf.deletedAt IS NULL
-        LEFT JOIN Functions fkf ON fkf.id = kf.function_id
-          AND fkf.isDeleted = 0
-          AND fkf.deletedAt IS NULL
-        LEFT JOIN Functions frel ON frel.id = k.related_function_id
-          AND frel.isDeleted = 0
-          AND frel.deletedAt IS NULL
-        WHERE k.isDeleted = 0 
-          AND k.deletedAt IS NULL {date_filter}
-          {function_filter}
-        GROUP BY ISNULL(COALESCE(fkf.name, frel.name), 'Unknown')
+        WITH LatestKV AS (
+          SELECT kv.kriId, kv.value,
+                 ROW_NUMBER() OVER (PARTITION BY kv.kriId ORDER BY COALESCE(CONVERT(datetime, CONCAT(kv.[year], '-', kv.[month], '-01')), kv.createdAt) DESC) rn
+          FROM KriValues kv
+          WHERE kv.deletedAt IS NULL
+        ),
+        K AS (
+          SELECT k.id,
+                 ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name,
+                 k.kri_level,
+                 CAST(k.isAscending AS int) AS isAscending,
+                 TRY_CONVERT(float, k.medium_from) AS med_thr,
+                 TRY_CONVERT(float, k.high_from)   AS high_thr
+          FROM Kris k
+          LEFT JOIN KriFunctions kf ON kf.kri_id = k.id AND kf.deletedAt IS NULL
+          LEFT JOIN Functions fkf ON fkf.id = kf.function_id AND fkf.isDeleted = 0 AND fkf.deletedAt IS NULL
+          LEFT JOIN Functions frel ON frel.id = k.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
+          WHERE k.isDeleted = 0
+            AND k.deletedAt IS NULL {date_filter}
+            {function_filter}
+        ),
+        KL AS (
+          SELECT K.id, K.function_name, K.kri_level, K.isAscending, K.med_thr, K.high_thr,
+                 TRY_CONVERT(float, kv.value) AS val
+          FROM K
+          LEFT JOIN LatestKV kv ON kv.kriId = K.id AND kv.rn = 1
+        ),
+        Derived AS (
+          SELECT function_name,
+                 CASE
+                   WHEN kri_level IS NOT NULL AND LTRIM(RTRIM(kri_level)) <> '' THEN kri_level
+                   WHEN val IS NULL OR med_thr IS NULL OR high_thr IS NULL THEN 'Unknown'
+                   WHEN isAscending = 1 AND val >= high_thr THEN 'High'
+                   WHEN isAscending = 1 AND val >= med_thr THEN 'Medium'
+                   WHEN isAscending = 1 THEN 'Low'
+                   WHEN isAscending = 0 AND val <= high_thr THEN 'High'
+                   WHEN isAscending = 0 AND val <= med_thr THEN 'Medium'
+                   ELSE 'Low'
+                 END AS level_bucket
+          FROM KL
+        )
+        SELECT function_name, COUNT(*) AS breached_count
+        FROM Derived
+        WHERE UPPER(LTRIM(RTRIM(level_bucket))) = 'HIGH'
+        GROUP BY function_name
         ORDER BY breached_count DESC
         """
         return await self.execute_query(query)
@@ -652,10 +685,11 @@ class KriService:
         
         query = f"""
         SELECT
+          k.code AS code,
           k.kriName,
+          COALESCE(fkf.name, frel.name, 'Unknown') AS function_name,
           k.status,
           COALESCE(k.kri_level, 'Unknown') AS kri_level,
-          COALESCE(fkf.name, frel.name, 'Unknown') AS function_name,
           k.threshold,
           k.frequency
         FROM Kris k
@@ -667,13 +701,13 @@ class KriService:
         LEFT JOIN Functions frel ON frel.id = k.related_function_id
           AND frel.isDeleted = 0
           AND frel.deletedAt IS NULL
-        WHERE k.isDeleted = 0 
+        WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
           {function_filter}
         ORDER BY k.createdAt DESC
         """
         return await self.execute_query(query)
-    
+
     async def get_kri_assessment_count_detailed(
         self,
         start_date: Optional[str] = None,
@@ -873,6 +907,104 @@ class KriService:
         """
         return await self.execute_query(query)
 
+    async def get_kris_submission_by_month_detailed(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return one row per KRI per month: whether the KRI was Submitted (a value was
+        recorded that month) or Not Submitted. Months before a KRI existed are skipped."""
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
+
+        query = f"""
+        WITH Months AS (
+          SELECT DISTINCT TRY_CONVERT(int, kv.[year]) AS yr, TRY_CONVERT(int, kv.[month]) AS mo
+          FROM KriValues kv
+          WHERE kv.deletedAt IS NULL AND kv.[year] IS NOT NULL AND kv.[month] IS NOT NULL
+        ),
+        Expected AS (
+          SELECT m.yr, m.mo, k.id AS kri_id,
+                 k.code AS kri_code, k.kriName AS kri_name,
+                 ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name
+          FROM Months m
+          INNER JOIN Kris k
+            ON k.isDeleted = 0 AND k.deletedAt IS NULL
+            AND k.createdAt < DATEADD(MONTH, 1, DATEFROMPARTS(m.yr, m.mo, 1))
+            {function_filter}
+          LEFT JOIN KriFunctions kf ON kf.kri_id = k.id AND kf.deletedAt IS NULL
+          LEFT JOIN Functions fkf ON fkf.id = kf.function_id AND fkf.isDeleted = 0 AND fkf.deletedAt IS NULL
+          LEFT JOIN Functions frel ON frel.id = k.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
+        ),
+        Sub AS (
+          SELECT DISTINCT kv.kriId, TRY_CONVERT(int, kv.[year]) AS yr, TRY_CONVERT(int, kv.[month]) AS mo
+          FROM KriValues kv WHERE kv.deletedAt IS NULL
+        )
+        SELECT
+          e.kri_code AS kri_code,
+          e.kri_name AS kri_name,
+          e.function_name AS function_name,
+          CASE WHEN s.kriId IS NOT NULL THEN 'Submitted' ELSE 'Not Submitted' END AS status,
+          FORMAT(DATEFROMPARTS(e.yr, e.mo, 1), 'MMM yyyy') AS month
+        FROM Expected e
+        LEFT JOIN Sub s ON s.kriId = e.kri_id AND s.yr = e.yr AND s.mo = e.mo
+        ORDER BY e.yr, e.mo, e.kri_name
+        """
+        return await self.execute_query(query)
+
+    async def get_monthly_kri_submission_by_function(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Monthly KRI submission by function: one row per KRI per month (all months),
+        ordered by function, with month name, year and Submitted? (Yes/No)."""
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
+
+        query = f"""
+        WITH Months AS (
+          SELECT DISTINCT TRY_CONVERT(int, kv.[year]) AS yr, TRY_CONVERT(int, kv.[month]) AS mo
+          FROM KriValues kv
+          WHERE kv.deletedAt IS NULL AND kv.[year] IS NOT NULL AND kv.[month] IS NOT NULL
+        ),
+        Expected AS (
+          SELECT m.yr, m.mo, k.id AS kri_id, k.code AS kri_code, k.kriName AS kri_name,
+                 ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name
+          FROM Months m
+          INNER JOIN Kris k
+            ON k.isDeleted = 0 AND k.deletedAt IS NULL
+            AND k.createdAt < DATEADD(MONTH, 1, DATEFROMPARTS(m.yr, m.mo, 1))
+            {function_filter}
+          LEFT JOIN KriFunctions kf ON kf.kri_id = k.id AND kf.deletedAt IS NULL
+          LEFT JOIN Functions fkf ON fkf.id = kf.function_id AND fkf.isDeleted = 0 AND fkf.deletedAt IS NULL
+          LEFT JOIN Functions frel ON frel.id = k.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
+        ),
+        Sub AS (
+          SELECT DISTINCT kv.kriId, TRY_CONVERT(int, kv.[year]) AS yr, TRY_CONVERT(int, kv.[month]) AS mo
+          FROM KriValues kv WHERE kv.deletedAt IS NULL
+        )
+        SELECT
+          e.kri_code AS kri_code,
+          e.kri_name AS kri_name,
+          e.function_name AS function_name,
+          DATENAME(MONTH, DATEFROMPARTS(e.yr, e.mo, 1)) AS month,
+          e.yr AS year,
+          CASE WHEN s.kriId IS NOT NULL THEN 'Yes' ELSE 'No' END AS submitted
+        FROM Expected e
+        LEFT JOIN Sub s ON s.kriId = e.kri_id AND s.yr = e.yr AND s.mo = e.mo
+        ORDER BY e.function_name, e.kri_name, e.yr, e.mo
+        """
+        return await self.execute_query(query)
+
     async def get_overdue_kris_by_department(
         self,
         start_date: Optional[str] = None,
@@ -895,15 +1027,29 @@ class KriService:
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT DISTINCT 
-          k.id AS kriId, 
-          k.kriName AS kriName, 
-          ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name
+        SELECT
+          k.code AS code,
+          k.kriName AS kriName,
+          ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name,
+          ISNULL(k.threshold, '') AS threshold,
+          k.low_from AS low_from,
+          k.medium_from AS medium_from,
+          k.high_from AS high_from,
+          CASE
+            WHEN kv.value IS NULL THEN ''
+            WHEN k.typePercentageOrFigure = '%' THEN CAST(kv.value AS NVARCHAR(50)) + '%'
+            ELSE CAST(kv.value AS NVARCHAR(50))
+          END AS monthly_figure,
+          ISNULL(ap.control_procedure, '') AS action_plan,
+          FORMAT(CONVERT(datetime, ap.implementation_date), 'yyyy-MM-dd') AS target_date,
+          CASE
+            WHEN ap.id IS NULL THEN ''
+            WHEN ISNULL(ap.business_unit, '') = '' THEN 'Pending'
+            ELSE ap.business_unit
+          END AS status
         FROM Kris AS k
-        INNER JOIN Actionplans AS ap ON ap.kri_id = k.id
+        LEFT JOIN Actionplans AS ap ON ap.kri_id = k.id
           AND ap.deletedAt IS NULL
-          AND ap.implementation_date < GETDATE()
-          AND (ap.done = 0 OR ap.done IS NULL)
         LEFT JOIN KriFunctions AS kf ON k.id = kf.kri_id
           AND kf.deletedAt IS NULL
         LEFT JOIN Functions AS fkf ON fkf.id = kf.function_id
@@ -912,10 +1058,15 @@ class KriService:
         LEFT JOIN Functions AS frel ON frel.id = k.related_function_id
           AND frel.isDeleted = 0
           AND frel.deletedAt IS NULL
+        LEFT JOIN KriValues AS kv ON kv.kriId = k.id
+          AND kv.[year] = ap.[year]
+          AND kv.[month] = ap.[month]
+          AND kv.deletedAt IS NULL
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
           {function_filter}
-        ORDER BY function_name, kriName
+        ORDER BY CASE WHEN ap.implementation_date IS NULL THEN 1 ELSE 0 END,
+                 ap.implementation_date ASC, function_name, kriName
         """
         return await self.execute_query(query)
 
@@ -1062,7 +1213,7 @@ class KriService:
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT 
+        SELECT
           k.kriName AS kriName,
           COUNT(*) AS count
         FROM Risks r
@@ -1102,7 +1253,7 @@ class KriService:
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT 
+        SELECT
           k.code AS kri_code,
           k.kriName AS kri_name,
           ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name,
@@ -1146,7 +1297,7 @@ class KriService:
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT  
+        SELECT
         k.code AS kriCode,
         k.kriName AS kriName,
         ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name
@@ -1190,24 +1341,25 @@ class KriService:
         
         query = f"""
         SELECT
+          k.code AS code,
           k.kriName AS kriName,
-          CASE 
+          ISNULL(f.name, NULL) AS function_name,
+          CASE
             WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
             WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
             WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
             WHEN ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
             WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
             ELSE 'Unknown'
-          END AS combined_status,
+          END AS approved_status,
           u.name AS assignedPersonId,
           u2.name AS addedBy,
           k.status AS status,
           k.frequency AS frequency,
           k.threshold AS threshold,
-          k.high_from AS high_from,
-          k.medium_from AS medium_from,
           k.low_from AS low_from,
-          ISNULL(f.name, NULL) AS function_name
+          k.medium_from AS medium_from,
+          k.high_from AS high_from
         FROM Kris k
         LEFT JOIN KriFunctions kf ON k.id = kf.kri_id
           AND kf.deletedAt IS NULL
