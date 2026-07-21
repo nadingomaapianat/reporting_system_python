@@ -1054,9 +1054,9 @@ class ControlService:
             END AS name,
             COUNT(a.id) AS value
         FROM {actionplans_table} a
-        LEFT JOIN {control_design_tests_table} cdt ON a.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL
+        LEFT JOIN {control_design_tests_table} cdt ON a.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL AND cdt.function_id IS NOT NULL
         LEFT JOIN {controls_table} c ON cdt.control_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
-        WHERE a.deletedAt IS NULL 
+        WHERE a.deletedAt IS NULL AND cdt.function_id IS NOT NULL
         {date_filter}
         {function_filter if function_filter else ''}
         GROUP BY 
@@ -1531,8 +1531,8 @@ class ControlService:
         LEFT JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} cdt ON ap.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL
         LEFT JOIN {self.get_fully_qualified_table_name('Controls')} c ON cdt.control_id = c.id AND c.isDeleted = 0
         LEFT JOIN {self.get_fully_qualified_table_name('Functions')} f ON cdt.function_id = f.id AND f.deletedAt IS NULL
-        WHERE ap.[from] = 'adequacy' 
-            AND ap.deletedAt IS NULL AND ap.controlDesignTest_id IS NOT NULL {date_filter}
+        WHERE ap.[from] = 'adequacy'
+            AND ap.deletedAt IS NULL AND ap.controlDesignTest_id IS NOT NULL AND cdt.function_id IS NOT NULL {date_filter}
         {function_filter}
         ORDER BY ap.createdAt DESC
         """
@@ -1576,8 +1576,8 @@ class ControlService:
         LEFT JOIN {self.get_fully_qualified_table_name('Controls')} c ON cdt.control_id = c.id AND c.isDeleted = 0
         LEFT JOIN {self.get_fully_qualified_table_name('ControlFunctions')} cf ON c.id = cf.control_id
         LEFT JOIN {self.get_fully_qualified_table_name('Functions')} f ON cf.function_id = f.id
-        WHERE ap.[from] = 'effective' 
-            AND ap.deletedAt IS NULL AND ap.controlDesignTest_id IS NOT NULL {date_filter}
+        WHERE ap.[from] = 'effective'
+            AND ap.deletedAt IS NULL AND ap.controlDesignTest_id IS NOT NULL AND cdt.function_id IS NOT NULL {date_filter}
         {function_filter}
         ORDER BY ap.createdAt DESC
         """
@@ -1655,7 +1655,7 @@ class ControlService:
         FROM {self.get_fully_qualified_table_name('Functions')} AS f 
         JOIN {self.get_fully_qualified_table_name('ControlFunctions')} AS cf ON f.id = cf.function_id 
         JOIN {self.get_fully_qualified_table_name('Controls')} AS c ON cf.control_id = c.id AND c.isDeleted = 0 
-        LEFT JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} AS cdt ON cdt.control_id = c.id AND cdt.deletedAt IS NULL 
+        LEFT JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} AS cdt ON cdt.control_id = c.id AND cdt.deletedAt IS NULL AND cdt.function_id IS NOT NULL
         WHERE 1=1 {date_filter}
         {function_filter}
         GROUP BY f.name, cdt.quarter, cdt.year
