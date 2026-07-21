@@ -71,23 +71,33 @@ class KriService:
         submission_start_date: Optional[str] = None,
         submission_end_date: Optional[str] = None,
     ) -> str:
-        """Mirror Node buildKriValueSubmissionFilter: filter KriValues by when the value was
-        submitted (kv.createdAt). End date is inclusive of the whole day (< end + 1 day).
+        """Mirror Node buildKriValueSubmissionFilter: filter KriValues by the SUBMISSION period
+        -- the reporting month/year the value is FOR (kv.[year]/kv.[month]), NOT when the row was
+        entered (kv.createdAt). A value FOR March entered in April must match a "March" window.
+        Boundaries are snapped to whole months so a mid-month from/to still includes that month.
         The referenced table MUST be aliased `kv`. Returns '' when neither bound is set."""
         if not submission_start_date and not submission_end_date:
             return ""
+        from datetime import datetime
+        period_expr = "TRY_CONVERT(datetime, CONCAT(kv.[year], '-', kv.[month], '-01'))"
         parts = ""
         if submission_start_date:
-            parts += f" AND kv.createdAt >= '{submission_start_date}'"
-        if submission_end_date:
-            # Add one day so the whole end date is included (matches Node).
             try:
-                from datetime import datetime, timedelta
-                end_dt = datetime.fromisoformat(str(submission_end_date)[:10]) + timedelta(days=1)
-                end_str = end_dt.strftime("%Y-%m-%d")
+                s = datetime.fromisoformat(str(submission_start_date)[:10])
+                start_month = f"{s.year}-{s.month:02d}-01"
             except Exception:
-                end_str = str(submission_end_date)
-            parts += f" AND kv.createdAt < '{end_str}'"
+                start_month = str(submission_start_date)
+            parts += f" AND {period_expr} >= '{start_month}'"
+        if submission_end_date:
+            # First day of the month AFTER the end month, so the whole end month is included.
+            try:
+                e = datetime.fromisoformat(str(submission_end_date)[:10])
+                next_year = e.year + 1 if e.month == 12 else e.year
+                next_month = 1 if e.month == 12 else e.month + 1
+                end_exclusive = f"{next_year}-{next_month:02d}-01"
+            except Exception:
+                end_exclusive = str(submission_end_date)
+            parts += f" AND {period_expr} < '{end_exclusive}'"
         return parts
 
     def _build_kri_function_filter(
