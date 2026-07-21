@@ -34,8 +34,11 @@ class APIService:
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
         function_ids_csv: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
     ) -> Dict[str, str]:
-        """startDate/endDate + function filter like Node GRC (ISO dates; single functionId or comma functionIds)."""
+        """startDate/endDate + function filter like Node GRC (ISO dates; single functionId or comma functionIds).
+        Also forwards the independent submission-date range (submissionStartDate/submissionEndDate)."""
         from utils.node_grc_query import grc_iso_date_param, grc_merge_function_query_params
 
         params: Dict[str, str] = {}
@@ -45,6 +48,12 @@ class APIService:
             params["startDate"] = sd
         if ed:
             params["endDate"] = ed
+        ssd = grc_iso_date_param(submission_start_date)
+        sed = grc_iso_date_param(submission_end_date)
+        if ssd:
+            params["submissionStartDate"] = ssd
+        if sed:
+            params["submissionEndDate"] = sed
         if user_id:
             params["userId"] = user_id
         if group_name:
@@ -332,12 +341,15 @@ class APIService:
         function_id: Optional[str] = None,
         function_ids_csv: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Get KRIs dashboard data from Node.js API. Pass headers (e.g. Authorization, Cookie) to forward auth."""
         try:
             url = f"{self.node_api_url}/api/grc/kris"
             params = self._node_grc_filter_params(
-                start_date, end_date, user_id, group_name, function_id, function_ids_csv
+                start_date, end_date, user_id, group_name, function_id, function_ids_csv,
+                submission_start_date, submission_end_date,
             )
             request_headers = dict(headers) if headers else None
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:

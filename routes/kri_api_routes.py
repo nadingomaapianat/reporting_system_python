@@ -57,6 +57,7 @@ KRI_DISPLAY_NAMES = {
     "pendingAcceptance": "KRIs Pending Acceptance",
     "krisByStatus": "KRIs by Status",
     "krisByLevel": "KRIs by Risk Level",
+    "assessmentHistoryByLevel": "KRIs by Risk Level",
     "breachedKRIsByDepartment": "Breached KRIs by Function",
     "kriAssessmentCount": "KRI Assessment Count by Function",
     "kriCountsByFrequency": "KRIs by Frequency",
@@ -94,6 +95,14 @@ async def export_kris_pdf(
     functionIds: Optional[str] = Query(
         None,
         description="Comma-separated function IDs (multi-select); mirrors Node dashboard filters",
+    ),
+    submissionStartDate: Optional[str] = Query(
+        None,
+        description="Independent submission-date lower bound (KriValues.createdAt); mirrors the dashboard's Submission Date Filter",
+    ),
+    submissionEndDate: Optional[str] = Query(
+        None,
+        description="Independent submission-date upper bound (KriValues.createdAt); mirrors the dashboard's Submission Date Filter",
     ),
 ):
     """Export KRIs dashboard to PDF (GET or POST with optional body.totalKrisList or body.kriDetailsWithActionPlans)."""
@@ -163,6 +172,8 @@ async def export_kris_pdf(
 
         start_date_q = grc_iso_date_param(startDate)
         end_date_q = grc_iso_date_param(endDate)
+        submission_start_q = grc_iso_date_param(submissionStartDate)
+        submission_end_q = grc_iso_date_param(submissionEndDate)
         write_debug(f"[KRIS PDF] dates for SQL/Node: start={start_date_q!r} end={end_date_q!r} (raw: {startDate!r} / {endDate!r})")
 
         # Set report title to the display name for this card/chart/table (PDF title and Excel sheet name)
@@ -221,20 +232,23 @@ async def export_kris_pdf(
         elif cardType == 'krisByStatus':
             data = await kri_service.get_kris_by_status(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'krisByLevel':
-            data = await kri_service.get_kris_by_level_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_by_level_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'assessmentHistoryByLevel':
+            # "KRIs by Risk Level" chart: count every assessment record by its recorded level (matches Node dashboard).
+            data = await kri_service.get_assessment_history_by_level(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'breachedKRIsByDepartment':
-            data = await kri_service.get_breached_kris_by_department_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_breached_kris_by_department_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'kriAssessmentCount':
-            data = await kri_service.get_kri_assessment_count_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_assessment_count_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'kriMonthlyAssessment':
-            data = await kri_service.get_kri_monthly_assessment(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_monthly_assessment(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'newlyCreatedKrisPerMonth':
             data = await kri_service.get_newly_created_kris_per_month(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'deletedKrisPerMonth':
             data = await kri_service.get_deleted_kris_per_month(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'krisSubmittedMonthly':
             # Chart shows monthly submitted vs not-submitted counts; export the per-KRI-per-month detail
-            data = await kri_service.get_kris_submission_by_month_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_submission_by_month_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'kriCountsByMonthYear':
             data = await kri_service.get_kri_counts_by_month_year(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriCountsByFrequency':
@@ -251,11 +265,11 @@ async def export_kris_pdf(
         elif cardType == 'activeKrisDetails':
             data = await kri_service.get_active_kris_details(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'overdueKrisByDepartment':
-            data = await kri_service.get_overdue_kris_by_department(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_overdue_kris_by_department(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'allKrisSubmittedByFunction':
-            data = await kri_service.get_all_kris_submitted_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_all_kris_submitted_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'monthlyKriSubmissionByFunction':
-            data = await kri_service.get_monthly_kri_submission_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_monthly_kri_submission_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'kriRiskRelationships':
             data = await kri_service.get_kri_risk_relationships(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriWithoutLinkedRisks' or cardType == 'krisWithoutLinkedRisks':
@@ -279,6 +293,8 @@ async def export_kris_pdf(
                     function_id=function_id,
                     function_ids_csv=function_ids,
                     headers=forward_headers if forward_headers else None,
+                    submission_start_date=submission_start_q,
+                    submission_end_date=submission_end_q,
                 )
                 data = dashboard.get("kriDetailsWithActionPlans") or []
         else:
@@ -352,6 +368,14 @@ async def export_kris_excel(
         None,
         description="Comma-separated function IDs (multi-select); mirrors Node dashboard filters",
     ),
+    submissionStartDate: Optional[str] = Query(
+        None,
+        description="Independent submission-date lower bound (KriValues.createdAt); mirrors the dashboard's Submission Date Filter",
+    ),
+    submissionEndDate: Optional[str] = Query(
+        None,
+        description="Independent submission-date upper bound (KriValues.createdAt); mirrors the dashboard's Submission Date Filter",
+    ),
 ):
     """Export KRIs dashboard to Excel (GET or POST with optional body.totalKrisList or body.kriDetailsWithActionPlans)."""
     kri_details_override = None
@@ -421,6 +445,8 @@ async def export_kris_excel(
 
         start_date_q = grc_iso_date_param(startDate)
         end_date_q = grc_iso_date_param(endDate)
+        submission_start_q = grc_iso_date_param(submissionStartDate)
+        submission_end_q = grc_iso_date_param(submissionEndDate)
         write_debug(f"[KRIS EXCEL] dates for SQL/Node: start={start_date_q!r} end={end_date_q!r} (raw: {startDate!r} / {endDate!r})")
 
         # Set report title to the display name for this card/chart/table (PDF title and Excel sheet name)
@@ -474,20 +500,23 @@ async def export_kris_excel(
         elif cardType == 'krisByStatus':
             data = await kri_service.get_kris_by_status(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'krisByLevel':
-            data = await kri_service.get_kris_by_level_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_by_level_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'assessmentHistoryByLevel':
+            # "KRIs by Risk Level" chart: count every assessment record by its recorded level (matches Node dashboard).
+            data = await kri_service.get_assessment_history_by_level(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'breachedKRIsByDepartment':
-            data = await kri_service.get_breached_kris_by_department_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_breached_kris_by_department_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'kriAssessmentCount':
-            data = await kri_service.get_kri_assessment_count_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_assessment_count_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'kriMonthlyAssessment':
-            data = await kri_service.get_kri_monthly_assessment(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kri_monthly_assessment(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'newlyCreatedKrisPerMonth':
             data = await kri_service.get_newly_created_kris_per_month(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'deletedKrisPerMonth':
             data = await kri_service.get_deleted_kris_per_month(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'krisSubmittedMonthly':
             # Chart shows monthly submitted vs not-submitted counts; export the per-KRI-per-month detail
-            data = await kri_service.get_kris_submission_by_month_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_kris_submission_by_month_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'kriCountsByMonthYear':
             data = await kri_service.get_kri_counts_by_month_year(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriCountsByFrequency':
@@ -504,11 +533,11 @@ async def export_kris_excel(
         elif cardType == 'activeKrisDetails':
             data = await kri_service.get_active_kris_details(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'overdueKrisByDepartment':
-            data = await kri_service.get_overdue_kris_by_department(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_overdue_kris_by_department(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'allKrisSubmittedByFunction':
-            data = await kri_service.get_all_kris_submitted_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_all_kris_submitted_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'monthlyKriSubmissionByFunction':
-            data = await kri_service.get_monthly_kri_submission_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await kri_service.get_monthly_kri_submission_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'kriRiskRelationships':
             data = await kri_service.get_kri_risk_relationships(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriWithoutLinkedRisks' or cardType == 'krisWithoutLinkedRisks':
@@ -531,6 +560,8 @@ async def export_kris_excel(
                     function_id=function_id,
                     function_ids_csv=function_ids,
                     headers=forward_headers if forward_headers else None,
+                    submission_start_date=submission_start_q,
+                    submission_end_date=submission_end_q,
                 )
                 data = dashboard.get("kriDetailsWithActionPlans") or []
         else:
