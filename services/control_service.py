@@ -530,23 +530,32 @@ class ControlService:
         # above the RCM total (a pending subset must never exceed the RCM count).
         latest_where_clause = where_clause.replace("t.", "latest.")
         query = f"""
-        SELECT
-            t.id,
-            c.code as control_code,
-            c.name as control_name,
-            f.name as function_name,
-            {status_expr} as {status_column}
-        FROM {self.get_fully_qualified_table_name('ControlDesignTests')} t
-        INNER JOIN {self.get_fully_qualified_table_name('Controls')} c ON c.id = t.control_id
-        INNER JOIN {self.get_fully_qualified_table_name('Functions')} f ON t.function_id = f.id
-        WHERE {where_clause}
-          AND t.function_id IS NOT NULL 
-          AND c.isDeleted = 0
-          AND c.deletedAt IS NULL
-          AND t.deletedAt IS NULL
-        {date_filter}
-        {function_filter}
-        ORDER BY t.createdAt DESC, c.name
+        SELECT latest.id, latest.code, latest.control_name, latest.status, latest.function_name
+        FROM (
+            SELECT
+                t.id,
+                c.code,
+                c.name as control_name,
+                t.{status_column} as status,
+                f.name as function_name,
+                t.preparerStatus, t.checkerStatus, t.reviewerStatus, t.acceptanceStatus,
+                t.createdAt,
+                ROW_NUMBER() OVER (
+                    PARTITION BY t.control_id, t.function_id, t.risk_id, t.year, t.quarter
+                    ORDER BY t.createdAt DESC
+                ) AS rn
+            FROM {self.get_fully_qualified_table_name('ControlDesignTests')} t
+            INNER JOIN {self.get_fully_qualified_table_name('Controls')} c ON c.id = t.control_id
+            INNER JOIN {self.get_fully_qualified_table_name('Functions')} f ON t.function_id = f.id
+            WHERE t.function_id IS NOT NULL
+              AND c.isDeleted = 0
+              AND c.deletedAt IS NULL
+              AND t.deletedAt IS NULL
+            {date_filter}
+            {function_filter}
+        ) latest
+        WHERE latest.rn = 1 AND {latest_where_clause}
+        ORDER BY latest.createdAt DESC, latest.control_name
         """
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
