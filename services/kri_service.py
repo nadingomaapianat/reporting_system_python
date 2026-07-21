@@ -352,8 +352,8 @@ class KriService:
                 WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
                 ELSE 'In Progress'
             END AS kri_status,
-            CASE WHEN ISNULL(k.checkerStatus, '') = 'approved' THEN 'Approved' WHEN ISNULL(k.checkerStatus, '') = 'refused' THEN 'Refused' ELSE 'Pending' END AS first_approval,
-            CASE WHEN ISNULL(k.reviewerStatus, '') = 'sent' THEN 'Sent' ELSE 'Pending' END AS review,
+            CASE WHEN k.checkerStatus = 'approved' THEN 'Approved' WHEN k.checkerStatus = 'refused' THEN 'Refused' WHEN k.checkerStatus IS NULL THEN (CASE WHEN LOWER(k.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'Pending' END) ELSE 'Pending' END AS first_approval,
+            CASE WHEN k.reviewerStatus = 'sent' THEN 'Sent' WHEN k.reviewerStatus IS NULL THEN (CASE WHEN LOWER(k.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'Pending' END) ELSE 'Pending' END AS review,
             CASE WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved' WHEN ISNULL(k.acceptanceStatus, '') = 'refused' THEN 'Refused' ELSE 'Pending' END AS second_approval,
             FORMAT(CONVERT(datetime, k.createdAt), 'yyyy-MM-dd HH:mm:ss') AS createdAt
         FROM Kris k
