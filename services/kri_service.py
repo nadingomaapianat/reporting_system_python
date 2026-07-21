@@ -66,6 +66,30 @@ class KriService:
 
         return grc_parse_selected_function_ids_list(function_id, function_ids_csv)
 
+    def _build_submission_filter(
+        self,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
+    ) -> str:
+        """Mirror Node buildKriValueSubmissionFilter: filter KriValues by when the value was
+        submitted (kv.createdAt). End date is inclusive of the whole day (< end + 1 day).
+        The referenced table MUST be aliased `kv`. Returns '' when neither bound is set."""
+        if not submission_start_date and not submission_end_date:
+            return ""
+        parts = ""
+        if submission_start_date:
+            parts += f" AND kv.createdAt >= '{submission_start_date}'"
+        if submission_end_date:
+            # Add one day so the whole end date is included (matches Node).
+            try:
+                from datetime import datetime, timedelta
+                end_dt = datetime.fromisoformat(str(submission_end_date)[:10]) + timedelta(days=1)
+                end_str = end_dt.strftime("%Y-%m-%d")
+            except Exception:
+                end_str = str(submission_end_date)
+            parts += f" AND kv.createdAt < '{end_str}'"
+        return parts
+
     def _build_kri_function_filter(
         self,
         table_alias: str,
@@ -533,6 +557,8 @@ class KriService:
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return KRIs by level with derived logic from latest values (matches Node.js)"""
         date_filter = ""
@@ -543,16 +569,17 @@ class KriService:
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
+        submission_filter = self._build_submission_filter(submission_start_date, submission_end_date)
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
-        
+
         query = f"""
         WITH LatestKV AS (
           SELECT kv.kriId,
                  kv.value,
                  ROW_NUMBER() OVER (PARTITION BY kv.kriId ORDER BY COALESCE(CONVERT(datetime, CONCAT(kv.[year], '-', kv.[month], '-01')), kv.createdAt) DESC) rn
           FROM KriValues kv
-          WHERE kv.deletedAt IS NULL
+          WHERE kv.deletedAt IS NULL {submission_filter}
         ),
         K AS (
           SELECT k.id,
@@ -590,6 +617,56 @@ class KriService:
         """
         return await self.execute_query(query)
 
+    async def get_assessment_history_by_level(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Assessment History by Risk Level (the "KRIs by Risk Level" chart): count EVERY
+        assessment record (all periods, not just the latest per KRI) grouped by its recorded
+        risk level, using KriValues.assessment. Mirrors Node assessmentHistoryByLevelQuery."""
+        date_filter = ""
+        if start_date and end_date:
+            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND k.createdAt >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        submission_filter = self._build_submission_filter(submission_start_date, submission_end_date)
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
+
+        query = f"""
+        SELECT
+          CASE UPPER(LTRIM(RTRIM(kv.assessment)))
+            WHEN 'HIGH'   THEN 'High'
+            WHEN 'MEDIUM' THEN 'Medium'
+            WHEN 'LOW'    THEN 'Low'
+            ELSE 'Unknown'
+          END AS level,
+          COUNT(kv.id) AS count
+        FROM Kris k
+        INNER JOIN KriValues kv ON kv.kriId = k.id AND kv.deletedAt IS NULL
+        WHERE k.isDeleted = 0 AND k.deletedAt IS NULL {date_filter}
+          {function_filter} {submission_filter}
+        GROUP BY
+          CASE UPPER(LTRIM(RTRIM(kv.assessment)))
+            WHEN 'HIGH'   THEN 'High'
+            WHEN 'MEDIUM' THEN 'Medium'
+            WHEN 'LOW'    THEN 'Low'
+            ELSE 'Unknown'
+          END
+        ORDER BY count DESC
+        """
+        return await self.execute_query(query)
+
     async def get_breached_kris_by_department_detailed(
         self,
         start_date: Optional[str] = None,
@@ -598,6 +675,8 @@ class KriService:
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return breached KRIs by function: a KRI is breached when its latest
         assessment sits in the High-risk band (or an explicit High kri_level)."""
@@ -609,6 +688,7 @@ class KriService:
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
+        submission_filter = self._build_submission_filter(submission_start_date, submission_end_date)
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
 
@@ -617,7 +697,7 @@ class KriService:
           SELECT kv.kriId, kv.value,
                  ROW_NUMBER() OVER (PARTITION BY kv.kriId ORDER BY COALESCE(CONVERT(datetime, CONCAT(kv.[year], '-', kv.[month], '-01')), kv.createdAt) DESC) rn
           FROM KriValues kv
-          WHERE kv.deletedAt IS NULL
+          WHERE kv.deletedAt IS NULL {submission_filter}
         ),
         K AS (
           SELECT k.id,
@@ -716,6 +796,8 @@ class KriService:
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return KRI assessment count by function (count assessments from KriValues table)"""
         date_filter = ""
@@ -726,16 +808,17 @@ class KriService:
         elif end_date:
             date_filter = f"AND kv.createdAt <= '{end_date}'"
 
+        submission_filter = self._build_submission_filter(submission_start_date, submission_end_date)
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
-        
+
         query = f"""
         SELECT
           ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name,
           COUNT(kv.id) AS assessment_count
         FROM KriValues kv
         INNER JOIN Kris k ON kv.kriId = k.id
-          AND k.isDeleted = 0 
+          AND k.isDeleted = 0
           AND k.deletedAt IS NULL
         LEFT JOIN KriFunctions kf ON k.id = kf.kri_id
           AND kf.deletedAt IS NULL
@@ -745,7 +828,7 @@ class KriService:
         LEFT JOIN Functions frel ON frel.id = k.related_function_id
           AND frel.isDeleted = 0
           AND frel.deletedAt IS NULL
-        WHERE kv.deletedAt IS NULL {date_filter}
+        WHERE kv.deletedAt IS NULL {date_filter} {submission_filter}
           {function_filter}
         GROUP BY ISNULL(COALESCE(fkf.name, frel.name), 'Unknown')
         ORDER BY assessment_count DESC
@@ -760,6 +843,8 @@ class KriService:
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return monthly KRI counts grouped by assessment"""
         date_filter = ""
@@ -770,9 +855,10 @@ class KriService:
         elif end_date:
             date_filter = f"AND kv.createdAt <= '{end_date}'"
 
+        submission_filter = self._build_submission_filter(submission_start_date, submission_end_date)
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
-        
+
         query = f"""
         SELECT
           CAST(DATEADD(month, DATEPART(month, kv.createdAt) - 1, DATEFROMPARTS(YEAR(kv.createdAt), 1, 1)) AS datetime2) AS createdAt,
@@ -783,7 +869,7 @@ class KriService:
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL
           {function_filter}
-          AND kv.assessment IS NOT NULL {date_filter}
+          AND kv.assessment IS NOT NULL {date_filter} {submission_filter}
         GROUP BY
           CAST(DATEADD(month, DATEPART(month, kv.createdAt) - 1, DATEFROMPARTS(YEAR(kv.createdAt), 1, 1)) AS datetime2),
           kv.assessment
@@ -915,11 +1001,14 @@ class KriService:
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return one row per KRI per month: whether the KRI was Submitted (a value was
         recorded that month) or Not Submitted. Months run continuously from the earliest KRI's
         creation month through the later of "now" or the latest month that actually has data,
         so zero-submission months still appear and no real submission is ever dropped."""
+        submission_filter = self._build_submission_filter(submission_start_date, submission_end_date)
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
 
@@ -958,7 +1047,7 @@ class KriService:
         ),
         Sub AS (
           SELECT DISTINCT kv.kriId, TRY_CONVERT(int, kv.[year]) AS yr, TRY_CONVERT(int, kv.[month]) AS mo
-          FROM KriValues kv WHERE kv.deletedAt IS NULL
+          FROM KriValues kv WHERE kv.deletedAt IS NULL {submission_filter}
         )
         SELECT
           e.kri_code AS kri_code,
@@ -981,9 +1070,12 @@ class KriService:
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Monthly KRI submission by function: one row per KRI per month (all months),
         ordered by function, with month name, year, Submitted? (Yes/No) and Approved (Yes/No)."""
+        submission_filter = self._build_submission_filter(submission_start_date, submission_end_date)
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
 
@@ -1025,7 +1117,7 @@ class KriService:
         Sub AS (
           SELECT kv.kriId, TRY_CONVERT(int, kv.[year]) AS yr, TRY_CONVERT(int, kv.[month]) AS mo,
                  MAX(CASE WHEN kv.acceptanceStatus = 'approved' THEN 1 ELSE 0 END) AS is_approved
-          FROM KriValues kv WHERE kv.deletedAt IS NULL
+          FROM KriValues kv WHERE kv.deletedAt IS NULL {submission_filter}
           GROUP BY kv.kriId, TRY_CONVERT(int, kv.[year]), TRY_CONVERT(int, kv.[month])
         )
         SELECT
@@ -1051,6 +1143,8 @@ class KriService:
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return overdue KRIs with department from Actionplans or linked Function"""
         date_filter = ""
@@ -1061,6 +1155,7 @@ class KriService:
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
+        submission_filter = self._build_submission_filter(submission_start_date, submission_end_date)
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
         
@@ -1116,7 +1211,7 @@ class KriService:
         LEFT JOIN KriValues AS kv ON kv.kriId = k.id
           AND kv.[year] = ap.[year]
           AND kv.[month] = ap.[month]
-          AND kv.deletedAt IS NULL
+          AND kv.deletedAt IS NULL {submission_filter}
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
           {function_filter}
@@ -1133,6 +1228,8 @@ class KriService:
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return all KRIs submitted by function.
         Total KRIs = sum, per KRI, of how many months it has been active (createdAt -> now,
@@ -1146,6 +1243,7 @@ class KriService:
         elif end_date:
             date_filter = f"AND k.createdAt <= '{end_date}'"
 
+        submission_filter = self._build_submission_filter(submission_start_date, submission_end_date)
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
 
@@ -1177,7 +1275,7 @@ class KriService:
         OUTER APPLY (
           SELECT COUNT(DISTINCT CONCAT(kv.[year], '-', kv.[month])) AS months_submitted
           FROM KriValues kv
-          WHERE kv.kriId = k.id AND kv.deletedAt IS NULL
+          WHERE kv.kriId = k.id AND kv.deletedAt IS NULL {submission_filter}
         ) kv_counts
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}

@@ -686,6 +686,7 @@ class ExcelService:
                     default_type_by_card = {
                         "krisByStatus": "pie",
                         "krisByLevel": "pie",
+                        "assessmentHistoryByLevel": "pie",
                         "breachedKRIsByDepartment": "bar",
                         "kriAssessmentCount": "bar",
                         "kriOverdueStatusCounts": "pie",
