@@ -104,7 +104,7 @@ def create_app() -> FastAPI:
             dict.fromkeys(
                 [
                     "https://grc-reporting-uat.adib.co.eg",
-                    "https://GRCAPP01.adib.co.eg",
+                    "https://grc-dcc-uat.adib.co.eg",
                     _fe,
                     "http://127.0.0.1:3000",
                     "https://grc-reporting-node-uat.adib.co.eg",
