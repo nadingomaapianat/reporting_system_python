@@ -296,6 +296,14 @@ class PDFService:
                         # Status cards: compact columns with Function and readable Created At
                         if card_type in ['pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance']:
                             columns = ["#", "Code", "Title", "Function", "Status", "Created At"]
+                            # Show the same per-stage field the on-screen card highlights, not the
+                            # generic combined workflow-stage label (which showed e.g. 'pendingPreparer').
+                            status_key = {
+                                'pendingPreparer': 'preparerStatus',
+                                'pendingChecker': 'checkerStatus',
+                                'pendingReviewer': 'reviewerStatus',
+                                'pendingAcceptance': 'acceptanceStatus',
+                            }.get(card_type, 'status')
                             data_rows = []
                             for i, item in enumerate(data, 1):
                                 fn = item.get('function_name') or item.get('functionName') or 'N/A'
@@ -305,7 +313,7 @@ class PDFService:
                                     str(item.get('code', 'N/A')),
                                     str(item.get('title', 'N/A')),
                                     str(fn),
-                                    str(item.get('status', 'N/A')),
+                                    str(item.get(status_key, 'N/A')),
                                     created
                                 ])
                             write_debug(f"DEBUG: Created {len(data_rows)} rows (status card)")

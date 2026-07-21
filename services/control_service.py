@@ -500,7 +500,18 @@ class ControlService:
         }
         
         status_column = status_column_map.get(status_type, 'preparerStatus')
-        
+
+        if status_column == 'preparerStatus':
+            status_expr = "ISNULL(t.preparerStatus, 'draft')"
+        elif status_column == 'acceptanceStatus':
+            status_expr = "ISNULL(t.acceptanceStatus, 'pending')"
+        else:
+            status_expr = (
+                f"CASE WHEN t.{status_column} IS NULL THEN "
+                f"(CASE WHEN LOWER(t.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) "
+                f"ELSE t.{status_column} END"
+            )
+
         # Use standardized staged workflow pattern matching Node.js base-dashboard.service.ts
         if status_type == 'preparer':
             where_clause = "(ISNULL(t.preparerStatus, '') <> 'sent')"
@@ -524,7 +535,7 @@ class ControlService:
             c.code as control_code,
             c.name as control_name,
             f.name as function_name,
-            t.{status_column} as {status_column}
+            {status_expr} as {status_column}
         FROM {self.get_fully_qualified_table_name('ControlDesignTests')} t
         INNER JOIN {self.get_fully_qualified_table_name('Controls')} c ON c.id = t.control_id
         INNER JOIN {self.get_fully_qualified_table_name('Functions')} f ON t.function_id = f.id
@@ -1170,10 +1181,14 @@ class ControlService:
             c.code AS [Code],
             c.name AS [Control Name],
             ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS [Business Unit],
-            c.preparerStatus AS [Preparer Status],
-            c.checkerStatus AS [Checker Status],
-            c.reviewerStatus AS [Reviewer Status],
-            c.acceptanceStatus AS [Acceptance Status]
+            ISNULL(c.preparerStatus, 'draft') AS [Preparer Status],
+            CASE WHEN c.checkerStatus IS NULL THEN
+              CASE WHEN LOWER(c.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END
+            ELSE c.checkerStatus END AS [Checker Status],
+            CASE WHEN c.reviewerStatus IS NULL THEN
+              CASE WHEN LOWER(c.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END
+            ELSE c.reviewerStatus END AS [Reviewer Status],
+            ISNULL(c.acceptanceStatus, 'pending') AS [Acceptance Status]
         FROM {self.get_fully_qualified_table_name('Controls')} c
         WHERE c.isDeleted = 0
         {date_filter}
@@ -1246,10 +1261,14 @@ class ControlService:
               WHEN ISNULL(t.acceptanceStatus, '') = 'approved' THEN 'Approved'
               ELSE 'Other'
             END AS [Current Status],
-            t.preparerStatus AS [Preparer Status],
-            t.checkerStatus AS [Checker Status],
-            t.reviewerStatus AS [Reviewer Status],
-            t.acceptanceStatus AS [Acceptance Status]
+            ISNULL(t.preparerStatus, 'draft') AS [Preparer Status],
+            CASE WHEN t.checkerStatus IS NULL THEN
+              CASE WHEN LOWER(t.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END
+            ELSE t.checkerStatus END AS [Checker Status],
+            CASE WHEN t.reviewerStatus IS NULL THEN
+              CASE WHEN LOWER(t.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END
+            ELSE t.reviewerStatus END AS [Reviewer Status],
+            ISNULL(t.acceptanceStatus, 'pending') AS [Acceptance Status]
         FROM {self.get_fully_qualified_table_name('ControlDesignTests')} AS t
         INNER JOIN {self.get_fully_qualified_table_name('Controls')} AS c ON t.control_id = c.id
         INNER JOIN {self.get_fully_qualified_table_name('Functions')} AS f ON t.function_id = f.id

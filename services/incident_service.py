@@ -233,10 +233,10 @@ class IncidentService:
             (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
             ISNULL(i.status, '') AS recoveryStatus,
             ISNULL(ie.name, '') AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') AS createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -287,10 +287,10 @@ class IncidentService:
             ISNULL(i.exchange_rate, 0) AS exchangeRate,
             ISNULL(CAST(i.recovery_status AS NVARCHAR(255)), '') AS recoveryStatus,
             ISNULL(ie.name, '') AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') AS createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -335,10 +335,10 @@ class IncidentService:
             0 AS exchangeRate,
             '' AS recoveryStatus,
             ISNULL(ie.name, '') AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') AS createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -410,10 +410,10 @@ class IncidentService:
           (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
           ISNULL(i.status, '') AS recoveryStatus,
           ISNULL(ie.name, '') AS eventType,
-          ISNULL(i.preparerStatus, '') AS preparerStatus,
-          ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-          ISNULL(i.checkerStatus, '') AS checkerStatus,
-          ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+          ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+          CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+          CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+          ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
           CASE
             WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
             WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
@@ -495,10 +495,10 @@ class IncidentService:
                 (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
                 ISNULL(i.status, '') AS recoveryStatus,
                 ISNULL(ie.name, '') AS eventType,
-                ISNULL(i.preparerStatus, '') AS preparerStatus,
-                ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-                ISNULL(i.checkerStatus, '') AS checkerStatus,
-                ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+                ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+                CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+                CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+                ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
                 CASE
                     -- 1) Pending preparer: preparerStatus is anything other than 'sent'
                     WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
@@ -824,10 +824,10 @@ class IncidentService:
             (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
             ISNULL(i.status, '') AS recoveryStatus,
             ISNULL(ie.name, '') AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id
@@ -1023,10 +1023,10 @@ class IncidentService:
           (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
           ISNULL(i.status, '') AS recoveryStatus,
           ISNULL(ie.name, '') AS eventType,
-          ISNULL(i.preparerStatus, '') AS preparerStatus,
-          ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-          ISNULL(i.checkerStatus, '') AS checkerStatus,
-          ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+          ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+          CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+          CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+          ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
           i.timeFrame AS time_frame,
           FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
@@ -1101,10 +1101,10 @@ class IncidentService:
           ISNULL(i.exchange_rate, 0) AS exchangeRate,
           (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
           ISNULL(ie.name, '') AS eventType,
-          ISNULL(i.preparerStatus, '') AS preparerStatus,
-          ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-          ISNULL(i.checkerStatus, '') AS checkerStatus,
-          ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+          ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+          CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+          CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+          ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
           FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
           CASE
             WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
@@ -1185,10 +1185,10 @@ class IncidentService:
             (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
             ISNULL(i.status, '') AS recoveryStatus,
             ISNULL(ie.name, '') AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -1259,10 +1259,10 @@ class IncidentService:
             (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
             ISNULL(i.status, '') AS recoveryStatus,
             ie.name AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -1333,10 +1333,10 @@ class IncidentService:
             (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
             ISNULL(i.status, '') AS recoveryStatus,
             ie.name AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -1407,10 +1407,10 @@ class IncidentService:
             (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
             ISNULL(i.status, '') AS recoveryStatus,
             ie.name AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -1481,10 +1481,10 @@ class IncidentService:
             (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
             ISNULL(i.status, '') AS recoveryStatus,
             ISNULL(ie.name, '') AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -1553,10 +1553,10 @@ class IncidentService:
             (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
             ISNULL(i.status, '') AS recoveryStatus,
             ISNULL(ie.name, '') AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
             FORMAT(i.occurrence_date, 'yyyy-MM-dd') as occurrence_date,
             FORMAT(i.reported_date, 'yyyy-MM-dd') as reported_date,
             DATEDIFF(DAY, i.occurrence_date, i.reported_date) AS recognition_days,
@@ -1875,10 +1875,10 @@ class IncidentService:
           (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
           ISNULL(i.status, '') AS recoveryStatus,
           ISNULL(ie.name, '') AS eventType,
-          ISNULL(i.preparerStatus, '') AS preparerStatus,
-          ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-          ISNULL(i.checkerStatus, '') AS checkerStatus,
-          ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+          ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+          CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+          CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+          ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
           FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id
@@ -1953,10 +1953,10 @@ class IncidentService:
             (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
             ISNULL(i.status, '') AS recoveryStatus,
             ISNULL(ie.name, '') AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -2027,10 +2027,10 @@ class IncidentService:
             (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
             ISNULL(i.status, '') AS recoveryStatus,
             ie.name AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -2101,10 +2101,10 @@ class IncidentService:
             (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
             ISNULL(i.status, '') AS recoveryStatus,
             ie.name AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -2175,10 +2175,10 @@ class IncidentService:
             (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
             ISNULL(i.status, '') AS recoveryStatus,
             ie.name AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -2249,10 +2249,10 @@ class IncidentService:
             (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
             ISNULL(i.status, '') AS recoveryStatus,
             ISNULL(ie.name, '') AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -2321,10 +2321,10 @@ class IncidentService:
             (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
             ISNULL(i.status, '') AS recoveryStatus,
             ISNULL(ie.name, '') AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
+            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
+            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
+            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
+            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
             FORMAT(i.occurrence_date, 'yyyy-MM-dd') as occurrence_date,
             FORMAT(i.reported_date, 'yyyy-MM-dd') as reported_date,
             DATEDIFF(DAY, i.occurrence_date, i.reported_date) AS recognition_days,
