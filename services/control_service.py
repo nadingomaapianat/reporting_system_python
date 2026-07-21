@@ -1077,9 +1077,9 @@ class ControlService:
             END AS name,
             COUNT(a.id) AS value
         FROM {actionplans_table} a
-        LEFT JOIN {control_design_tests_table} cdt ON a.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL
+        LEFT JOIN {control_design_tests_table} cdt ON a.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL AND cdt.function_id IS NOT NULL
         LEFT JOIN {controls_table} c ON cdt.control_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
-        WHERE a.deletedAt IS NULL 
+        WHERE a.deletedAt IS NULL AND cdt.function_id IS NOT NULL
         {date_filter}
         {function_filter if function_filter else ''}
         GROUP BY 
@@ -1564,11 +1564,11 @@ class ControlService:
             CASE WHEN ap.implementation_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.implementation_date AS DATETIME), 105) ELSE NULL END AS [Implementation Date],
             ap.not_attend AS [Did Not Attend]
         FROM {self.get_fully_qualified_table_name('Actionplans')} ap
-        INNER JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} cdt ON ap.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL AND cdt.function_id IS NOT NULL
-        INNER JOIN {self.get_fully_qualified_table_name('Controls')} c ON cdt.control_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
-        INNER JOIN {self.get_fully_qualified_table_name('Functions')} f ON cdt.function_id = f.id AND f.deletedAt IS NULL
-        WHERE ap.[from] IN ('Adequacy', 'adequacy')
-            AND ap.deletedAt IS NULL AND ap.controlDesignTest_id IS NOT NULL {date_filter}
+        LEFT JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} cdt ON ap.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL
+        LEFT JOIN {self.get_fully_qualified_table_name('Controls')} c ON cdt.control_id = c.id AND c.isDeleted = 0
+        LEFT JOIN {self.get_fully_qualified_table_name('Functions')} f ON cdt.function_id = f.id AND f.deletedAt IS NULL
+        WHERE ap.[from] = 'adequacy'
+            AND ap.deletedAt IS NULL AND ap.controlDesignTest_id IS NOT NULL AND cdt.function_id IS NOT NULL {date_filter}
         {function_filter}
         ORDER BY ap.createdAt DESC
         """
@@ -1608,11 +1608,12 @@ class ControlService:
             CASE WHEN ap.implementation_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.implementation_date AS DATETIME), 105) ELSE NULL END AS [Implementation Date],
             ap.not_attend AS [Did Not Attend]
         FROM {self.get_fully_qualified_table_name('Actionplans')} ap
-        INNER JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} cdt ON ap.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL AND cdt.function_id IS NOT NULL
-        INNER JOIN {self.get_fully_qualified_table_name('Controls')} c ON cdt.control_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
-        INNER JOIN {self.get_fully_qualified_table_name('Functions')} f ON cdt.function_id = f.id AND f.deletedAt IS NULL
-        WHERE ap.[from] IN ('effective', 'Effective')
-            AND ap.deletedAt IS NULL AND ap.controlDesignTest_id IS NOT NULL {date_filter}
+        LEFT JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} cdt ON ap.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL
+        LEFT JOIN {self.get_fully_qualified_table_name('Controls')} c ON cdt.control_id = c.id AND c.isDeleted = 0
+        LEFT JOIN {self.get_fully_qualified_table_name('ControlFunctions')} cf ON c.id = cf.control_id
+        LEFT JOIN {self.get_fully_qualified_table_name('Functions')} f ON cf.function_id = f.id
+        WHERE ap.[from] = 'effective'
+            AND ap.deletedAt IS NULL AND ap.controlDesignTest_id IS NOT NULL AND cdt.function_id IS NOT NULL {date_filter}
         {function_filter}
         ORDER BY ap.createdAt DESC
         """
@@ -1692,12 +1693,11 @@ class ControlService:
             COUNT(DISTINCT c.id) AS [Total Controls],
             COUNT(DISTINCT CASE WHEN (c.preparerStatus = 'sent' AND c.acceptanceStatus = 'approved') THEN c.id END) AS [Controls Submitted],
             COUNT(DISTINCT CASE WHEN (cdt.preparerStatus = 'sent' AND cdt.acceptanceStatus = 'approved') THEN c.id END) AS [Tests Approved]
-        FROM {self.get_fully_qualified_table_name('ControlDesignTests')} AS cdt
-        INNER JOIN {self.get_fully_qualified_table_name('Controls')} AS c ON c.id = cdt.control_id
-        INNER JOIN {self.get_fully_qualified_table_name('Functions')} AS f ON f.id = cdt.function_id
-        WHERE c.isDeleted = 0
-          AND c.deletedAt IS NULL
-          AND cdt.deletedAt IS NULL {date_filter}
+        FROM {self.get_fully_qualified_table_name('Functions')} AS f 
+        JOIN {self.get_fully_qualified_table_name('ControlFunctions')} AS cf ON f.id = cf.function_id 
+        JOIN {self.get_fully_qualified_table_name('Controls')} AS c ON cf.control_id = c.id AND c.isDeleted = 0 
+        LEFT JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} AS cdt ON cdt.control_id = c.id AND cdt.deletedAt IS NULL AND cdt.function_id IS NOT NULL
+        WHERE 1=1 {date_filter}
         {function_filter}
         GROUP BY f.name, cdt.quarter, cdt.year
         ORDER BY f.name, cdt.year,
