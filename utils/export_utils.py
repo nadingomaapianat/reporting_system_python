@@ -208,6 +208,58 @@ def format_cell_value_for_export(key: str, value, _from_bytes: int = 0) -> str:
     return str(value)
 
 
+# Canonical column order taken from the Incidents Catalog (adib-frontend) table.
+# Used to normalize every incident export column list (PDF + Excel) to the same order.
+# Variant keys for one concept share a slot (e.g. function_name/functionName, net_loss/netLoss).
+CATALOG_KEY_ORDER = [
+    'code',
+    'importance',
+    'reportedDate', 'reported_date',
+    'occurrenceDate', 'occurrence_date',
+    'timeFrame',
+    'owner',
+    'functionName', 'function_name',
+    'categoryName',
+    'subCategoryName',
+    'title', 'name', 'incident_name', 'incident_title',
+    'description',
+    'rootCause', 'root_cause',
+    'causeName',
+    'rcm',
+    'kriName',
+    'discoveredType',
+    'totalLoss',
+    'recoveryAmount', 'recovery_amount',
+    'netLoss', 'net_loss',
+    'financialImpactName', 'financial_impact_name',
+    'currencyName',
+    'exchangeRate',
+    'financialEquivalent',
+    'recoveryStatus',
+    'eventType',
+    'preparerStatus',
+    'reviewerStatus',
+    'checkerStatus',
+    'acceptanceStatus',
+]
+
+# Tables that are aggregates (dimension + measure), not incident-row lists — never reordered.
+INCIDENT_AGGREGATE_TABLES = {'lossByRiskCategory', 'comprehensiveOperationalLoss'}
+
+
+def _order_by_catalog(pairs):
+    """Reorder a list of (key, label) tuples to CATALOG_KEY_ORDER.
+
+    Reorder-only: columns already present are sorted into catalog order; any key not
+    in the catalog is appended last, preserving its original relative order. No column
+    is ever added — so PDF's deliberately reduced column sets stay reduced.
+    """
+    known = [p for p in pairs if p[0] in CATALOG_KEY_ORDER]
+    unknown = [p for p in pairs if p[0] not in CATALOG_KEY_ORDER]
+    known.sort(key=lambda p: CATALOG_KEY_ORDER.index(p[0]))
+    return known + unknown
+
+
 # Incident table/card export: column order and labels to match UI (IncidentsDashboard tableColumns)
 INCIDENT_COLUMNS_UI = [
     ('code', 'Code'),
@@ -533,6 +585,22 @@ INCIDENT_TABLE_COLUMN_ORDERS_PDF = {
         ('net_loss', 'Net Loss'), ('recovery_amount', 'Recovery Amount'),
     ],
 }
+
+
+# --- Normalize every incident column list to the Incidents Catalog order (PDF + Excel) ---
+# Reorder-only (never adds columns), so PDF's compact sets stay compact.
+# Aggregate tables are left untouched.
+INCIDENT_COLUMNS_UI = _order_by_catalog(INCIDENT_COLUMNS_UI)
+INCIDENT_COLUMNS_PDF = _order_by_catalog(INCIDENT_COLUMNS_PDF)
+INCIDENT_ACTION_PLAN_COLUMNS = _order_by_catalog(INCIDENT_ACTION_PLAN_COLUMNS)
+INCIDENT_ACTION_PLAN_COLUMNS_FULL = _order_by_catalog(INCIDENT_ACTION_PLAN_COLUMNS_FULL)
+OVERDUE_INCIDENTS_COLUMNS = _order_by_catalog(OVERDUE_INCIDENTS_COLUMNS)
+for _tbl, _cols in list(INCIDENT_TABLE_COLUMN_ORDERS.items()):
+    if _tbl not in INCIDENT_AGGREGATE_TABLES:
+        INCIDENT_TABLE_COLUMN_ORDERS[_tbl] = _order_by_catalog(_cols)
+for _tbl, _cols in list(INCIDENT_TABLE_COLUMN_ORDERS_PDF.items()):
+    if _tbl not in INCIDENT_AGGREGATE_TABLES:
+        INCIDENT_TABLE_COLUMN_ORDERS_PDF[_tbl] = _order_by_catalog(_cols)
 
 
 def get_incident_table_ordered_keys_pdf(card_type: str, first_row: dict = None) -> list:
