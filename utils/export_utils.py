@@ -632,11 +632,38 @@ def get_incident_label(key: str) -> str:
     return re.sub(r'[_]|([a-z])([A-Z])', r'\1 \2', str(key)).title()
 
 
+def derive_incident_status(row: dict) -> str:
+    """Workflow status label derived from the approval fields (mirrors the backend SQL
+    CASE and the dashboard UI), so the exported Status column is consistent everywhere
+    and never blank/N/A. Different queries emit 'status' differently (e.g. 'pendingChecker'
+    vs 'Pending Checker'); deriving from the raw approval fields normalizes them all."""
+    preparer = str(row.get('preparerStatus') or '').lower()
+    checker = str(row.get('checkerStatus') or '').lower()
+    reviewer = str(row.get('reviewerStatus') or '').lower()
+    acceptance = str(row.get('acceptanceStatus') or '').lower()
+    if preparer != 'sent':
+        return 'Pending Preparer'
+    if checker != 'approved' and acceptance != 'approved':
+        return 'Pending Checker'
+    if checker == 'approved' and reviewer != 'sent' and acceptance != 'approved':
+        return 'Pending Reviewer'
+    if reviewer == 'sent' and acceptance != 'approved':
+        return 'Pending Acceptance'
+    if acceptance == 'approved':
+        return 'Approved'
+    return 'Other'
+
+
 def get_incident_cell_value(row: dict, key: str, empty_placeholder: str = 'N/A') -> str:
     """Get value for incident table cell; Function from function_name or functionName. Empty/missing -> empty_placeholder (default N/A). Use empty_placeholder='' for Excel so missing columns are blank."""
     if key == 'function_name':
         v = row.get('function_name') or row.get('functionName') or ''
         return format_cell_value_for_export(key, v) if v else empty_placeholder
+    # Combined workflow "Status": derive from the approval fields so it matches the UI
+    # and is never blank/N/A (only when those fields exist — action-plan tables use a
+    # separate cell-value function, so their own 'status' is unaffected).
+    if key == 'status' and any(k in row for k in ('preparerStatus', 'checkerStatus', 'reviewerStatus', 'acceptanceStatus')):
+        return derive_incident_status(row)
     v = row.get(key, '')
     if v is None or v == '':
         return empty_placeholder
