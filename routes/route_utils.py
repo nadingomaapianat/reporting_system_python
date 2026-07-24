@@ -749,61 +749,132 @@ def hex_to_color_for_pdf(hex_color: str):
     except:
         return colors.HexColor(f"#{hex_color}")
 
+# --- Dynamic report SQL builder (hardened against SQL injection) -------------
+# Values are always sent as bound parameters; identifiers are bracket-quoted
+# with ']' escaped; operators / join types / logical connectors are whitelisted.
+# Nothing from the request body is ever concatenated raw into the SQL text.
+
+_ALLOWED_OPERATORS = {'=', '!=', '<>', '>', '<', '>=', '<=', 'LIKE'}
+_ALLOWED_JOIN_TYPES = {'INNER', 'LEFT', 'RIGHT', 'FULL',
+                       'LEFT OUTER', 'RIGHT OUTER', 'FULL OUTER'}
+_ALLOWED_LOGICAL = {'AND', 'OR'}
+
+
+def _sql_placeholder() -> str:
+    """Bound-parameter placeholder for the active driver (%s pymssql / ? pyodbc)."""
+    import os
+    backend = (os.getenv('DB_BACKEND', 'pymssql') or 'pymssql').strip().lower()
+    return '%s' if backend == 'pymssql' else '?'
+
+
+def _quote_ident(name) -> str:
+    """
+    Bracket-quote a single SQL Server identifier, escaping ']' as ']]'.
+    This makes identifier injection impossible regardless of the input.
+    """
+    s = ('' if name is None else str(name)).strip()
+    if not s or len(s) > 128 or any(c in s for c in ('\x00', '\r', '\n')):
+        raise ValueError(f"Invalid SQL identifier: {name!r}")
+    return '[' + s.replace(']', ']]') + ']'
+
+
+def _quote_qualified(name) -> str:
+    """Quote a possibly dotted identifier, e.g. 'dbo.Table' or 'Table.Column'."""
+    return '.'.join(_quote_ident(part) for part in str(name).split('.'))
+
+
+def _quote_table(name) -> str:
+    """Quote a table name, defaulting to the dbo schema when unqualified."""
+    s = ('' if name is None else str(name)).strip()
+    if not s:
+        raise ValueError("Empty table name")
+    if '.' not in s:
+        s = f"dbo.{s}"
+    return _quote_qualified(s)
+
+
+def _column_ref(col, default_table) -> str:
+    """Quote a column reference; unqualified columns bind to the first table."""
+    s = ('' if col is None else str(col)).strip()
+    if not s:
+        raise ValueError("Empty column name")
+    if '.' in s:
+        return _quote_qualified(s)
+    return f"{_quote_ident(default_table)}.{_quote_ident(s)}"
+
+
 def build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter):
-    """Build SQL query from dynamic report configuration"""
-    # Helper function to qualify table name with schema if needed
-    def qualify_table_name(table_name):
-        """Add schema qualification if table name doesn't already have one"""
-        if not table_name:
-            return table_name
-        # Check if table already has schema qualification (contains a dot)
-        if '.' in table_name:
-            return table_name
-        # Add dbo schema by default
-        return f"dbo.{table_name}"
-    
-    # Start with SELECT clause
-    select_columns = ', '.join(columns) if columns else '*'
-    sql = f"SELECT {select_columns}"
-    
-    # Add FROM clause with first table
+    """
+    Build a parameterized SQL query from a dynamic report configuration.
+
+    Returns a (sql, params) tuple. Execute it as ``cursor.execute(sql, params)``
+    (or ``cursor.execute(sql)`` when params is empty). All literal values are
+    bound parameters and every identifier/operator is validated, so untrusted
+    request data cannot inject SQL.
+    """
     if not tables:
         raise ValueError("At least one table is required")
-    
-    qualified_table = qualify_table_name(tables[0])
-    sql += f" FROM {qualified_table}"
-    
-    # Add JOINs
-    for join in joins:
-        if join.get('leftTable') and join.get('rightTable') and join.get('leftColumn') and join.get('rightColumn'):
-            join_type = join.get('type', 'INNER')
-            qualified_left = qualify_table_name(join['leftTable'])
-            qualified_right = qualify_table_name(join['rightTable'])
-            sql += f" {join_type} JOIN {qualified_right} ON {qualified_left}.{join['leftColumn']} = {qualified_right}.{join['rightColumn']}"
-    
-    # Add WHERE clause
-    where_clauses = []
-    
-    # Add time filter
-    if time_filter and time_filter.get('column') and time_filter.get('startDate') and time_filter.get('endDate'):
-        where_clauses.append(f"{time_filter['column']} BETWEEN '{time_filter['startDate']}' AND '{time_filter['endDate']}'")
-    
-    # Add custom WHERE conditions
-    for i, condition in enumerate(where_conditions):
-        if condition.get('column') and condition.get('value'):
-            operator = condition.get('operator', '=')
-            value = condition.get('value', '')
-            logical_op = condition.get('logicalOperator', 'AND') if i > 0 else ''
-            
-            if logical_op:
-                where_clauses.append(f" {logical_op} {condition['column']} {operator} '{value}'")
-            else:
-                where_clauses.append(f"{condition['column']} {operator} '{value}'")
-    
+
+    placeholder = _sql_placeholder()
+    params: list = []
+
+    first_table = ('' if tables[0] is None else str(tables[0])).strip()
+    if not first_table:
+        raise ValueError("At least one table is required")
+
+    # SELECT
+    if columns:
+        select_columns = ', '.join(_column_ref(c, first_table) for c in columns)
+    else:
+        select_columns = '*'
+    sql = f"SELECT {select_columns}"
+
+    # FROM
+    sql += f" FROM {_quote_table(first_table)}"
+
+    # JOINs
+    for join in (joins or []):
+        left_t, right_t = join.get('leftTable'), join.get('rightTable')
+        left_c, right_c = join.get('leftColumn'), join.get('rightColumn')
+        if left_t and right_t and left_c and right_c:
+            join_type = str(join.get('type', 'INNER')).strip().upper()
+            if join_type not in _ALLOWED_JOIN_TYPES:
+                raise ValueError(f"Unsupported join type: {join.get('type')!r}")
+            sql += (
+                f" {join_type} JOIN {_quote_table(right_t)} ON "
+                f"{_quote_table(left_t)}.{_quote_ident(left_c)} = "
+                f"{_quote_table(right_t)}.{_quote_ident(right_c)}"
+            )
+
+    # WHERE
+    where_clauses: list = []
+
+    if (time_filter and time_filter.get('column')
+            and time_filter.get('startDate') and time_filter.get('endDate')):
+        col_ref = _column_ref(time_filter['column'], first_table)
+        where_clauses.append(f"{col_ref} BETWEEN {placeholder} AND {placeholder}")
+        params.append(time_filter['startDate'])
+        params.append(time_filter['endDate'])
+
+    for condition in (where_conditions or []):
+        col = condition.get('column')
+        value = condition.get('value')
+        if col and value is not None and value != '':
+            operator = str(condition.get('operator', '=')).strip().upper()
+            if operator not in _ALLOWED_OPERATORS:
+                raise ValueError(f"Unsupported operator: {condition.get('operator')!r}")
+            logical = str(condition.get('logicalOperator', 'AND')).strip().upper()
+            if logical not in _ALLOWED_LOGICAL:
+                logical = 'AND'
+            col_ref = _column_ref(col, first_table)
+            prefix = f"{logical} " if where_clauses else ""
+            where_clauses.append(f"{prefix}{col_ref} {operator} {placeholder}")
+            params.append(value)
+
     if where_clauses:
         sql += " WHERE " + " ".join(where_clauses)
-    
-    return sql
+
+    return sql, params
 
 def generate_excel_report(columns, data_rows, header_config=None):
     """Generate Excel report from dynamic data with full header configuration support"""
