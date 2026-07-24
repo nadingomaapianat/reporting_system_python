@@ -164,62 +164,11 @@ async def save_dynamic_dashboard_chart(request: Request):
         raise HTTPException(status_code=500, detail=f"Failed to save chart: {str(e)}")
 
 
-@router.post("/api/reports/execute-sql")
-async def execute_sql(request: Request):
-    """
-    Execute a read-only SQL query (SELECT only) and return columns and rows.
-    Body: { "sql": "SELECT ...", "limit": 1000 }.
-    Used by Create Chart from SQL Query in the dynamic dashboard.
-    """
-    try:
-        body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
-        if not isinstance(body, dict):
-            body = {}
-        sql = (body.get("sql") or "").strip()
-        limit = int(body.get("limit") or 1000)
-        if limit <= 0 or limit > 10000:
-            limit = 1000
-
-        if not sql:
-            raise HTTPException(status_code=400, detail="SQL query is required")
-
-        # Allow only SELECT (strip comments and whitespace for check)
-        sql_upper = sql.upper().lstrip()
-        if not sql_upper.startswith("SELECT"):
-            raise HTTPException(
-                status_code=400,
-                detail="Only SELECT queries are allowed. Use CAST for datetime columns, e.g. CAST(createdAt AS VARCHAR(MAX)) AS createdAt",
-            )
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(sql)
-            rows = cursor.fetchmany(limit) if limit > 0 else cursor.fetchall()
-            columns = [col[0] for col in cursor.description] if cursor.description else []
-
-            # Serialize rows to JSON-safe types (e.g. datetime -> str)
-            json_rows = []
-            for row in rows:
-                rec = {}
-                for idx, col_name in enumerate(columns):
-                    val = row[idx] if idx < len(row) else None
-                    if hasattr(val, "isoformat"):
-                        val = val.isoformat()
-                    elif val is not None and not isinstance(val, (str, int, float, bool, type(None))):
-                        val = str(val)
-                    rec[col_name] = val
-                json_rows.append(rec)
-
-            return {"success": True, "columns": columns, "rows": json_rows}
-        finally:
-            cursor.close()
-            conn.close()
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("execute-sql: %s", e)
-        raise HTTPException(status_code=500, detail=f"Error executing query: {str(e)}")
+# The free-text "execute-sql" endpoint was intentionally removed. It let the
+# browser run arbitrary SQL against the database (as a high-privilege account),
+# which is a serious SQL-injection / data-exposure risk. Charts and tables are
+# created from the safe, parameterized dynamic report builder instead
+# (see /api/reports/dynamic/preview and build_dynamic_sql_query).
 
 
 @router.post("/api/reports/dynamic/preview")
