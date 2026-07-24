@@ -435,7 +435,7 @@ async def generate_dynamic_report(request: Request):
         
         # Build SQL query
         try:
-            sql_query = build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter)
+            sql_query, sql_params = build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter)
             write_debug(f"[Dynamic Report] SQL query built: {sql_query[:200]}...")
         except Exception as sql_err:
             write_debug(f"[Dynamic Report] SQL query build failed: {str(sql_err)}")
@@ -452,7 +452,10 @@ async def generate_dynamic_report(request: Request):
             raise HTTPException(status_code=500, detail=f"Database connection failed: {str(db_err)}")
         
         try:
-            cursor.execute(sql_query)
+            if sql_params:
+                cursor.execute(sql_query, tuple(sql_params))
+            else:
+                cursor.execute(sql_query)
             rows = cursor.fetchall()
             write_debug(f"[Dynamic Report] Query executed, fetched {len(rows)} rows")
             

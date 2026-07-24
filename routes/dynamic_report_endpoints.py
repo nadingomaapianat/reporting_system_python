@@ -5,6 +5,7 @@ import logging
 import traceback
 from config import get_db_connection
 from utils.export_utils import get_default_header_config, filter_export_columns_rows
+from routes.route_utils import build_dynamic_sql_query
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -239,12 +240,15 @@ async def preview_dynamic_report(request: Request):
         if not tables or not columns:
             raise HTTPException(status_code=400, detail="Tables and columns are required")
 
-        sql_query = build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter)
+        sql_query, sql_params = build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter)
 
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute(sql_query)
+            if sql_params:
+                cursor.execute(sql_query, tuple(sql_params))
+            else:
+                cursor.execute(sql_query)
             # Fetch limited number of rows for preview
             rows = cursor.fetchmany(preview_limit) if preview_limit > 0 else cursor.fetchall()
 
@@ -297,7 +301,7 @@ async def generate_dynamic_report(request: Request):
             raise HTTPException(status_code=400, detail="Tables and columns are required")
         
         # Build SQL query
-        sql_query = build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter)
+        sql_query, sql_params = build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter)
         print(f"[DynamicReport] SQL Query: {sql_query}")
         print(f"[DynamicReport] Columns: {columns}")
         print(f"[DynamicReport] Tables: {tables}")
@@ -309,7 +313,10 @@ async def generate_dynamic_report(request: Request):
         
         try:
             print(f"[DynamicReport] Executing query...")
-            cursor.execute(sql_query)
+            if sql_params:
+                cursor.execute(sql_query, tuple(sql_params))
+            else:
+                cursor.execute(sql_query)
             rows = cursor.fetchall()
             print(f"[DynamicReport] Found {len(rows)} rows")
             
@@ -348,58 +355,8 @@ async def generate_dynamic_report(request: Request):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to generate dynamic report: {str(e)}")
 
-def build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter):
-    """Build SQL query based on dynamic report configuration"""
-    # Start with SELECT clause
-    select_columns = []
-    for col in columns:
-        if '.' in col:
-            # Split table.column and quote each part separately
-            table_part, column_part = col.split('.', 1)
-            select_columns.append(f"[{table_part}].[{column_part}]")
-        else:
-            # Add to first table
-            select_columns.append(f"[{tables[0]}].[{col}]")
-    
-    query = f"SELECT {', '.join(select_columns)}"
-    
-    # Add FROM clause
-    query += f" FROM [{tables[0]}]"
-    
-    # Add JOINs
-    for join in joins:
-        if join.get('leftTable') and join.get('rightTable') and join.get('leftColumn') and join.get('rightColumn'):
-            join_type = join.get('type', 'INNER')
-            query += f" {join_type} JOIN [{join['rightTable']}] ON [{join['leftTable']}].[{join['leftColumn']}] = [{join['rightTable']}].[{join['rightColumn']}]"
-    
-    # Add WHERE conditions
-    where_clauses = []
-    for condition in where_conditions:
-        if condition.get('column') and condition.get('operator') and condition.get('value'):
-            col_name = condition['column']
-            if '.' in col_name:
-                # Split table.column and quote each part separately
-                table_part, column_part = col_name.split('.', 1)
-                col_name = f"[{table_part}].[{column_part}]"
-            else:
-                col_name = f"[{col_name}]"
-            where_clauses.append(f"{col_name} {condition['operator']} '{condition['value']}'")
-    
-    # Add time filter
-    if time_filter and time_filter.get('column') and time_filter.get('startDate') and time_filter.get('endDate'):
-        col_name = time_filter['column']
-        if '.' in col_name:
-            # Split table.column and quote each part separately
-            table_part, column_part = col_name.split('.', 1)
-            col_name = f"[{table_part}].[{column_part}]"
-        else:
-            col_name = f"[{col_name}]"
-        where_clauses.append(f"{col_name} BETWEEN '{time_filter['startDate']}' AND '{time_filter['endDate']}'")
-    
-    if where_clauses:
-        query += " WHERE " + " AND ".join(where_clauses)
-    
-    return query
+# build_dynamic_sql_query now lives in routes.route_utils (hardened, parameterized)
+# and is imported at the top of this module.
 
 default_header_config = {
     "includeHeader": True,
