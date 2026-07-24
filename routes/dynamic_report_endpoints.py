@@ -13,23 +13,42 @@ router = APIRouter()
 @router.get("/api/reports/dynamic/tables")
 async def list_dynamic_tables():
     """
-    List available database tables for dynamic/transaction reports.
-    Uses INFORMATION_SCHEMA.TABLES (dbo schema, base tables only).
+    List available database tables (with their columns) for dynamic/transaction reports.
+    Uses INFORMATION_SCHEMA (dbo schema, base tables only).
+    Returns: { success, tables: [{ name, columns: [..] }] }.
     """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
+            # Fetch tables and their columns in one pass, ordered so columns keep
+            # their natural (ordinal) order within each table.
             cursor.execute(
                 """
-                SELECT TABLE_NAME
-                FROM INFORMATION_SCHEMA.TABLES
-                WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = 'dbo'
-                ORDER BY TABLE_NAME
+                SELECT c.TABLE_NAME, c.COLUMN_NAME
+                FROM INFORMATION_SCHEMA.COLUMNS c
+                INNER JOIN INFORMATION_SCHEMA.TABLES t
+                    ON t.TABLE_NAME = c.TABLE_NAME
+                    AND t.TABLE_SCHEMA = c.TABLE_SCHEMA
+                WHERE t.TABLE_TYPE = 'BASE TABLE' AND t.TABLE_SCHEMA = 'dbo'
+                ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION
                 """
             )
             rows = cursor.fetchall()
-            tables = [str(r[0]) for r in rows]
+
+            # Preserve table order (rows are already ordered by TABLE_NAME).
+            tables_map = {}
+            for r in rows:
+                table_name = str(r[0])
+                column_name = str(r[1])
+                if table_name not in tables_map:
+                    tables_map[table_name] = []
+                tables_map[table_name].append(column_name)
+
+            tables = [
+                {"name": name, "columns": columns}
+                for name, columns in tables_map.items()
+            ]
             return {"success": True, "tables": tables}
         finally:
             cursor.close()

@@ -60,12 +60,21 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
 
 def set_csrf_cookie(response: Response, token: str, *, secure: bool) -> None:
+    # The frontend and API are served from different origins, so the double-submit
+    # cookie must accompany cross-origin credentialed requests. That requires
+    # SameSite=None (which the browser only honours together with Secure).
+    # Fall back to Lax for local http dev, where Secure cookies would be dropped.
+    #
+    # This does not weaken CSRF protection: security comes from the attacker being
+    # unable to read the token (HttpOnly cookie + token echoed only to same-origin
+    # JS via CORS), not from the SameSite attribute.
+    same_site = "none" if secure else "lax"
     response.set_cookie(
         CSRF_COOKIE_NAME,
         token,
         httponly=True,
         secure=secure,
-        samesite="strict",
+        samesite=same_site,
         path="/",
     )
 
