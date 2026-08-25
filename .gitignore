@@ -1,6 +1,5 @@
 
 .venv/
-.env
 environment.env
 environment.docker.env
 *.tar
@@ -11,3 +10,5 @@ dcc-reporting-python.tar
 # Bytecode
 __pycache__/
 *.pyc
+config.bat
+node_modules
