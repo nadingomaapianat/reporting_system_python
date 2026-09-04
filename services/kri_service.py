@@ -151,55 +151,6 @@ class KriService:
    
  
     # KRI Database Methods
-    async def get_kris_by_status(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return KRIs grouped by status"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
-        
-        query = f"""
-        SELECT 
-            CASE 
-                WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-                WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' AND ISNULL(k.checkerStatus, '') <> 'approved' THEN 'Pending Checker'
-                WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' THEN 'Pending Reviewer'
-                WHEN ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
-                WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
-                ELSE 'Other'
-            END as status,
-            COUNT(*) as count
-        FROM Kris k
-        WHERE k.isDeleted = 0 
-          AND k.deletedAt IS NULL {date_filter}
-          {function_filter}
-        GROUP BY 
-            CASE 
-                WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-                WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' AND ISNULL(k.checkerStatus, '') <> 'approved' THEN 'Pending Checker'
-                WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' THEN 'Pending Reviewer'
-                WHEN ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
-                WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
-                ELSE 'Other'
-            END
-        ORDER BY count DESC
-        """
-        return await self.execute_query(query)
-
     async def get_kris_by_level(
         self,
         start_date: Optional[str] = None,
@@ -319,7 +270,7 @@ class KriService:
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return list of all KRIs with same columns as UI Total KRIs modal (code, kri_name, function_name, frequency, threshold, added_by_name, assigned_person_name, type, type_percentage_or_figure, rcm_functions, risk_mapping, status, created_by_name, kri_status, first_approval, review, second_approval, createdAt)."""
+        """Return list of all KRIs with same columns as UI Total KRIs modal (code, kri_name, function_name, frequency, threshold, added_by_name, assigned_person_name, type, type_percentage_or_figure, rcm_functions, risk_mapping, status, created_by_name, createdAt)."""
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -353,15 +304,6 @@ class KriService:
              WHERE kr.kri_id = k.id AND kr.deletedAt IS NULL) AS risk_mapping,
             ISNULL(k.status, '') AS status,
             ISNULL(created_by_u.name, '') AS created_by_name,
-            CASE
-                WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Draft'
-                WHEN ISNULL(k.reviewerStatus, '') = 'sent' THEN 'Review Sent'
-                WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
-                ELSE 'In Progress'
-            END AS kri_status,
-            CASE WHEN ISNULL(k.checkerStatus, '') = 'approved' THEN 'Approved' WHEN ISNULL(k.checkerStatus, '') = 'refused' THEN 'Refused' ELSE 'Pending' END AS first_approval,
-            CASE WHEN ISNULL(k.reviewerStatus, '') = 'sent' THEN 'Sent' ELSE 'Pending' END AS review,
-            CASE WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved' WHEN ISNULL(k.acceptanceStatus, '') = 'refused' THEN 'Refused' ELSE 'Pending' END AS second_approval,
             FORMAT(CONVERT(datetime, k.createdAt), 'yyyy-MM-dd HH:mm:ss') AS createdAt
         FROM Kris k
         LEFT JOIN Functions f ON k.related_function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -376,111 +318,6 @@ class KriService:
         write_debug(f"get_kris_list query (truncated): SELECT ... FROM Kris k ...")
         return await self.execute_query(query)
 
-    async def get_kris_by_status_detail(
-        self,
-        status: str,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return KRIs rows filtered by computed status label (not counts, matches incidents pattern)"""
-        write_debug(f"Getting KRIS by status detail: {status}")
-       
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
-
-        # Build query that computes the label and filters to requested status
-        query = f"""
-        WITH KrisStatus AS (
-            SELECT 
-                k.code,
-                k.kriName as kri_name,
-                ISNULL(f.name, 'Unknown') AS function_name,
-                CASE 
-                    -- 1) Pending preparer: preparerStatus is anything other than 'sent'
-                    WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
-                    -- 2) Pending checker: preparer sent AND checker not approved AND acceptance not approved
-                    WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'pendingChecker'
-                    -- 3) Pending reviewer: checker approved AND reviewer not approved AND acceptance not approved
-                    WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'pendingReviewer'
-                    -- 4) Pending acceptance: reviewer approved AND acceptance not approved
-                    WHEN ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'pendingAcceptance'
-                    -- 5) Fully approved
-                    WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
-                    ELSE 'Other'
-                END AS status,
-                FORMAT(CONVERT(datetime, k.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
-            FROM {self.get_fully_qualified_table_name('Kris')} k
-            LEFT JOIN {self.get_fully_qualified_table_name('Functions')} f ON k.related_function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
-            WHERE k.isDeleted = 0 AND k.deletedAt IS NULL {date_filter}
-            {function_filter}
-        )
-        SELECT *
-        FROM KrisStatus
-        WHERE status = '{status}'
-        ORDER BY createdAt DESC;
-        """
-        write_debug(f"Query: {query}")
-        return await self.execute_query(query)
-
-    async def get_kris_status_counts(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> Dict[str, int]:
-        """Return KRIs status counts (independent counts, matches Node.js logic)"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
-        
-        query = f"""
-        WITH KrisStatus AS (
-          SELECT 
-            CASE 
-              WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
-              WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'pendingChecker'
-              WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'pendingReviewer'
-              WHEN ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'pendingAcceptance'
-              WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'approved'
-              ELSE 'Other'
-            END AS status
-          FROM Kris k
-          WHERE k.isDeleted = 0 AND k.deletedAt IS NULL {date_filter}
-          {function_filter}
-        )
-        SELECT 
-          CAST(SUM(CASE WHEN status = 'pendingPreparer' THEN 1 ELSE 0 END) AS INT) AS pendingPreparer,
-          CAST(SUM(CASE WHEN status = 'pendingChecker' THEN 1 ELSE 0 END) AS INT) AS pendingChecker,
-          CAST(SUM(CASE WHEN status = 'pendingReviewer' THEN 1 ELSE 0 END) AS INT) AS pendingReviewer,
-          CAST(SUM(CASE WHEN status = 'pendingAcceptance' THEN 1 ELSE 0 END) AS INT) AS pendingAcceptance,
-          CAST(SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS INT) AS approved
-        FROM KrisStatus
-        """
-        result = await self.execute_query(query)
-        return result[0] if result else {}
-
     async def get_overall_kri_statuses(
         self,
         start_date: Optional[str] = None,
@@ -490,7 +327,7 @@ class KriService:
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return all KRIs with their combined status (for Overall KRI Statuses table)"""
+        """Return all KRIs (code, kri_name, function_name) for the Overall KRI Statuses table"""
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -506,15 +343,7 @@ class KriService:
         SELECT
           k.code             AS code,
           k.kriName          AS kri_name,
-          ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name,
-          CASE 
-            WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-            WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
-            WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-            WHEN ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
-            WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
-            ELSE 'Unknown'
-          END AS status
+          ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name
         FROM Kris k
         LEFT JOIN KriFunctions kf ON k.id = kf.kri_id
           AND kf.deletedAt IS NULL
@@ -949,20 +778,11 @@ class KriService:
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
-        
+
         query = f"""
         SELECT
           ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name,
-          COUNT(k.id) AS total_kris,
-          COUNT(CASE
-            WHEN ISNULL(k.preparerStatus, '') = 'sent'
-            THEN 1 END) AS submitted_kris,
-          CASE
-            WHEN COUNT(k.id) = COUNT(CASE
-              WHEN ISNULL(k.preparerStatus, '') = 'sent'
-              THEN 1 END)
-            THEN 'Yes' ELSE 'No'
-          END AS all_submitted
+          COUNT(k.id) AS total_kris
         FROM Kris AS k
         LEFT JOIN KriFunctions AS kf ON k.id = kf.kri_id
           AND kf.deletedAt IS NULL
@@ -1201,14 +1021,6 @@ class KriService:
         query = f"""
         SELECT
           k.kriName AS kriName,
-          CASE 
-            WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-            WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
-            WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-            WHEN ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
-            WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
-            ELSE 'Unknown'
-          END AS combined_status,
           u.name AS assignedPersonId,
           u2.name AS addedBy,
           k.status AS status,

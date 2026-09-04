@@ -203,14 +203,6 @@ class IncidentService:
             ISNULL(i.code, '') AS code,
             ISNULL(i.title, '') AS title,
             ISNULL(f.name, '') AS function_name,
-            CASE 
-                WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-                WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
-                WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-                WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
-                WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
-                ELSE 'Other'
-            END AS status,
             ISNULL(c.name, '') AS categoryName,
             ISNULL(sc.name, '') AS subCategoryName,
             ISNULL(u.name, '') AS owner,
@@ -229,10 +221,6 @@ class IncidentService:
             ISNULL(i.exchange_rate, 0) AS exchangeRate,
             ISNULL(i.status, '') AS recoveryStatus,
             ISNULL(ie.name, '') AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') AS createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -258,11 +246,6 @@ class IncidentService:
             ISNULL(i.code, '') AS code,
             ISNULL(i.title, '') AS title,
             ISNULL(f.name, '') AS function_name,
-            CASE WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-                WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
-                WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-                WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
-                WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved' ELSE 'Other' END AS status,
             ISNULL(c.name, '') AS categoryName,
             ISNULL(sc.name, '') AS subCategoryName,
             ISNULL(CAST(i.owner AS NVARCHAR(255)), '') AS owner,
@@ -281,10 +264,6 @@ class IncidentService:
             ISNULL(i.exchange_rate, 0) AS exchangeRate,
             ISNULL(CAST(i.recovery_status AS NVARCHAR(255)), '') AS recoveryStatus,
             ISNULL(ie.name, '') AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') AS createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -306,11 +285,6 @@ class IncidentService:
             ISNULL(i.code, '') AS code,
             ISNULL(i.title, '') AS title,
             ISNULL(f.name, '') AS function_name,
-            CASE WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-                WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
-                WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-                WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
-                WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved' ELSE 'Other' END AS status,
             ISNULL(c.name, '') AS categoryName,
             ISNULL(sc.name, '') AS subCategoryName,
             '' AS owner,
@@ -329,10 +303,6 @@ class IncidentService:
             0 AS exchangeRate,
             '' AS recoveryStatus,
             ISNULL(ie.name, '') AS eventType,
-            ISNULL(i.preparerStatus, '') AS preparerStatus,
-            ISNULL(i.reviewerStatus, '') AS reviewerStatus,
-            ISNULL(i.checkerStatus, '') AS checkerStatus,
-            ISNULL(i.acceptanceStatus, '') AS acceptanceStatus,
             FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') AS createdAt
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
@@ -362,105 +332,6 @@ class IncidentService:
         """
         return await self.execute_query(fallback)
 
-    async def get_incidents_status_overview(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return incidents status overview list with computed status (matches Node.js statusOverview)"""
-        date_filter = self._build_incident_date_filter(start_date, end_date)
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
-
-        query = f"""
-        SELECT 
-          i.code,
-          i.title,
-          f.name AS function_name,
-          CASE 
-            WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-            WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
-            WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-            WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
-            WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
-            ELSE 'Other'
-          END as status,
-          FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
-        FROM Incidents i
-        LEFT JOIN Functions f ON i.function_id = f.id
-          AND f.isDeleted = 0
-          AND f.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
-          AND i.deletedAt IS NULL
-          {date_filter}
-          {function_filter}
-        ORDER BY i.createdAt DESC
-        """
-        return await self.execute_query(query)
-
-    async def get_incidents_by_status(
-        self,
-        status: str,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return incidents rows filtered by computed status label (not counts)."""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
-
-        # Build query that computes the label and filters to requested status
-        query = f"""
-        WITH IncidentStatus AS (
-            SELECT 
-                i.code,
-                i.title,
-                ISNULL(f.name, 'Unknown') AS function_name,
-                CASE 
-                    -- 1) Pending preparer: preparerStatus is anything other than 'sent'
-                    WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
-                    -- 2) Pending checker: preparer sent AND checker not approved AND acceptance not approved
-                    WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'pendingChecker'
-                    -- 3) Pending reviewer: checker approved AND reviewer not approved AND acceptance not approved
-                    WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'pendingReviewer'
-                    -- 4) Pending acceptance: reviewer approved AND acceptance not approved
-                    WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'pendingAcceptance'
-                    -- 5) Fully approved
-                    WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
-                    ELSE 'Other'
-                END AS status,
-                FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
-            FROM Incidents i
-            LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
-            WHERE i.isDeleted = 0 AND i.deletedAt IS NULL {date_filter}
-            {function_filter}
-        )
-        SELECT *
-        FROM IncidentStatus
-        WHERE status = '{status}'
-        ORDER BY createdAt DESC;
-        """
-
-        write_debug(f"[INCIDENTS BY STATUS] query: {query}")
-        return await self.execute_query(query)
-
-   
     async def get_incidents_by_category(
         self,
         start_date: Optional[str] = None,
@@ -502,67 +373,6 @@ class IncidentService:
         write_debug(f"[INCIDENTS BY CATEGORY] query: {query}")
         return await self.execute_query(query)
 
-    async def get_incidents_by_status_distribution(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return incidents count by status (distribution for charts)"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
-        
-        query = f"""
-        WITH IncidentStatus AS (
-            SELECT 
-                i.id,
-                CASE 
-                    WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-                    WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
-                    WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-                    WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
-                    WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
-                    ELSE 'Other'
-                END AS status
-            FROM Incidents i
-            WHERE i.isDeleted = 0 AND i.deletedAt IS NULL {date_filter}
-            {function_filter}
-        ),
-        StatusCounts AS (
-            SELECT 
-                status as status_name,
-                COUNT(*) as count
-            FROM IncidentStatus
-            GROUP BY status
-        ),
-        AllStatuses AS (
-            SELECT 'Pending Preparer' AS status_name
-            UNION ALL SELECT 'Pending Checker'
-            UNION ALL SELECT 'Pending Reviewer'
-            UNION ALL SELECT 'Pending Acceptance'
-            UNION ALL SELECT 'Approved'
-            UNION ALL SELECT 'Other'
-        )
-        SELECT 
-            a.status_name,
-            ISNULL(s.count, 0) as count
-        FROM AllStatuses a
-        LEFT JOIN StatusCounts s ON a.status_name = s.status_name
-        ORDER BY s.count DESC, a.status_name
-        """
-        return await self.execute_query(query)
- 
     async def get_incidents_monthly_trend(
         self,
         start_date: Optional[str] = None,
@@ -934,15 +744,7 @@ class IncidentService:
           i.net_loss AS netLoss, 
           i.total_loss AS totalLoss, 
           i.recovery_amount AS recoveryAmount, 
-          (ISNULL(i.total_loss, 0) + ISNULL(i.recovery_amount, 0)) AS grossAmount, 
-          CASE 
-            WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-            WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
-            WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-            WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
-            WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
-            ELSE 'Other'
-          END AS status 
+          (ISNULL(i.total_loss, 0) + ISNULL(i.recovery_amount, 0)) AS grossAmount
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id
           AND f.isDeleted = 0

@@ -215,14 +215,6 @@ class APIService:
             endpoint_map = {
                 'totalControls': 'total',
                 'unmappedControls': 'unmapped',
-                'pendingPreparer': 'pending-preparer',
-                'pendingChecker': 'pending-checker',
-                'pendingReviewer': 'pending-reviewer',
-                'pendingAcceptance': 'pending-acceptance',
-                'testsPendingPreparer': 'tests/pending-preparer',
-                'testsPendingChecker': 'tests/pending-checker',
-                'testsPendingReviewer': 'tests/pending-reviewer',
-                'testsPendingAcceptance': 'tests/pending-acceptance'
             }
             
             endpoint = endpoint_map.get(card_type, card_type)

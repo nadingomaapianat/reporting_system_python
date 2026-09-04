@@ -51,11 +51,6 @@ router = APIRouter()
 # Display names for KRI cards, charts, and tables (used for PDF/Excel title and filenames)
 KRI_DISPLAY_NAMES = {
     "totalKris": "Total KRIs",
-    "pendingPreparer": "KRIs Pending Preparer",
-    "pendingChecker": "KRIs Pending Checker",
-    "pendingReviewer": "KRIs Pending Reviewer",
-    "pendingAcceptance": "KRIs Pending Acceptance",
-    "krisByStatus": "KRIs by Status",
     "krisByLevel": "KRIs by Risk Level",
     "breachedKRIsByDepartment": "Breached KRIs by Function",
     "kriAssessmentCount": "KRI Assessment Count by Function",
@@ -205,20 +200,8 @@ async def export_kris_pdf(
                 write_debug(f"[KRIS PDF] using totalKrisList from POST body, len={len(data)}")
             else:
                 data = await kri_service.get_kris_list(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'pendingPreparer':
-            data = await kri_service.get_kris_by_status_detail('pendingPreparer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'pendingChecker':
-            data = await kri_service.get_kris_by_status_detail('pendingChecker', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'pendingReviewer':
-            data = await kri_service.get_kris_by_status_detail('pendingReviewer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'pendingAcceptance':
-            data = await kri_service.get_kris_by_status_detail('pendingAcceptance', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'approved':
-            data = await kri_service.get_kris_by_status_detail('Approved', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        
+
         # Charts
-        elif cardType == 'krisByStatus':
-            data = await kri_service.get_kris_by_status(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'krisByLevel':
             data = await kri_service.get_kris_by_level_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'breachedKRIsByDepartment':
@@ -454,20 +437,8 @@ async def export_kris_excel(
                 write_debug(f"[KRIS EXCEL] using totalKrisList from POST body, len={len(data)}")
             else:
                 data = await kri_service.get_kris_list(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'pendingPreparer':
-            data = await kri_service.get_kris_by_status_detail('pendingPreparer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'pendingChecker':
-            data = await kri_service.get_kris_by_status_detail('pendingChecker', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'pendingReviewer':
-            data = await kri_service.get_kris_by_status_detail('pendingReviewer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'pendingAcceptance':
-            data = await kri_service.get_kris_by_status_detail('pendingAcceptance', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'approved':
-            data = await kri_service.get_kris_by_status_detail('Approved', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        
+
         # Charts
-        elif cardType == 'krisByStatus':
-            data = await kri_service.get_kris_by_status(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'krisByLevel':
             data = await kri_service.get_kris_by_level_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'breachedKRIsByDepartment':

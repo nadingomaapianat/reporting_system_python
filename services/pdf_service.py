@@ -195,7 +195,6 @@ class PDFService:
 
                     default_type_by_card = {
                         "byCategory": "bar",
-                        "byStatus": "pie",
                         "monthlyTrend": "line",
                         "netLossAndRecovery": "bar",
                         "topFinancialImpacts": "bar",
@@ -280,31 +279,14 @@ class PDFService:
                     if isinstance(first_item, dict):
                         write_debug(f"DEBUG: first_item keys: {list(first_item.keys())}")
                         
-                        # Status cards: compact columns with Function and readable Created At
-                        if card_type in ['pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance']:
-                            columns = ["#", "Code", "Title", "Function", "Status", "Created At"]
-                            data_rows = []
-                            for i, item in enumerate(data, 1):
-                                fn = item.get('function_name') or item.get('functionName') or 'N/A'
-                                created = format_cell_value_for_export('createdAt', item.get('createdAt', '')) or 'N/A'
-                                data_rows.append([
-                                    str(i),
-                                    str(item.get('code', 'N/A')),
-                                    str(item.get('title', 'N/A')),
-                                    str(fn),
-                                    str(item.get('status', 'N/A')),
-                                    created
-                                ])
-                            write_debug(f"DEBUG: Created {len(data_rows)} rows (status card)")
-                        else:
-                            # Other cards: PDF subset of columns (fewer columns = fits on page, no layout errors)
-                            from utils.export_utils import get_incident_ordered_keys_pdf, get_incident_label, get_incident_cell_value
-                            raw_keys = get_incident_ordered_keys_pdf(first_item)
-                            columns = ['#'] + [get_incident_label(k) for k in raw_keys]
-                            for i, item in enumerate(data, 1):
-                                values = [get_incident_cell_value(item, k) for k in raw_keys]
-                                data_rows.append([str(i)] + values)
-                            write_debug(f"DEBUG: Created {len(data_rows)} rows")
+                        # Other cards: PDF subset of columns (fewer columns = fits on page, no layout errors)
+                        from utils.export_utils import get_incident_ordered_keys_pdf, get_incident_label, get_incident_cell_value
+                        raw_keys = get_incident_ordered_keys_pdf(first_item)
+                        columns = ['#'] + [get_incident_label(k) for k in raw_keys]
+                        for i, item in enumerate(data, 1):
+                            values = [get_incident_cell_value(item, k) for k in raw_keys]
+                            data_rows.append([str(i)] + values)
+                        write_debug(f"DEBUG: Created {len(data_rows)} rows")
                     else:
                         columns = ['#', 'Value']
                         data_rows = [["1", str(first_item)]]
@@ -489,7 +471,6 @@ class PDFService:
                         data_rows.append(["No data available", "0"])
 
                     default_type_by_card = {
-                        "krisByStatus": "pie",
                         "krisByLevel": "pie",
                         "breachedKRIsByDepartment": "bar",
                         "kriAssessmentCount": "bar",
@@ -874,7 +855,7 @@ class PDFService:
                         write_debug(f"  - Data is list of dicts")
                         write_debug(f"  - first_item keys: {list(first_item.keys())}")
                         # Determine columns based on cardType
-                        if cardType in ['pendingPreparer', 'pendingChecker', 'pendingReviewer', 'pendingAcceptance', 'testsPendingPreparer', 'testsPendingChecker', 'testsPendingReviewer', 'testsPendingAcceptance','unmappedControls','unmappedIcofrControls','unmappedNonIcofrControls','totalControls']:
+                        if cardType in ['unmappedControls','unmappedIcofrControls','unmappedNonIcofrControls','totalControls']:
                             write_debug(f"  - Creating columns: ['#', 'Control Code', 'Control Name', 'Function']")
                             columns = ["#", "Control Code", "Control Name", "Function"]
                             data_rows = []
@@ -1019,7 +1000,6 @@ class PDFService:
                     "risksByEventType": "pie",
                     "createdDeletedRisksPerQuarter": "bar",
                     "quarterlyRiskCreationTrends": "line",
-                    "riskApprovalStatusDistribution": "pie",
                     "riskDistributionByFinancialImpact": "pie",
                 }
                 chart_type_override = None

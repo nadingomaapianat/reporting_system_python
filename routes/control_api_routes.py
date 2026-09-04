@@ -42,10 +42,6 @@ router = APIRouter()
 CONTROLS_DISPLAY_NAMES = {
     "totalControls": "Total Controls",
     "unmappedControls": "Unmapped Controls",
-    "testsPendingPreparer": "Control Tests Pending Preparer",
-    "testsPendingChecker": "Control Tests Pending Checker",
-    "testsPendingReviewer": "Control Tests Pending Reviewer",
-    "testsPendingAcceptance": "Control Tests Pending Acceptance",
     "unmappedIcofrControls": "Unmapped ICOFR Controls to COSO",
     "unmappedNonIcofrControls": "Unmapped Non-ICOFR Controls to COSO",
     "quarterlyControlCreationTrend": "Quarterly Control Creation Trend",
@@ -65,12 +61,8 @@ CONTROLS_DISPLAY_NAMES = {
     "icofrControlCoverageByCoso": "ICOFR Control Coverage by COSO Component",
     "actionPlanForAdequacy": "Action Plan for Adequacy",
     "actionPlanForEffectiveness": "Action Plan for Effectiveness",
-    "controlSubmissionStatusByQuarterFunction": "Control Submission Status by Quarter and Function",
-    "functionsWithFullyTestedControlTests": "Functions with Fully Tested Control Tests",
     "controlsNotMappedToAssertions": "Controls not mapped to any Assertions",
     "controlsNotMappedToPrinciples": "Controls not mapped to any Principles",
-    "controlsTestingApprovalCycle": "Controls Testing Approval Cycle",
-    "overallStatuses": "Control Creation Approval Cycle",
     "controlsByFunction": "Controls by Function",
     "department": "Controls by Department",
     "risk": "Controls by Risk Response",
@@ -170,27 +162,11 @@ async def export_controls_pdf(
             # SQL Fallbacks
             if cardType == 'unmappedControls':
                 card_data = await control_service.get_unmapped_controls(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'pendingPreparer':
-                card_data = await control_service.get_pending_controls('preparer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'pendingChecker':
-                card_data = await control_service.get_pending_controls('checker', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'pendingReviewer':
-                card_data = await control_service.get_pending_controls('reviewer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'pendingAcceptance':
-                card_data = await control_service.get_pending_controls('acceptance', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'testsPendingPreparer':
-                card_data = await control_service.get_tests_pending_controls('preparer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'testsPendingChecker':
-                card_data = await control_service.get_tests_pending_controls('checker', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'testsPendingReviewer':
-                card_data = await control_service.get_tests_pending_controls('reviewer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'testsPendingAcceptance':
-                card_data = await control_service.get_tests_pending_controls('acceptance', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
             elif cardType == 'unmappedIcofrControls':
                 card_data = await control_service.get_unmapped_icofr_controls(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
             elif cardType == 'unmappedNonIcofrControls':
                 card_data = await control_service.get_unmapped_non_icofr_controls(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            
+
             elif cardType == 'department':
                 card_data = await control_service.get_controls_by_department(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
             elif cardType == 'risk':
@@ -220,10 +196,6 @@ async def export_controls_pdf(
                 card_data = await control_service.get_controls_not_mapped_to_principles(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
             elif cardType == 'controlsNotMappedToAssertions':
                 card_data = await control_service.get_controls_not_mapped_to_assertions(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'functionsWithFullyTestedControlTests':
-                card_data = await control_service.get_functions_with_fully_tested_control_tests(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'controlSubmissionStatusByQuarterFunction':
-                card_data = await control_service.get_control_submission_status_by_quarter_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
             elif cardType == 'actionPlanForEffectiveness':
                 card_data = await control_service.get_action_plan_for_effectiveness(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
             elif cardType == 'actionPlanForAdequacy':
@@ -240,11 +212,6 @@ async def export_controls_pdf(
                 card_data = await control_service.get_key_non_key_controls_per_department(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)  
             elif cardType == 'controlsByFunction':
                 card_data = await control_service.get_controls_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'controlsTestingApprovalCycle':
-                card_data = await control_service.get_controls_testing_approval_cycle(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'overallStatuses':
-                card_data = await control_service.get_status_overview(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-           
             elif cardType == 'totalControls':
                 card_data = await control_service.get_total_controls(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
 
@@ -347,7 +314,7 @@ async def export_controls_excel(
         header_config = merge_header_config("controls", header_config)
         
         # Get table type from query params
-        table_type = request.query_params.get('tableType', 'overallStatuses')
+        table_type = request.query_params.get('tableType', 'totalControls')
         if tableType:
             table_type = tableType
         
@@ -393,22 +360,6 @@ async def export_controls_excel(
         if not card_data:
             if cardType == 'unmappedControls':
                 card_data = await control_service.get_unmapped_controls(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'pendingPreparer':
-                card_data = await control_service.get_pending_controls('preparer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'pendingChecker':
-                card_data = await control_service.get_pending_controls('checker', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'pendingReviewer':
-                card_data = await control_service.get_pending_controls('reviewer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'pendingAcceptance':
-                card_data = await control_service.get_pending_controls('acceptance', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'testsPendingPreparer':
-                card_data = await control_service.get_tests_pending_controls('preparer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'testsPendingChecker':
-                card_data = await control_service.get_tests_pending_controls('checker', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'testsPendingReviewer':
-                card_data = await control_service.get_tests_pending_controls('reviewer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'testsPendingAcceptance':
-                card_data = await control_service.get_tests_pending_controls('acceptance', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
             elif cardType == 'unmappedIcofrControls':
                 card_data = await control_service.get_unmapped_icofr_controls(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
             elif cardType == 'unmappedNonIcofrControls':
@@ -441,10 +392,6 @@ async def export_controls_excel(
                 card_data = await control_service.get_controls_not_mapped_to_principles(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
             elif cardType == 'controlsNotMappedToAssertions':
                 card_data = await control_service.get_controls_not_mapped_to_assertions(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'functionsWithFullyTestedControlTests':
-                card_data = await control_service.get_functions_with_fully_tested_control_tests(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'controlSubmissionStatusByQuarterFunction':
-                card_data = await control_service.get_control_submission_status_by_quarter_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
             elif cardType == 'actionPlanForEffectiveness':
                 card_data = await control_service.get_action_plan_for_effectiveness(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
             elif cardType == 'actionPlanForAdequacy':
@@ -461,10 +408,6 @@ async def export_controls_excel(
                 card_data = await control_service.get_key_non_key_controls_per_department(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
             elif cardType == 'controlsByFunction':
                 card_data = await control_service.get_controls_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'controlsTestingApprovalCycle':
-                card_data = await control_service.get_controls_testing_approval_cycle(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            elif cardType == 'overallStatuses':
-                card_data = await control_service.get_status_overview(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
             elif cardType == 'totalControls':
                 card_data = await control_service.get_total_controls(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
 

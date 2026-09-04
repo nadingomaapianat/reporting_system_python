@@ -369,55 +369,6 @@ class ControlService:
         return result
 
    
-    async def get_pending_controls(
-        self,
-        role: str,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Get pending controls for a given role: preparer/checker/reviewer/acceptance (using standardized sequential approval logic)"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
-
-        # Use standardized staged workflow pattern matching Node.js base-dashboard.service.ts
-        if role == 'preparer':
-            where_clause = "(ISNULL(c.preparerStatus, '') <> 'sent')"
-            status_field = 'preparerStatus'
-        elif role == 'checker':
-            where_clause = "(ISNULL(c.preparerStatus, '') = 'sent' AND ISNULL(c.checkerStatus, '') <> 'approved' AND ISNULL(c.acceptanceStatus, '') <> 'approved')"
-            status_field = 'checkerStatus'
-        elif role == 'reviewer':
-            where_clause = "(ISNULL(c.checkerStatus, '') = 'approved' AND ISNULL(c.reviewerStatus, '') <> 'sent' AND ISNULL(c.acceptanceStatus, '') <> 'approved')"
-            status_field = 'reviewerStatus'
-        elif role == 'acceptance':
-            where_clause = "(ISNULL(c.reviewerStatus, '') = 'sent' AND ISNULL(c.acceptanceStatus, '') <> 'approved')"
-            status_field = 'acceptanceStatus'
-        else:
-            return []
-
-        query = f"""
-        SELECT 
-            c.code as control_code,
-            c.name as control_name,
-            c.{status_field} as status,
-            ISNULL({self._control_function_name_subquery('c')}, 'Unknown') AS function_name
-        FROM {self.get_fully_qualified_table_name('Controls')} c
-        WHERE c.isDeleted = 0 AND c.deletedAt IS NULL {date_filter}
-          AND {where_clause}
-        {function_filter}
-        ORDER BY c.createdAt DESC, c.name
-        """
-        write_debug(f"SQL Query: {query}")
-        return await self.execute_query(query)
-    
     async def get_unmapped_icofr_controls(
         self,
         start_date: Optional[str] = None,
@@ -452,71 +403,6 @@ class ControlService:
         """
         return await self.execute_query(query)
     
-    async def get_tests_pending_controls(
-        self,
-        status_type: str,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Get controls with pending test status (using ControlDesignTests table like Node.js frontend)"""
-        date_filter = ""
-        if start_date and end_date:
-            # Node base-dashboard: dateFilterT on t.createdAt for ControlDesignTests, not c.createdAt
-            date_filter = f"AND t.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_direct_function_filter(
-            "t", "function_id", access, self._selected_function_ids(function_id, function_ids)
-        )
-        
-        # Map status types to database columns
-        status_column_map = {
-            'preparer': 'preparerStatus',
-            'checker': 'checkerStatus', 
-            'reviewer': 'reviewerStatus',
-            'acceptance': 'acceptanceStatus'
-        }
-        
-        status_column = status_column_map.get(status_type, 'preparerStatus')
-        
-        # Use standardized staged workflow pattern matching Node.js base-dashboard.service.ts
-        if status_type == 'preparer':
-            where_clause = "(ISNULL(t.preparerStatus, '') <> 'sent')"
-        elif status_type == 'checker':
-            where_clause = "(ISNULL(t.preparerStatus, '') = 'sent' AND ISNULL(t.checkerStatus, '') <> 'approved' AND ISNULL(t.acceptanceStatus, '') <> 'approved')"
-        elif status_type == 'reviewer':
-            where_clause = "(ISNULL(t.checkerStatus, '') = 'approved' AND ISNULL(t.reviewerStatus, '') <> 'sent' AND ISNULL(t.acceptanceStatus, '') <> 'approved')"
-        elif status_type == 'acceptance':
-            where_clause = "(ISNULL(t.reviewerStatus, '') = 'sent' AND ISNULL(t.acceptanceStatus, '') <> 'approved')"
-        else:
-            return []
-        
-        query = f"""
-        SELECT 
-            t.id,
-            c.code,
-            c.name as control_name,
-            t.{status_column} as status,
-            f.name as function_name
-        FROM {self.get_fully_qualified_table_name('ControlDesignTests')} t
-        INNER JOIN {self.get_fully_qualified_table_name('Controls')} c ON c.id = t.control_id
-        INNER JOIN {self.get_fully_qualified_table_name('Functions')} f ON t.function_id = f.id
-        WHERE {where_clause}
-          AND t.function_id IS NOT NULL 
-          AND c.isDeleted = 0
-          AND c.deletedAt IS NULL
-          AND t.deletedAt IS NULL
-        {date_filter}
-        {function_filter}
-        ORDER BY t.createdAt DESC, c.name
-        """
-        write_debug(f"SQL Query: {query}")
-        return await self.execute_query(query)
-
     async def get_unmapped_controls(
         self,
         start_date: Optional[str] = None,
@@ -1123,38 +1009,6 @@ class ControlService:
         return result
 
     
-    async def get_status_overview(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Status overview table matching Node statusOverview (Control Creation Approval Cycle)."""
-        date_filter = self._build_control_created_at_date_filter_sql(start_date, end_date)
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
-        
-        query = f"""
-        SELECT 
-            c.code as code,
-            c.name as name,
-            c.preparerStatus,
-            c.checkerStatus,
-            c.reviewerStatus,
-            c.acceptanceStatus
-        FROM {self.get_fully_qualified_table_name('Controls')} c
-        WHERE c.isDeleted = 0
-        {date_filter}
-        {function_filter}
-        ORDER BY c.createdAt DESC, c.name
-        """
-        write_debug(f"SQL Query: {query}")
-        return await self.execute_query(query)
-
     async def get_controls_by_function(
         self,
         start_date: Optional[str] = None,
@@ -1187,52 +1041,6 @@ class ControlService:
         write_debug(f"SQL Query: {query}")
         return await self.execute_query(query)
 
-    async def get_controls_testing_approval_cycle(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND t.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_direct_function_filter(
-            "t", "function_id", access, self._selected_function_ids(function_id, function_ids)
-        )
-        
-        query = f"""
-        SELECT 
-            c.name AS [Control Name],
-            FORMAT(c.createdAt, 'yyyy-MM-dd HH:mm:ss') AS [Created At],
-            c.code AS [Code],
-            t.preparerStatus AS [Preparer Status],
-            t.checkerStatus AS [Checker Status],
-            t.reviewerStatus AS [Reviewer Status],
-            t.acceptanceStatus AS [Acceptance Status],
-            f.name AS [Business Unit],
-            CASE 
-              WHEN ISNULL(t.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-              WHEN ISNULL(t.preparerStatus, '') = 'sent' AND ISNULL(t.checkerStatus, '') <> 'approved' AND ISNULL(t.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
-              WHEN ISNULL(t.checkerStatus, '') = 'approved' AND ISNULL(t.reviewerStatus, '') <> 'sent' AND ISNULL(t.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-              WHEN ISNULL(t.reviewerStatus, '') = 'sent' AND ISNULL(t.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
-              WHEN ISNULL(t.acceptanceStatus, '') = 'approved' THEN 'Approved'
-              ELSE 'Other'
-            END AS [Current Status]
-        FROM {self.get_fully_qualified_table_name('ControlDesignTests')} AS t
-        INNER JOIN {self.get_fully_qualified_table_name('Controls')} AS c ON t.control_id = c.id
-        INNER JOIN {self.get_fully_qualified_table_name('Functions')} AS f ON t.function_id = f.id
-        WHERE c.isDeleted = 0 AND (t.deletedAt IS NULL) AND t.function_id IS NOT NULL {date_filter}
-        {function_filter}
-        ORDER BY t.createdAt DESC, c.name
-        """
-        write_debug(f"SQL Query: {query}")
-        return await self.execute_query(query)
-    
     async def get_key_non_key_controls_per_department(
         self,
         start_date: Optional[str] = None,
@@ -1583,84 +1391,3 @@ class ControlService:
         """
         write_debug(f"SQL Query: {q}")
         return await self.execute_query(q)
-
-    async def get_control_submission_status_by_quarter_function(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
-
-        q = f"""
-        SELECT 
-            c.name AS [Control Name], 
-            f.name AS [Function Name], 
-            CASE WHEN cdt.quarter = 'quarterOne' THEN 1 
-                 WHEN cdt.quarter = 'quarterTwo' THEN 2 
-                 WHEN cdt.quarter = 'quarterThree' THEN 3 
-                 WHEN cdt.quarter = 'quarterFour' THEN 4 
-                 ELSE NULL END AS [Quarter], 
-            cdt.year AS [Year], 
-            CASE WHEN ( c.preparerStatus = 'sent' AND c.acceptanceStatus = 'approved' ) 
-                 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS [Control Submitted?], 
-            CASE WHEN ( cdt.preparerStatus = 'sent' AND cdt.acceptanceStatus = 'approved' ) 
-                 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS [Test Approved?] 
-        FROM {self.get_fully_qualified_table_name('ControlDesignTests')} cdt 
-        JOIN {self.get_fully_qualified_table_name('Controls')} c ON cdt.control_id = c.id 
-        JOIN {self.get_fully_qualified_table_name('Functions')} f ON cdt.function_id = f.id 
-        WHERE c.isDeleted = 0 AND cdt.deletedAt IS NULL {date_filter}
-        {function_filter}
-        ORDER BY c.createdAt DESC
-        """
-        write_debug(f"SQL Query: {q}")
-        return await self.execute_query(q)
-
-    async def get_functions_with_fully_tested_control_tests(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_control_function_filter("c", access, self._selected_function_ids(function_id, function_ids))
-
-        q = f"""
-        SELECT 
-            f.name AS [Function Name],
-            CASE WHEN cdt.quarter = 'quarterOne' THEN 1 
-                 WHEN cdt.quarter = 'quarterTwo' THEN 2 
-                 WHEN cdt.quarter = 'quarterThree' THEN 3 
-                 WHEN cdt.quarter = 'quarterFour' THEN 4 
-                 ELSE NULL END AS [Quarter],
-            cdt.year AS [Year],
-            COUNT(DISTINCT c.id) AS [Total Controls],
-            COUNT(DISTINCT CASE WHEN (c.preparerStatus = 'sent' AND c.acceptanceStatus = 'approved') THEN c.id END) AS [Controls Submitted],
-            COUNT(DISTINCT CASE WHEN (cdt.preparerStatus = 'sent' AND cdt.acceptanceStatus = 'approved') THEN c.id END) AS [Tests Approved]
-        FROM {self.get_fully_qualified_table_name('Functions')} AS f 
-        JOIN {self.get_fully_qualified_table_name('ControlFunctions')} AS cf ON f.id = cf.function_id 
-        JOIN {self.get_fully_qualified_table_name('Controls')} AS c ON cf.control_id = c.id AND c.isDeleted = 0 
-        LEFT JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} AS cdt ON cdt.control_id = c.id AND cdt.deletedAt IS NULL 
-        WHERE 1=1 {date_filter}
-        {function_filter}
-        GROUP BY f.name, cdt.quarter, cdt.year
-        ORDER BY f.name, cdt.year, cdt.quarter
-        """
-        write_debug(f"SQL Query: {q}")
-        return await self.execute_query(q)
-

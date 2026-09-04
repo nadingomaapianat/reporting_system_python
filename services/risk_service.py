@@ -807,48 +807,6 @@ class RiskService:
         
         return await self.execute_query(query)
 
-    async def get_risk_approval_status_distribution(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Get risk approval status distribution"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
-        
-        query = f"""
-        SELECT 
-          CASE 
-            WHEN rr.preparerResidualStatus = 'sent' AND rr.acceptanceResidualStatus = 'approved' THEN 'Approved'
-            ELSE 'Not Approved'
-          END AS approve,
-          COUNT(*) AS count
-        FROM {self.get_fully_qualified_table_name('Risks')} r
-        INNER JOIN dbo.[ResidualRisks] rr ON r.id = rr.riskId
-        WHERE r.isDeleted = 0 {date_filter}
-        {function_filter}
-        GROUP BY 
-          CASE 
-            WHEN rr.preparerResidualStatus = 'sent' AND rr.acceptanceResidualStatus = 'approved' THEN 'Approved'
-            ELSE 'Not Approved'
-          END
-        ORDER BY approve ASC
-        """
-        
-        return await self.execute_query(query)
-
     async def get_risk_distribution_by_financial_impact(
         self,
         start_date: Optional[str] = None,

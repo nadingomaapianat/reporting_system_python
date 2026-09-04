@@ -149,8 +149,6 @@ async def export_risks_pdf(
             data = await risk_service.get_created_deleted_risks_per_quarter(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'quarterlyRiskCreationTrends':
             data = await risk_service.get_quarterly_risk_creation_trends(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'riskApprovalStatusDistribution':
-            data = await risk_service.get_risk_approval_status_distribution(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'riskDistributionByFinancialImpact':
             data = await risk_service.get_risk_distribution_by_financial_impact(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         # Tables
@@ -327,8 +325,6 @@ async def export_risks_excel(
             data = await risk_service.get_created_deleted_risks_per_quarter(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'quarterlyRiskCreationTrends':
             data = await risk_service.get_quarterly_risk_creation_trends(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'riskApprovalStatusDistribution':
-            data = await risk_service.get_risk_approval_status_distribution(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'riskDistributionByFinancialImpact':
             data = await risk_service.get_risk_distribution_by_financial_impact(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         # Tables

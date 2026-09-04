@@ -213,7 +213,6 @@ INCIDENT_COLUMNS_UI = [
     ('code', 'Code'),
     ('title', 'Title'),
     ('function_name', 'Function'),
-    ('status', 'Status'),
     ('categoryName', 'Category'),
     ('subCategoryName', 'Sub Category'),
     ('owner', 'Owner'),
@@ -232,10 +231,6 @@ INCIDENT_COLUMNS_UI = [
     ('exchangeRate', 'Exchange Rate'),
     ('recoveryStatus', 'Recovery Status'),
     ('eventType', 'Event Type'),
-    ('preparerStatus', 'Incident Status'),
-    ('reviewerStatus', 'Review'),
-    ('checkerStatus', 'First Approval'),
-    ('acceptanceStatus', 'Second Approval'),
     ('createdAt', 'Created At'),
 ]
 
@@ -302,7 +297,6 @@ INCIDENT_COLUMNS_PDF = [
     ('code', 'Code'),
     ('title', 'Title'),
     ('function_name', 'Function'),
-    ('status', 'Status'),
     ('categoryName', 'Category'),
     ('owner', 'Owner'),
     ('occurrenceDate', 'Occurrence Date'),

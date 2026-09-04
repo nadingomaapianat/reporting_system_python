@@ -350,7 +350,6 @@ class ExcelService:
 
                     default_type_by_card = {
                         "byCategory": "bar",
-                        "byStatus": "pie",
                         "monthlyTrend": "line",
                         "netLossAndRecovery": "bar",
                         "topFinancialImpacts": "bar",
@@ -378,11 +377,7 @@ class ExcelService:
 
             # TABLE EXPORT (full UI columns so Excel has all columns as in dashboard)
             elif only_overall_table:
-                table_rows = []
-                if card_type == 'overallStatuses':
-                    table_rows = incidents_data.get('overallStatuses') or incidents_data.get('statusOverview') or []
-                else:
-                    table_rows = incidents_data.get(card_type) or []
+                table_rows = incidents_data.get(card_type) or []
 
                 if isinstance(table_rows, list) and len(table_rows) > 0:
                     first_item = table_rows[0]
@@ -652,7 +647,6 @@ class ExcelService:
                         columns = ["Label", "Value"]
 
                     default_type_by_card = {
-                        "krisByStatus": "pie",
                         "krisByLevel": "pie",
                         "breachedKRIsByDepartment": "bar",
                         "kriAssessmentCount": "bar",
@@ -839,7 +833,6 @@ class ExcelService:
                     "risksByEventType": "pie",
                     "createdDeletedRisksPerQuarter": "bar",
                     "quarterlyRiskCreationTrends": "line",
-                    "riskApprovalStatusDistribution": "pie",
                     "riskDistributionByFinancialImpact": "pie",
                 }
                 

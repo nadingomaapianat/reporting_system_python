@@ -316,10 +316,6 @@ async def save_and_log_export(
         if dashboard == "incidents":
             INCIDENT_CARD_FILENAME_MAP = {
                 "totalIncidents": "Total_Incidents",
-                "pendingPreparer": "Incidents_Pending_Preparer",
-                "pendingChecker": "Incidents_Pending_Checker",
-                "pendingReviewer": "Incidents_Pending_Reviewer",
-                "pendingAcceptance": "Incidents_Pending_Acceptance",
                 "incidentsByCategory": "Incidents_by_Category",
                 "byCategory": "Incidents_by_Category",
                 "incidentsByStatus": "Incidents_by_Status",
@@ -351,7 +347,6 @@ async def save_and_log_export(
                 "peopleErrorLoss": "People_Error_Loss",
                 "incidentActionPlan": "Incident_Action_Plan",
                 "overdueIncidents": "Overdue_Incidents",
-                "overallStatuses": "Overall_Incident_Statuses",
             }
             filename_title = INCIDENT_CARD_FILENAME_MAP.get(
                 card_type,
@@ -361,10 +356,6 @@ async def save_and_log_export(
             CONTROLS_FILENAME_MAP = {
                 "totalControls": "Total_Controls",
                 "unmappedControls": "Unmapped_Controls",
-                "testsPendingPreparer": "Control_Tests_Pending_Preparer",
-                "testsPendingChecker": "Control_Tests_Pending_Checker",
-                "testsPendingReviewer": "Control_Tests_Pending_Reviewer",
-                "testsPendingAcceptance": "Control_Tests_Pending_Acceptance",
                 "unmappedIcofrControls": "Unmapped_ICOFR_Controls_to_COSO",
                 "unmappedNonIcofrControls": "Unmapped_Non_ICOFR_Controls_to_COSO",
                 "quarterlyControlCreationTrend": "Quarterly_Control_Creation_Trend",
@@ -384,12 +375,8 @@ async def save_and_log_export(
                 "icofrControlCoverageByCoso": "ICOFR_Control_Coverage_by_COSO_Component",
                 "actionPlanForAdequacy": "Action_Plan_for_Adequacy",
                 "actionPlanForEffectiveness": "Action_Plan_for_Effectiveness",
-                "controlSubmissionStatusByQuarterFunction": "Control_Submission_Status_by_Quarter_and_Function",
-                "functionsWithFullyTestedControlTests": "Functions_with_Fully_Tested_Control_Tests",
                 "controlsNotMappedToAssertions": "Controls_not_mapped_to_any_Assertions",
                 "controlsNotMappedToPrinciples": "Controls_not_mapped_to_any_Principles",
-                "controlsTestingApprovalCycle": "Controls_Testing_Approval_Cycle",
-                "overallStatuses": "Control_Creation_Approval_Cycle",
                 "controlsByFunction": "Controls_by_Function",
                 "department": "Controls_by_Department",
                 "risk": "Controls_by_Risk_Response",
@@ -401,11 +388,6 @@ async def save_and_log_export(
         elif dashboard == "kris":
             KRI_FILENAME_MAP = {
                 "totalKris": "Total_KRIs",
-                "pendingPreparer": "KRIs_Pending_Preparer",
-                "pendingChecker": "KRIs_Pending_Checker",
-                "pendingReviewer": "KRIs_Pending_Reviewer",
-                "pendingAcceptance": "KRIs_Pending_Acceptance",
-                "krisByStatus": "KRIs_by_Status",
                 "krisByLevel": "KRIs_by_Risk_Level",
                 "breachedKRIsByDepartment": "Breached_KRIs_by_Function",
                 "kriAssessmentCount": "KRI_Assessment_Count_by_Function",

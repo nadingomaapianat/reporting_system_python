@@ -192,24 +192,11 @@ async def export_incidents_pdf(
         # Metrics
         if cardType == 'totalIncidents':
             data = await incident_service.get_incidents_list(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'pendingPreparer':
-            write_debug(f"[INCIDENTS PDF] fetching pending preparer incidents for {startDate} to {endDate}")
-            data = await incident_service.get_incidents_by_status('pendingPreparer', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'pendingChecker':
-            data = await incident_service.get_incidents_by_status('pendingChecker', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'pendingReviewer':
-            data = await incident_service.get_incidents_by_status('pendingReviewer', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'pendingAcceptance':
-            data = await incident_service.get_incidents_by_status('pendingAcceptance', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            
-      
+
         # Charts
         elif cardType == 'byCategory':
             data = await incident_service.get_incidents_by_category(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        
-        elif cardType == 'byStatus':
-            data = await incident_service.get_incidents_by_status_distribution(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        
+
         elif cardType == 'monthlyTrend':
             data = await incident_service.get_incidents_monthly_trend(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
        
@@ -231,8 +218,6 @@ async def export_incidents_pdf(
             data = await incident_service.get_incidents_net_loss_recovery(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
        
         #tables
-        elif cardType == 'overallStatuses':
-            data = await incident_service.get_incidents_status_overview(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'incidentsFinancialDetails':
             data = await incident_service.get_incidents_financial_details(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'incidentsWithTimeframe':
@@ -470,22 +455,10 @@ async def export_incidents_excel(
         
         if cardType == 'totalIncidents':
             data = await incident_service.get_incidents_list(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'pendingPreparer':
-            write_debug(f"[INCIDENTS PDF] fetching pending preparer incidents for {startDate} to {endDate}")
-            data = await incident_service.get_incidents_by_status('pendingPreparer', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'pendingChecker':
-            data = await incident_service.get_incidents_by_status('pendingChecker', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'pendingReviewer':
-            data = await incident_service.get_incidents_by_status('pendingReviewer', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'pendingAcceptance':
-            data = await incident_service.get_incidents_by_status('pendingAcceptance', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-            
-      
+
         # Charts
         elif cardType == 'byCategory':
             data = await incident_service.get_incidents_by_category(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        elif cardType == 'byStatus':
-            data = await incident_service.get_incidents_by_status_distribution(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'monthlyTrend':
             data = await incident_service.get_incidents_monthly_trend(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'incidentsTimeSeries':
@@ -502,8 +475,6 @@ async def export_incidents_excel(
         # Pending buckets and totals/list
       
         #tables
-        elif cardType == 'overallStatuses':
-            data = await incident_service.get_incidents_status_overview(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'incidentsFinancialDetails':
             data = await incident_service.get_incidents_financial_details(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'incidentsWithTimeframe':
