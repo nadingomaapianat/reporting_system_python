@@ -350,7 +350,7 @@ class KriService:
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return list of all KRIs with same columns as UI Total KRIs modal (code, kri_name, function_name, frequency, threshold, added_by_name, assigned_person_name, type, type_percentage_or_figure, rcm_functions, risk_mapping, status, created_by_name, kri_status, first_approval, review, second_approval, createdAt)."""
+        """Return list of all KRIs with same columns as UI Total KRIs modal (code, function_name, kri_name, frequency, threshold, added_by_name, assigned_person_name, type, type_percentage_or_figure, rcm_functions, risk_mapping, status, created_by_name, kri_status, first_approval, review, second_approval, createdAt)."""
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -366,8 +366,8 @@ class KriService:
         query = f"""
         SELECT
             k.code,
-            k.kriName AS kri_name,
             ISNULL(f.name, '') AS function_name,
+            k.kriName AS kri_name,
             ISNULL(k.frequency, '') AS frequency,
             ISNULL(k.threshold, '') AS threshold,
             k.low_from AS low_risk,
@@ -439,8 +439,8 @@ class KriService:
         WITH KrisStatus AS (
             SELECT
                 k.code,
-                k.kriName as kri_name,
                 ISNULL(f.name, 'Unknown') AS function_name,
+                k.kriName as kri_name,
                 CASE
                     -- 1) Pending preparer: preparerStatus is anything other than 'sent'
                     WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
@@ -539,8 +539,8 @@ class KriService:
         query = f"""
         SELECT
           k.code             AS code,
-          k.kriName          AS kri_name,
           ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name,
+          k.kriName          AS kri_name,
           CASE
             WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
             WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
@@ -683,6 +683,247 @@ class KriService:
         ORDER BY count DESC
         """
         return await self.execute_query(query)
+
+    async def get_kris_by_level_records(
+        self,
+        level: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Detail rows backing the Low/Medium/High KRI Value cards: one row per
+        KriValues assessment record classified as `level`. Mirrors Node's
+        getKrisByLevel exactly (same INNER JOIN KriValues, same CASE classification,
+        same date/function/submission filters) so the exported row count always
+        matches the on-screen card/chart count for that level."""
+        date_filter = ""
+        if start_date and end_date:
+            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND k.createdAt >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        submission_filter = self._build_submission_filter(submission_start_date, submission_end_date)
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
+        level_bucket = level.replace("'", "''")
+
+        query = f"""
+        WITH K AS (
+          SELECT k.id, k.code, k.kriName, k.createdAt, k.related_function_id
+          FROM Kris k
+          WHERE k.isDeleted = 0 AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
+        ),
+        Derived AS (
+          SELECT
+            K.code,
+            K.kriName AS name,
+            K.createdAt,
+            kv.id AS kriValueId,
+            kv.value AS value,
+            ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name,
+            CASE UPPER(LTRIM(RTRIM(kv.assessment)))
+              WHEN 'HIGH'   THEN 'High'
+              WHEN 'MEDIUM' THEN 'Medium'
+              WHEN 'LOW'    THEN 'Low'
+              ELSE 'Unknown'
+            END AS level_bucket
+          FROM K
+          INNER JOIN KriValues kv ON kv.kriId = K.id AND kv.deletedAt IS NULL
+          LEFT JOIN Functions frel ON frel.id = K.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
+          OUTER APPLY (
+            SELECT TOP 1 f2.name
+            FROM KriFunctions kf2
+            INNER JOIN Functions f2 ON f2.id = kf2.function_id AND f2.isDeleted = 0 AND f2.deletedAt IS NULL
+            WHERE kf2.kri_id = K.id AND kf2.deletedAt IS NULL
+            ORDER BY kf2.function_id
+          ) fkf(name)
+          WHERE 1 = 1 {submission_filter}
+        )
+        SELECT code, function_name, name, value, createdAt
+        FROM Derived
+        WHERE level_bucket = '{level_bucket}'
+        ORDER BY createdAt DESC, kriValueId DESC
+        """
+        return await self.execute_query(query)
+
+    async def _get_kri_values_by_status_bucket(
+        self,
+        bucket: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Shared query builder for the 5 "KRI Values Pending .../Approved" export detail
+        methods below. Mirrors get_kris_by_level_records's structure exactly (same K CTE with
+        date_filter+function_filter, Derived CTE INNER JOINing KriValues with submission_filter
+        applied inside it, function name resolved via LEFT JOIN Functions frel + OUTER APPLY
+        ... KriFunctions kf2 to avoid many-to-many fan-out), but classifies each KriValues row
+        via the EXACT SAME 5-state waterfall CASE as Node's kriValueStatusCountsQuery / this
+        file's get_kris_status_counts, applied to kv.preparerStatus/checkerStatus/reviewerStatus/
+        acceptanceStatus instead of the KRI's own k.* status columns."""
+        date_filter = ""
+        if start_date and end_date:
+            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND k.createdAt >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        submission_filter = self._build_submission_filter(submission_start_date, submission_end_date)
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
+
+        bucket_case = """
+          CASE
+            WHEN ISNULL(kv.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
+            WHEN ISNULL(kv.preparerStatus, '') = 'sent' AND ISNULL(kv.checkerStatus, '') <> 'approved' AND ISNULL(kv.acceptanceStatus, '') <> 'approved' THEN 'pendingChecker'
+            WHEN ISNULL(kv.checkerStatus, '') = 'approved' AND ISNULL(kv.reviewerStatus, '') <> 'sent' AND ISNULL(kv.acceptanceStatus, '') <> 'approved' THEN 'pendingReviewer'
+            WHEN ISNULL(kv.reviewerStatus, '') = 'sent' AND ISNULL(kv.acceptanceStatus, '') <> 'approved' THEN 'pendingAcceptance'
+            WHEN ISNULL(kv.acceptanceStatus, '') = 'approved' THEN 'approved'
+            ELSE 'Other'
+          END
+        """
+
+        query = f"""
+        WITH K AS (
+          SELECT k.id, k.code, k.kriName, k.createdAt, k.related_function_id
+          FROM Kris k
+          WHERE k.isDeleted = 0 AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
+        ),
+        Derived AS (
+          SELECT
+            K.code,
+            K.kriName AS name,
+            K.createdAt,
+            kv.id AS kriValueId,
+            kv.value AS value,
+            kv.createdAt AS submittedAt,
+            kv.preparerStatus AS preparerStatus,
+            kv.checkerStatus AS checkerStatus,
+            kv.reviewerStatus AS reviewerStatus,
+            kv.acceptanceStatus AS acceptanceStatus,
+            ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name,
+            {bucket_case} AS status_bucket
+          FROM K
+          INNER JOIN KriValues kv ON kv.kriId = K.id AND kv.deletedAt IS NULL
+          LEFT JOIN Functions frel ON frel.id = K.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
+          OUTER APPLY (
+            SELECT TOP 1 f2.name
+            FROM KriFunctions kf2
+            INNER JOIN Functions f2 ON f2.id = kf2.function_id AND f2.isDeleted = 0 AND f2.deletedAt IS NULL
+            WHERE kf2.kri_id = K.id AND kf2.deletedAt IS NULL
+            ORDER BY kf2.function_id
+          ) fkf(name)
+          WHERE 1 = 1 {submission_filter}
+        )
+        SELECT
+          code, function_name, name, value,
+          preparerStatus, checkerStatus, reviewerStatus, acceptanceStatus,
+          submittedAt, createdAt
+        FROM Derived
+        WHERE status_bucket = '{bucket}'
+        ORDER BY submittedAt DESC, kriValueId DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_kri_values_pending_preparer(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Detail rows backing the "KRI Values Pending Preparer" card/export."""
+        return await self._get_kri_values_by_status_bucket(
+            'pendingPreparer', start_date, end_date, user_id, group_name, function_id, function_ids,
+            submission_start_date, submission_end_date,
+        )
+
+    async def get_kri_values_pending_checker(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Detail rows backing the "KRI Values Pending Checker" card/export."""
+        return await self._get_kri_values_by_status_bucket(
+            'pendingChecker', start_date, end_date, user_id, group_name, function_id, function_ids,
+            submission_start_date, submission_end_date,
+        )
+
+    async def get_kri_values_pending_reviewer(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Detail rows backing the "KRI Values Pending Reviewer" card/export."""
+        return await self._get_kri_values_by_status_bucket(
+            'pendingReviewer', start_date, end_date, user_id, group_name, function_id, function_ids,
+            submission_start_date, submission_end_date,
+        )
+
+    async def get_kri_values_pending_acceptance(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Detail rows backing the "KRI Values Pending Acceptance" card/export."""
+        return await self._get_kri_values_by_status_bucket(
+            'pendingAcceptance', start_date, end_date, user_id, group_name, function_id, function_ids,
+            submission_start_date, submission_end_date,
+        )
+
+    async def get_kri_values_approved(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Detail rows backing the "KRI Values Approved" card/export."""
+        return await self._get_kri_values_by_status_bucket(
+            'approved', start_date, end_date, user_id, group_name, function_id, function_ids,
+            submission_start_date, submission_end_date,
+        )
 
     async def get_breached_kris_by_department_detailed(
         self,
@@ -1091,8 +1332,8 @@ class KriService:
         )
         SELECT
           e.kri_code AS kri_code,
-          e.kri_name AS kri_name,
           e.function_name AS function_name,
+          e.kri_name AS kri_name,
           CASE WHEN s.kriId IS NOT NULL THEN 'Submitted' ELSE 'Not Submitted' END AS status,
           FORMAT(DATEFROMPARTS(e.yr, e.mo, 1), 'MMM yyyy') AS month
         FROM Expected e
@@ -1173,8 +1414,8 @@ class KriService:
         )
         SELECT
           e.kri_code AS kri_code,
-          e.kri_name AS kri_name,
           e.function_name AS function_name,
+          e.kri_name AS kri_name,
           DATENAME(MONTH, DATEFROMPARTS(e.yr, e.mo, 1)) AS month,
           e.yr AS year,
           CASE WHEN s.kriId IS NOT NULL THEN 'Yes' ELSE 'No' END AS submitted,
@@ -1213,8 +1454,8 @@ class KriService:
         query = f"""
         SELECT
           k.code AS code,
-          k.kriName AS kriName,
           ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name,
+          k.kriName AS kriName,
           ISNULL(k.threshold, '') AS threshold,
           k.low_from AS low_from,
           k.medium_from AS medium_from,
@@ -1470,8 +1711,8 @@ class KriService:
         query = f"""
         SELECT
           k.code AS kri_code,
-          k.kriName AS kri_name,
           ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name,
+          k.kriName AS kri_name,
           r.code AS risk_code,
           r.name AS risk_name
         FROM Kris k
@@ -1514,8 +1755,8 @@ class KriService:
         query = f"""
         SELECT
         k.code AS kriCode,
-        k.kriName AS kriName,
-        ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name
+        ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name,
+        k.kriName AS kriName
         FROM Kris AS k
         LEFT JOIN KriFunctions kf ON k.id = kf.kri_id AND kf.deletedAt IS NULL
         LEFT JOIN Functions fkf ON fkf.id = kf.function_id AND fkf.isDeleted = 0 AND fkf.deletedAt IS NULL
@@ -1557,8 +1798,8 @@ class KriService:
         query = f"""
         SELECT
           k.code AS code,
-          k.kriName AS kriName,
           ISNULL(COALESCE(frel.name, f.name), NULL) AS function_name,
+          k.kriName AS kriName,
           CASE
             WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
             WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'

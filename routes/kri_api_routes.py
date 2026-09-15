@@ -58,6 +58,14 @@ KRI_DISPLAY_NAMES = {
     "krisByStatus": "KRIs by Status",
     "krisByLevel": "KRIs by Risk Level",
     "assessmentHistoryByLevel": "KRIs by Risk Level",
+    "lowKriValues": "Low KRI Values",
+    "mediumKriValues": "Medium KRI Values",
+    "highKriValues": "High KRI Values",
+    "kriValuesPendingPreparer": "KRI Values Pending Preparer",
+    "kriValuesPendingChecker": "KRI Values Pending Checker",
+    "kriValuesPendingReviewer": "KRI Values Pending Reviewer",
+    "kriValuesPendingAcceptance": "KRI Values Pending Acceptance",
+    "kriValuesApproved": "KRI Values Approved",
     "breachedKRIsByDepartment": "Breached KRIs by Function",
     "kriAssessmentCount": "KRI Assessment Count by Function",
     "kriCountsByFrequency": "KRIs by Frequency",
@@ -236,6 +244,22 @@ async def export_kris_pdf(
         elif cardType == 'assessmentHistoryByLevel':
             # "KRIs by Risk Level" chart: count every assessment record by its recorded level (matches Node dashboard).
             data = await kri_service.get_assessment_history_by_level(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'lowKriValues':
+            data = await kri_service.get_kris_by_level_records('Low', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'mediumKriValues':
+            data = await kri_service.get_kris_by_level_records('Medium', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'highKriValues':
+            data = await kri_service.get_kris_by_level_records('High', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'kriValuesPendingPreparer':
+            data = await kri_service.get_kri_values_pending_preparer(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'kriValuesPendingChecker':
+            data = await kri_service.get_kri_values_pending_checker(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'kriValuesPendingReviewer':
+            data = await kri_service.get_kri_values_pending_reviewer(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'kriValuesPendingAcceptance':
+            data = await kri_service.get_kri_values_pending_acceptance(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'kriValuesApproved':
+            data = await kri_service.get_kri_values_approved(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'breachedKRIsByDepartment':
             data = await kri_service.get_breached_kris_by_department_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'kriAssessmentCount':
@@ -504,6 +528,22 @@ async def export_kris_excel(
         elif cardType == 'assessmentHistoryByLevel':
             # "KRIs by Risk Level" chart: count every assessment record by its recorded level (matches Node dashboard).
             data = await kri_service.get_assessment_history_by_level(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'lowKriValues':
+            data = await kri_service.get_kris_by_level_records('Low', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'mediumKriValues':
+            data = await kri_service.get_kris_by_level_records('Medium', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'highKriValues':
+            data = await kri_service.get_kris_by_level_records('High', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'kriValuesPendingPreparer':
+            data = await kri_service.get_kri_values_pending_preparer(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'kriValuesPendingChecker':
+            data = await kri_service.get_kri_values_pending_checker(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'kriValuesPendingReviewer':
+            data = await kri_service.get_kri_values_pending_reviewer(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'kriValuesPendingAcceptance':
+            data = await kri_service.get_kri_values_pending_acceptance(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'kriValuesApproved':
+            data = await kri_service.get_kri_values_approved(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'breachedKRIsByDepartment':
             data = await kri_service.get_breached_kris_by_department_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'kriAssessmentCount':
