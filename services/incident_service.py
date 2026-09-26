@@ -1681,6 +1681,248 @@ class IncidentService:
         """
         return await self.execute_query(query)
 
+    # Basel Level 1 event types as they exist in dbo.[IncidentEvents] on ub_db. Kept in sync
+    # with the identical list in reporting_system_node's grc-incidents.service.ts
+    # (GrcIncidentsService.BASEL_EVENT_TYPES) — 'test'/'test2' seed rows and NULL
+    # event_type_id are intentionally excluded, same as the CBE template's fixed 8 columns.
+    _BASEL_EVENT_TYPES = [
+        ('internalFraud', 'Internal Fraud'),
+        ('externalFraud', 'External Fraud'),
+        ('creditCardFraud', 'Cards Fraud'),
+        ('employmentPractices', 'Employment Practices and Workplace Safety'),
+        ('clientsProducts', 'Clients & Products and Business Practices'),
+        ('physicalAssets', 'Damage to Physical Assets'),
+        ('businessDisruption', 'Business Disruption and System Failures'),
+        ('executionDelivery', 'Execution & Delivery & and Process Management'),
+        ('test', 'test'),
+        ('test2', 'test2'),
+    ]
+
+    async def get_cbe_operational_loss_matrix(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Report 2 — CBE Operational Loss Matrix. Mirrors reporting_system_node's
+        getCbeOperationalLossMatrixTablePage. Recovery split (insurance vs other) is out of
+        scope — Incidents.recovery_amount is a single column, there is no recovery_type.
+        Includes 'test'/'test2' (real junk seed rows in IncidentEvents) and a 'noEventType'
+        bucket for NULL event_type_id, so the Total column is a true grand total — matches
+        the Node version after it was extended to show every event type, not just the 8
+        official Basel columns."""
+        date_filter = self._build_incident_date_filter(start_date, end_date)
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
+
+        types = self._BASEL_EVENT_TYPES
+
+        def col_sum(expr: str) -> str:
+            named = [f"SUM(CASE WHEN event_name = N'{name}' THEN {expr} ELSE 0 END) AS [{key}]" for key, name in types]
+            named.append(f"SUM(CASE WHEN event_name IS NULL THEN {expr} ELSE 0 END) AS [noEventType]")
+            return ",\n          ".join(named)
+
+        def col_max(expr: str) -> str:
+            named = [f"MAX(CASE WHEN event_name = N'{name}' THEN {expr} END) AS [{key}]" for key, name in types]
+            named.append(f"MAX(CASE WHEN event_name IS NULL THEN {expr} END) AS [noEventType]")
+            return ",\n          ".join(named)
+
+        query = f"""
+        WITH Base AS (
+          SELECT
+            ie.name AS event_name,
+            (ISNULL(i.total_loss, 0) + ISNULL(i.recovery_amount, 0)) AS gross_amount,
+            ISNULL(i.recovery_amount, 0) AS recovery_amount,
+            ISNULL(i.net_loss, 0) AS net_loss
+          FROM {self.get_fully_qualified_table_name('Incidents')} i
+          LEFT JOIN dbo.[IncidentEvents] ie ON i.event_type_id = ie.id
+          WHERE i.isDeleted = 0 AND i.deletedAt IS NULL {date_filter}
+          {function_filter}
+        )
+        SELECT N'Event count' AS metric, {col_sum('1')}, COUNT(*) AS total
+        FROM Base
+        UNION ALL
+        SELECT N'Highest single loss' AS metric, {col_max('gross_amount')}, MAX(gross_amount) AS total
+        FROM Base
+        UNION ALL
+        SELECT N'Gross loss' AS metric, {col_sum('gross_amount')}, SUM(gross_amount) AS total
+        FROM Base
+        UNION ALL
+        SELECT N'Total recoveries' AS metric, {col_sum('recovery_amount')}, SUM(recovery_amount) AS total
+        FROM Base
+        UNION ALL
+        SELECT N'Net loss' AS metric, {col_sum('net_loss')}, SUM(net_loss) AS total
+        FROM Base
+        """
+        return await self.execute_query(query)
+
+    async def get_incident_loss_by_quarter(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Report 5a — Loss summary by event type and quarter. Mirrors reporting_system_node's
+        getIncidentLossByQuarterTablePage (rewritten version): every year present in the data
+        is shown (no year filter), one row per (event type, year) via a full grid, Types
+        deduplicated by name (not id) so two IncidentEvents rows sharing a name collapse into
+        one, gross converted to EGP via exchange_rate. Filters by createdAt + function like
+        every other table here."""
+        date_filter = self._build_incident_date_filter(start_date, end_date)
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
+
+        query = f"""
+        WITH LossRows AS (
+          SELECT YEAR(i.occurrence_date)              AS yr,
+                 DATEPART(QUARTER, i.occurrence_date) AS qtr,
+                 ISNULL(ie.name, N'(no event type)')   AS event_name,
+                 i.id,
+                 i.total_loss      * COALESCE(NULLIF(i.exchange_rate, 0), 1) AS gross_egp,
+                 i.recovery_amount * COALESCE(NULLIF(i.exchange_rate, 0), 1) AS recovery_egp
+          FROM {self.get_fully_qualified_table_name('Incidents')} i
+          LEFT JOIN dbo.[IncidentEvents] ie ON ie.id = i.event_type_id
+          WHERE i.isDeleted = 0 AND i.deletedAt IS NULL
+            AND i.occurrence_date IS NOT NULL
+            {date_filter}
+          {function_filter}
+        ),
+        Types AS (
+          SELECT DISTINCT name, CASE WHEN name = N'(no event type)' THEN 1 ELSE 0 END AS grp
+          FROM (
+            SELECT ie.name
+            FROM dbo.[IncidentEvents] ie
+            WHERE (ie.isDeleted = 0 AND ie.deletedAt IS NULL)
+               OR EXISTS (SELECT 1 FROM dbo.[Incidents] i
+                          WHERE i.event_type_id = ie.id AND i.isDeleted = 0 AND i.deletedAt IS NULL)
+            UNION ALL
+            SELECT N'(no event type)'
+          ) x
+        ),
+        Years AS (SELECT DISTINCT yr FROM LossRows),
+        Grid  AS (SELECT t.name, t.grp, y.yr FROM Types t CROSS JOIN Years y)
+        SELECT
+          g.name AS [EventType],
+          g.yr   AS [Year],
+          COUNT(CASE WHEN l.qtr = 1 THEN 1 END)                   AS [Q1 n],
+          ISNULL(SUM(CASE WHEN l.qtr = 1 THEN l.gross_egp END), 0) AS [Q1 gross],
+          COUNT(CASE WHEN l.qtr = 2 THEN 1 END)                   AS [Q2 n],
+          ISNULL(SUM(CASE WHEN l.qtr = 2 THEN l.gross_egp END), 0) AS [Q2 gross],
+          COUNT(CASE WHEN l.qtr = 3 THEN 1 END)                   AS [Q3 n],
+          ISNULL(SUM(CASE WHEN l.qtr = 3 THEN l.gross_egp END), 0) AS [Q3 gross],
+          COUNT(CASE WHEN l.qtr = 4 THEN 1 END)                   AS [Q4 n],
+          ISNULL(SUM(CASE WHEN l.qtr = 4 THEN l.gross_egp END), 0) AS [Q4 gross],
+          COUNT(l.id)                                             AS [FY n],
+          ISNULL(SUM(l.gross_egp), 0)                             AS [FY gross]
+        FROM Grid g
+        LEFT JOIN LossRows l
+          ON l.yr = g.yr
+         AND l.event_name = g.name
+        GROUP BY g.grp, g.name, g.yr
+        ORDER BY g.grp, g.name, g.yr
+        """
+        return await self.execute_query(query)
+
+    async def get_significant_incidents(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Report 5c — Significant incidents. Mirrors reporting_system_node's
+        getSignificantIncidentsTablePage. Significance rule: importance IN ('High', 'Very
+        High') (confirmed distinct values in ub_db: High, Very High, Medium, Med, Low)."""
+        date_filter = self._build_incident_date_filter(start_date, end_date)
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
+
+        query = f"""
+        WITH LatestAction AS (
+          SELECT a.incident_id, a.control_procedure, a.business_unit AS status,
+                 ROW_NUMBER() OVER (PARTITION BY a.incident_id ORDER BY a.createdAt DESC) rn
+          FROM dbo.[Actionplans] a
+          WHERE a.deletedAt IS NULL AND a.[from] = 'incident'
+        )
+        SELECT
+          FORMAT(CONVERT(datetime, COALESCE(i.occurrence_date, i.createdAt)), 'yyyy-MM-dd HH:mm:ss') AS occurrence_date,
+          CAST(ISNULL(i.description, '') AS NVARCHAR(MAX)) AS description,
+          ISNULL(rc.name, 'Unknown') AS root_cause,
+          CAST(ISNULL(la.control_procedure, '') AS NVARCHAR(MAX)) AS action_taken,
+          ISNULL(la.status, ISNULL(i.status, '')) AS status,
+          i.importance AS importance
+        FROM {self.get_fully_qualified_table_name('Incidents')} i
+        LEFT JOIN dbo.[RootCauses] rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
+        LEFT JOIN LatestAction la ON la.incident_id = i.id AND la.rn = 1
+        WHERE i.isDeleted = 0 AND i.deletedAt IS NULL {date_filter}
+        {function_filter}
+        AND i.importance IN (N'High', N'Very High')
+        ORDER BY occurrence_date DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_incident_loss_register(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Report 5b — Loss event register. Mirrors reporting_system_node's
+        getIncidentLossRegisterTablePage. Location comes from dbo.[BranchIncidents] — the
+        table exists with the right shape (branch_id/incident_id) but has 0 rows in ub_db
+        currently, so every row shows 'Unknown' for now; wired correctly regardless."""
+        date_filter = self._build_incident_date_filter(start_date, end_date)
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
+
+        query = f"""
+        WITH LatestAction AS (
+          SELECT a.incident_id, a.control_procedure, a.business_unit AS status,
+                 ROW_NUMBER() OVER (PARTITION BY a.incident_id ORDER BY a.createdAt DESC) rn
+          FROM dbo.[Actionplans] a
+          WHERE a.deletedAt IS NULL AND a.[from] = 'incident'
+        ),
+        IncidentBranches AS (
+          SELECT bi.incident_id, STRING_AGG(b.name, N', ') WITHIN GROUP (ORDER BY b.name) AS branch_names
+          FROM dbo.[BranchIncidents] bi
+          INNER JOIN dbo.[Branches] b ON b.id = bi.branch_id AND b.deletedAt IS NULL
+          WHERE bi.deletedAt IS NULL
+          GROUP BY bi.incident_id
+        )
+        SELECT
+          FORMAT(CONVERT(datetime, COALESCE(i.occurrence_date, i.createdAt)), 'yyyy-MM-dd HH:mm:ss') AS occurrence_date,
+          i.code AS reference,
+          ISNULL(ib.branch_names, N'Unknown') AS location,
+          ISNULL(ie.name, N'Unknown') AS event_type,
+          CAST(ISNULL(i.description, '') AS NVARCHAR(MAX)) AS description,
+          (ISNULL(i.total_loss, 0) + ISNULL(i.recovery_amount, 0)) AS gross,
+          ISNULL(i.recovery_amount, 0) AS recovery,
+          ISNULL(i.net_loss, 0) AS net,
+          ISNULL(cu.name, '') AS currency,
+          CAST(ISNULL(la.control_procedure, '') AS NVARCHAR(MAX)) AS action_taken,
+          ISNULL(la.status, ISNULL(i.status, '')) AS status
+        FROM {self.get_fully_qualified_table_name('Incidents')} i
+        LEFT JOIN dbo.[IncidentEvents] ie ON i.event_type_id = ie.id
+        LEFT JOIN dbo.[Currencies] cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
+        LEFT JOIN IncidentBranches ib ON ib.incident_id = i.id
+        LEFT JOIN LatestAction la ON la.incident_id = i.id AND la.rn = 1
+        WHERE i.isDeleted = 0 AND i.deletedAt IS NULL {date_filter}
+        {function_filter}
+        ORDER BY occurrence_date DESC
+        """
+        return await self.execute_query(query)
+
     async def get_comprehensive_operational_loss(
         self,
         start_date: Optional[str] = None,
