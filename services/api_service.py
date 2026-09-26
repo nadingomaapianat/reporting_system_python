@@ -276,6 +276,42 @@ class APIService:
         except Exception:
             return {}
 
+    async def get_node_table_data(
+        self,
+        resource: str,
+        table_id: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Fetch every row of a Node dashboard table (grc-<resource>.controller.ts 'table' route)
+        for export, forwarding auth headers. Used for tables that only exist as a tableId-driven
+        pagination query on the Node side (no entry in the main dashboard payload) — e.g. the
+        KRI Breach Report / Non-Financial Impact Events widgets, which self-fetch client-side
+        the same way."""
+        try:
+            url = f"{self.node_api_url}/api/grc/{resource}/table"
+            params = self._node_grc_filter_params(
+                start_date, end_date, user_id, group_name, function_id, function_ids
+            )
+            params["tableId"] = table_id
+            params["page"] = 1
+            params["limit"] = 100000
+            request_headers = dict(headers) if headers else {}
+            timeout = aiohttp.ClientTimeout(total=self.timeout)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, params=params, headers=request_headers or None) as response:
+                    if response.status == 200:
+                        payload = await response.json()
+                        return payload.get("data", []) if isinstance(payload, dict) else []
+                    return []
+        except Exception:
+            return []
+
     async def get_incidents_card_data(
         self,
         card_type: str,

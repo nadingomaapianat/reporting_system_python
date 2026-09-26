@@ -1175,3 +1175,57 @@ class RiskService:
         except Exception:
             pass
         return result
+
+    async def get_risks_residual_report(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Report 3 — Residual Risk Report. Mirrors reporting_system_node's
+        risksDetailsTask (grc-risks.service.ts), including the residual
+        frequency/financial columns — NOT the same as get_risks_details()
+        above, which only returns inherent values and matches Node's
+        differently-named 'allRisks' table."""
+        # Matches Node's shared buildDateFilter exactly: >= start, <= end 23:59:59 (whole
+        # end day included) — NOT a plain BETWEEN, which would cut off end_date at midnight
+        # and silently drop that day's records compared to what the dashboard shows.
+        date_filter = ""
+        if start_date:
+            date_filter += f" AND r.createdAt >= '{start_date}'"
+        if end_date:
+            date_filter += f" AND r.createdAt <= '{end_date} 23:59:59'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
+
+        query = f"""
+        SELECT
+          r.name AS [RiskName],
+          r.description AS [RiskDesc],
+          ISNULL(et.name, 'Unknown') AS [RiskEventName],
+          r.approve AS [RiskApprove],
+          r.inherent_value AS [InherentValue],
+          r.residual_value AS [ResidualValue],
+          r.inherent_frequency AS [InherentFrequency],
+          r.inherent_financial_value AS [InherentFinancialValue],
+          rr.residual_value AS [RiskResidualValue],
+          rr.residual_frequency AS [ResidualFrequency],
+          rr.residual_financial_value AS [ResidualFinancialValue],
+          rr.quarter AS [ResidualQuarter],
+          rr.year AS [ResidualYear],
+          ISNULL({self._risk_function_name_subquery('r')}, 'Unknown') AS function_name
+        FROM {self.get_fully_qualified_table_name('Risks')} r
+        INNER JOIN dbo.[ResidualRisks] rr ON rr.riskId = r.id AND rr.isDeleted = 0
+        LEFT JOIN dbo.[EventTypes] et ON et.id = r.event
+        WHERE r.isDeleted = 0 {date_filter}
+        {function_filter}
+        ORDER BY r.createdAt DESC
+        """
+
+        write_debug(f"[RiskService] get_risks_residual_report SQL: {query}")
+        result = await self.execute_query(query)
+        return result

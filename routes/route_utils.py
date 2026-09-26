@@ -347,6 +347,11 @@ async def save_and_log_export(
                 "peopleErrorLoss": "People_Error_Loss",
                 "incidentActionPlan": "Incident_Action_Plan",
                 "overdueIncidents": "Overdue_Incidents",
+                "nonFinancialImpactEvents": "Non_Financial_Impact_Events",
+                "cbeOperationalLossMatrix": "CBE_Operational_Loss_Matrix",
+                "incidentLossByQuarter": "Loss_Summary_by_Event_Type_and_Quarter",
+                "significantIncidents": "Significant_Incidents",
+                "incidentLossRegister": "Loss_Event_Register",
             }
             filename_title = INCIDENT_CARD_FILENAME_MAP.get(
                 card_type,
@@ -406,6 +411,7 @@ async def save_and_log_export(
                 "krisWithoutLinkedRisks": "KRIs_Without_Linked_Risks",
                 "kriRiskRelationships": "KRI_to_Risk_Relationships",
                 "kriDetailsWithActionPlans": "KRI_Details_Action_Plans",
+                "kriBreachReport": "KRI_Breach_Report_Medium_High",
             }
             filename_title = KRI_FILENAME_MAP.get(
                 card_type,

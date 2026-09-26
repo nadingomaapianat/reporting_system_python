@@ -57,6 +57,7 @@ async def _load_incident_dashboard_table_rows(
     function_ids: Optional[str],
     incident_action_plan_override: Any,
     overdue_incidents_override: Any,
+    non_financial_impact_events_override: Any = None,
 ) -> List[Any]:
     """
     Incident Action Plan / Overdue Incidents rows for PDF & Excel exports.
@@ -90,6 +91,27 @@ async def _load_incident_dashboard_table_rows(
             headers=forward_headers,
         )
         return (full.get("overdueIncidents") or []) if isinstance(full, dict) else []
+    if card_type == "nonFinancialImpactEvents":
+        # This table only exists as a tableId-driven pagination query on the Node side (it
+        # self-fetches client-side, same as the KRI Breach Report widget) — there is no
+        # 'nonFinancialImpactEvents' key in the main dashboard payload, so unlike
+        # incidentActionPlan/overdueIncidents this can't reuse get_incidents_data(). Prefer a
+        # POST body override (frontend fetches /table?tableId=... with its own auth first,
+        # same pattern as the other two) and fall back to a server-to-server proxy call only
+        # for a plain GET.
+        if non_financial_impact_events_override is not None:
+            return list(non_financial_impact_events_override) if isinstance(non_financial_impact_events_override, list) else []
+        return await api_service.get_node_table_data(
+            "incidents",
+            "nonFinancialImpactEvents",
+            start_date,
+            end_date,
+            user_id=user_id,
+            group_name=group_name,
+            function_id=function_id,
+            function_ids=function_ids,
+            headers=forward_headers,
+        )
     return []
 
 
@@ -117,6 +139,7 @@ async def export_incidents_pdf(
     """Export incidents report in PDF format (GET or POST with optional body rows for Incident Action Plan / Overdue Incidents)."""
     incident_action_plan_override = None
     overdue_incidents_override = None
+    non_financial_impact_events_override = None
     if request.method == "POST":
         try:
             body = await request.json()
@@ -124,6 +147,8 @@ async def export_incidents_pdf(
                 incident_action_plan_override = body.get("incidentActionPlan")
             if isinstance(body, dict) and "overdueIncidents" in body:
                 overdue_incidents_override = body.get("overdueIncidents")
+            if isinstance(body, dict) and "nonFinancialImpactEvents" in body:
+                non_financial_impact_events_override = body.get("nonFinancialImpactEvents")
         except Exception:
             pass
     try:
@@ -258,6 +283,14 @@ async def export_incidents_pdf(
             data = await incident_service.get_loss_by_risk_category(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'comprehensiveOperationalLoss':
             data = await incident_service.get_comprehensive_operational_loss(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'cbeOperationalLossMatrix':
+            data = await incident_service.get_cbe_operational_loss_matrix(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'incidentLossByQuarter':
+            data = await incident_service.get_incident_loss_by_quarter(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'significantIncidents':
+            data = await incident_service.get_significant_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'incidentLossRegister':
+            data = await incident_service.get_incident_loss_register(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
 
         # Incident Action Plan / Overdue: shared loader so PDF matches Excel and dashboard (Node + filters + POST overrides)
         elif cardType == 'incidentActionPlan':
@@ -286,7 +319,21 @@ async def export_incidents_pdf(
                 incident_action_plan_override,
                 overdue_incidents_override,
             )
-          
+        elif cardType == 'nonFinancialImpactEvents':
+            data = await _load_incident_dashboard_table_rows(
+                "nonFinancialImpactEvents",
+                request,
+                startDate,
+                endDate,
+                user_id,
+                group_name,
+                function_id,
+                function_ids,
+                incident_action_plan_override,
+                overdue_incidents_override,
+                non_financial_impact_events_override,
+            )
+
         """
         elif cardType == 'createdDeletedIncidentsPerQuarter':
             data = await incident_service.get_created_deleted_incidents_per_quarter(startDate, endDate)
@@ -382,6 +429,7 @@ async def export_incidents_excel(
     """Export incidents report in Excel format (GET or POST with optional body rows for Incident Action Plan / Overdue Incidents)."""
     incident_action_plan_override = None
     overdue_incidents_override = None
+    non_financial_impact_events_override = None
     if request.method == "POST":
         try:
             body = await request.json()
@@ -389,6 +437,8 @@ async def export_incidents_excel(
                 incident_action_plan_override = body.get("incidentActionPlan")
             if isinstance(body, dict) and "overdueIncidents" in body:
                 overdue_incidents_override = body.get("overdueIncidents")
+            if isinstance(body, dict) and "nonFinancialImpactEvents" in body:
+                non_financial_impact_events_override = body.get("nonFinancialImpactEvents")
         except Exception:
             pass
     try:
@@ -515,6 +565,14 @@ async def export_incidents_excel(
             data = await incident_service.get_loss_by_risk_category(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'comprehensiveOperationalLoss':
             data = await incident_service.get_comprehensive_operational_loss(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'cbeOperationalLossMatrix':
+            data = await incident_service.get_cbe_operational_loss_matrix(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'incidentLossByQuarter':
+            data = await incident_service.get_incident_loss_by_quarter(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'significantIncidents':
+            data = await incident_service.get_significant_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'incidentLossRegister':
+            data = await incident_service.get_incident_loss_register(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
 
         # Incident Action Plan table (from dashboard payload; forward auth so Node returns data, or use body override from frontend)
         elif cardType == 'incidentActionPlan':
@@ -531,8 +589,18 @@ async def export_incidents_excel(
                 forward_headers = _forward_auth_headers(request)
                 full = await api_service.get_incidents_data(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, headers=forward_headers)
                 data = (full.get('overdueIncidents') or []) if isinstance(full, dict) else []
+        elif cardType == 'nonFinancialImpactEvents':
+            if non_financial_impact_events_override is not None:
+                data = list(non_financial_impact_events_override) if isinstance(non_financial_impact_events_override, list) else []
+            else:
+                forward_headers = _forward_auth_headers(request)
+                data = await api_service.get_node_table_data(
+                    "incidents", "nonFinancialImpactEvents", startDate, endDate,
+                    user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids,
+                    headers=forward_headers,
+                )
 
-       
+
         elif cardType == 'incidentsReduced':
             data = await incident_service.get_incidents_reduced(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'newIncidents':

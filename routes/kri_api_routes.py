@@ -238,6 +238,8 @@ async def export_kris_pdf(
             data = await kri_service.get_kri_risk_relationships(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriWithoutLinkedRisks' or cardType == 'krisWithoutLinkedRisks':
             data = await kri_service.get_kris_without_linked_risks(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'kriBreachReport':
+            data = await kri_service.get_kri_breach_report(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriDetailsWithActionPlans':
             # Use POST body if provided (frontend fetches from Node with auth); else fetch from Node
             if kri_details_override is not None:
@@ -475,6 +477,8 @@ async def export_kris_excel(
             data = await kri_service.get_kri_risk_relationships(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriWithoutLinkedRisks' or cardType == 'krisWithoutLinkedRisks':
             data = await kri_service.get_kris_without_linked_risks(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'kriBreachReport':
+            data = await kri_service.get_kri_breach_report(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'kriDetailsWithActionPlans':
             if kri_details_override is not None:
                 data = kri_details_override
