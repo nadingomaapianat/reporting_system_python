@@ -166,6 +166,8 @@ async def export_risks_pdf(
             data = await risk_service.get_controls_and_risk_count(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'allRisks':
             data = await risk_service.get_risks_details(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'risksDetails':
+            data = await risk_service.get_risks_residual_report(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
 
         risks_data = {cardType: data}
         if order_by_function_from_request(request):
@@ -342,6 +344,8 @@ async def export_risks_excel(
             data = await risk_service.get_controls_and_risk_count(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'allRisks':
             data = await risk_service.get_risks_details(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'risksDetails':
+            data = await risk_service.get_risks_residual_report(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
 
         risks_data = {cardType: data}
         if order_by_function_from_request(request):

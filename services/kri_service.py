@@ -758,6 +758,89 @@ class KriService:
         """
         return await self.execute_query(query)
 
+    async def get_kri_breach_report(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Report 4 — KRI Breach Report (Medium & High). Mirrors reporting_system_node's
+        getKriBreachReport (grc-kris.service.ts): derives the breach level from the same
+        thresholds as the live dashboard, includes closed band ranges, and substitutes the
+        latest linked action plan for a business-response field (no such column exists)."""
+        date_filter = ""
+        if start_date and end_date:
+            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND k.createdAt >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
+
+        query = f"""
+        WITH LatestKV AS (
+          SELECT kv.kriId, kv.value, kv.[month] AS value_month, kv.[year] AS value_year,
+                 ROW_NUMBER() OVER (PARTITION BY kv.kriId ORDER BY COALESCE(CONVERT(datetime, CONCAT(kv.[year], '-', kv.[month], '-01')), kv.createdAt) DESC) rn
+          FROM KriValues kv
+          WHERE kv.deletedAt IS NULL
+        ),
+        LatestAction AS (
+          SELECT a.kri_id, a.control_procedure,
+                 ROW_NUMBER() OVER (PARTITION BY a.kri_id ORDER BY a.createdAt DESC) rn
+          FROM Actionplans a
+          WHERE a.deletedAt IS NULL AND LTRIM(RTRIM(ISNULL(a.[from], ''))) IN (N'kri', N'KRI', N'Kri')
+        ),
+        K AS (
+          SELECT k.id, k.code, k.kriName, k.createdAt,
+                 k.kri_level, CAST(k.isAscending AS int) AS isAscending,
+                 k.low_from, k.medium_from, k.high_from,
+                 TRY_CONVERT(float, k.medium_from) AS med_thr,
+                 TRY_CONVERT(float, k.high_from)   AS high_thr,
+                 ISNULL(COALESCE(fkf.name, frel.name), 'Unknown') AS function_name
+          FROM Kris k
+          LEFT JOIN KriFunctions kf ON k.id = kf.kri_id AND kf.deletedAt IS NULL
+          LEFT JOIN Functions fkf ON fkf.id = kf.function_id AND fkf.isDeleted = 0 AND fkf.deletedAt IS NULL
+          LEFT JOIN Functions frel ON frel.id = k.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
+          WHERE k.isDeleted = 0 AND k.deletedAt IS NULL
+            {date_filter}
+            {function_filter}
+        ),
+        KL AS (
+          SELECT K.*, kv.value AS raw_value, kv.value_month, kv.value_year, TRY_CONVERT(float, kv.value) AS val
+          FROM K
+          LEFT JOIN LatestKV kv ON kv.kriId = K.id AND kv.rn = 1
+        ),
+        Derived AS (
+          SELECT *,
+            CASE
+              WHEN kri_level IS NOT NULL AND LTRIM(RTRIM(kri_level)) <> '' THEN kri_level
+              WHEN val IS NULL OR med_thr IS NULL OR high_thr IS NULL THEN 'Unknown'
+              WHEN isAscending = 1 AND val >= high_thr THEN 'High'
+              WHEN isAscending = 1 AND val >= med_thr THEN 'Medium'
+              WHEN isAscending = 1 THEN 'Low'
+              WHEN isAscending = 0 AND val <= high_thr THEN 'High'
+              WHEN isAscending = 0 AND val <= med_thr THEN 'Medium'
+              ELSE 'Low'
+            END AS level_bucket
+          FROM KL
+        )
+        SELECT
+          d.code, d.kriName AS name, d.function_name,
+          d.value_year, d.value_month, d.raw_value AS value,
+          d.low_from, d.medium_from, d.high_from, d.level_bucket AS breachLevel,
+          FORMAT(CONVERT(datetime, d.createdAt), 'yyyy-MM-dd HH:mm:ss') AS createdAt, la.control_procedure AS businessResponse
+        FROM Derived d
+        LEFT JOIN LatestAction la ON la.kri_id = d.id AND la.rn = 1
+        WHERE d.level_bucket IN ('Medium', 'High')
+        ORDER BY CASE d.level_bucket WHEN 'High' THEN 0 WHEN 'Medium' THEN 1 ELSE 2 END, d.createdAt DESC
+        """
+        return await self.execute_query(query)
+
     async def get_all_kris_submitted_by_function(
         self,
         start_date: Optional[str] = None,
