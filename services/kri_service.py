@@ -1313,6 +1313,10 @@ class KriService:
           WHERE period < end_period
         ),
         Expected AS (
+          -- Only months the KRI is actually due in (Quarterly -> every 3rd month, Annually ->
+          -- December; anything else, incl. Monthly/Daily/Event Base/NULL, is due every month —
+          -- mirrors isKriMonthDue in v2_backend/src/kri/kri-frequency.util.ts), and excludes
+          -- months at/after the KRI went inactive (mirrors isKriMonthPaused there).
           SELECT m.yr, m.mo, k.id AS kri_id,
                  k.code AS kri_code, k.kriName AS kri_name,
                  ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name
@@ -1320,6 +1324,17 @@ class KriService:
           INNER JOIN Kris k
             ON k.isDeleted = 0 AND k.deletedAt IS NULL
             AND k.createdAt < DATEADD(MONTH, 1, DATEFROMPARTS(m.yr, m.mo, 1))
+            AND (
+              (k.frequency = 'Quarterly' AND m.mo % 3 = 0)
+              OR (k.frequency = 'Annually' AND m.mo % 12 = 0)
+              OR (ISNULL(k.frequency, '') NOT IN ('Quarterly', 'Annually'))
+            )
+            AND NOT (
+              LOWER(ISNULL(k.status, '')) = 'inactive'
+              AND k.inactiveYearMonth IS NOT NULL
+              AND TRY_CONVERT(date, k.inactiveYearMonth + '-01') IS NOT NULL
+              AND DATEFROMPARTS(m.yr, m.mo, 1) >= TRY_CONVERT(date, k.inactiveYearMonth + '-01')
+            )
             {date_filter}
             {function_filter}
           LEFT JOIN KriFunctions kf ON kf.kri_id = k.id AND kf.deletedAt IS NULL
@@ -1394,12 +1409,27 @@ class KriService:
           WHERE period < end_period
         ),
         Expected AS (
+          -- Only months the KRI is actually due in (Quarterly -> every 3rd month, Annually ->
+          -- December; anything else, incl. Monthly/Daily/Event Base/NULL, is due every month —
+          -- mirrors isKriMonthDue in v2_backend/src/kri/kri-frequency.util.ts), and excludes
+          -- months at/after the KRI went inactive (mirrors isKriMonthPaused there).
           SELECT m.yr, m.mo, k.id AS kri_id, k.code AS kri_code, k.kriName AS kri_name,
                  ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name
           FROM Months m
           INNER JOIN Kris k
             ON k.isDeleted = 0 AND k.deletedAt IS NULL
             AND k.createdAt < DATEADD(MONTH, 1, DATEFROMPARTS(m.yr, m.mo, 1))
+            AND (
+              (k.frequency = 'Quarterly' AND m.mo % 3 = 0)
+              OR (k.frequency = 'Annually' AND m.mo % 12 = 0)
+              OR (ISNULL(k.frequency, '') NOT IN ('Quarterly', 'Annually'))
+            )
+            AND NOT (
+              LOWER(ISNULL(k.status, '')) = 'inactive'
+              AND k.inactiveYearMonth IS NOT NULL
+              AND TRY_CONVERT(date, k.inactiveYearMonth + '-01') IS NOT NULL
+              AND DATEFROMPARTS(m.yr, m.mo, 1) >= TRY_CONVERT(date, k.inactiveYearMonth + '-01')
+            )
             {date_filter}
             {function_filter}
           LEFT JOIN KriFunctions kf ON kf.kri_id = k.id AND kf.deletedAt IS NULL
