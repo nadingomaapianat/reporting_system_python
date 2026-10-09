@@ -880,6 +880,18 @@ class ExcelService:
                         },
                     }
 
+                # KRIs Submission Status by Function: render the grey/pending sentinel values
+                # (see buildMonthCellExpr / _build_month_cell_expr) as colored cells instead of
+                # literal text, matching the live view's grey box / yellow Pending badge.
+                if card_type == 'allKrisSubmittedByFunction':
+                    header_config = {
+                        **header_config,
+                        "cellValueStyles": {
+                            "grey": {"bg": "#D9D9D9", "text": ""},
+                            "pending": {"bg": "#FFF9C4", "text": "Pending"},
+                        },
+                    }
+
                 write_debug(f"About to call generate_excel_report for KRIs table")
                 result = generate_excel_report(columns, data_rows, header_config)
                 write_debug(f"KRIs Excel report generated, returning {len(result) if result else 0} bytes")

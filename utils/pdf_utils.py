@@ -575,16 +575,29 @@ def generate_pdf_report(
         
         # Process data rows with defensive truncation for extremely long cells
         max_cell_chars = int(header_config.get('maxCellChars', 300))
+        # Optional per-cell styling keyed by the cell's raw value (opt-in), e.g.
+        # {"grey": {"bg": "#D9D9D9", "text": ""}, "pending": {"bg": "#FFF9C4", "text": "Pending"}}
+        # — used by month-grid tables like "KRIs Submission Status by Function" so the
+        # grey/pending sentinel values render as colored cells instead of literal text.
+        cell_value_styles_cfg = header_config.get('cellValueStyles', {}) or {}
+        cell_value_style_coords: List[tuple] = []  # (row_in_data, col_idx, bg_hex)
         processed_rows = []
-        for row in data_rows:
+        for r_idx, row in enumerate(data_rows):
             out_row = []
-            for cell in row:
-                text = '' if cell is None else str(cell)
-                if len(text) > max_cell_chars:
-                    text = text[:max_cell_chars] + '…'
+            for c_idx, cell in enumerate(row):
+                style_match = cell_value_styles_cfg.get(cell) if isinstance(cell, str) else None
+                if style_match:
+                    text = str(style_match.get('text', ''))
+                    bg_hex = style_match.get('bg')
+                    if bg_hex:
+                        cell_value_style_coords.append((r_idx, c_idx, bg_hex))
+                else:
+                    text = '' if cell is None else str(cell)
+                    if len(text) > max_cell_chars:
+                        text = text[:max_cell_chars] + '…'
                 out_row.append(Paragraph(paragraph_cell_text(text), cell_style))
             processed_rows.append(out_row)
-        
+
         # Calculate column widths (full width with margins)
         # Add small buffer to compensate for any internal reportlab padding
         available_width = page_size[0] - (left_margin + right_margin) + 20
@@ -627,6 +640,13 @@ def generate_pdf_report(
             batch_rows = processed_rows[start_idx:end_idx]
             table_data = [processed_headers] + batch_rows
 
+            # Translate absolute row indices into this batch's table coordinates (row 0 is header).
+            batch_cell_styles = [
+                ('BACKGROUND', (c_idx, r_idx - start_idx + 1), (c_idx, r_idx - start_idx + 1), hex_to_color(str(bg_hex)))
+                for (r_idx, c_idx, bg_hex) in cell_value_style_coords
+                if start_idx <= r_idx < end_idx
+            ]
+
             table = Table(table_data, colWidths=col_widths, repeatRows=1)
             table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), header_bg_color_rl),
@@ -647,7 +667,7 @@ def generate_pdf_report(
                 ('ALIGN', (0, 1), (-1, -1), 'LEFT'),
                 ('GRID', (0, 0), (-1, -1), 0.5, border_color_rl),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ] + col_color_styles))
+            ] + col_color_styles + batch_cell_styles))
 
             # Append table directly; widths already span available width and rows are chunked
             story.append(table)

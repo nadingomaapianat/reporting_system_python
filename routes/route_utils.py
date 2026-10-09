@@ -1127,11 +1127,23 @@ def generate_excel_report(columns, data_rows, header_config=None):
         cell.fill = PatternFill(start_color=hdr_fill, end_color=hdr_fill, fill_type='solid')
         cell.alignment = Alignment(horizontal='center', vertical='center', wrapText=True)
 
+    # Optional per-cell styling keyed by the cell's raw value (opt-in), e.g.
+    # {"grey": {"bg": "#D9D9D9", "text": ""}, "pending": {"bg": "#FFF9C4", "text": "Pending"}}
+    # -- used by month-grid tables like "KRIs Submission Status by Function" so the
+    # grey/pending sentinel values render as colored cells instead of literal text.
+    cell_value_styles_cfg = header_config.get('cellValueStyles', {}) or {}
+
     # Data rows
     for row_idx, row_data in enumerate(data_rows, start=header_row + 1):
         for col_idx, value in enumerate(row_data, start=1):
-            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            style_match = cell_value_styles_cfg.get(value) if isinstance(value, str) else None
+            cell_value = style_match.get('text', '') if style_match else value
+            cell = ws.cell(row=row_idx, column=col_idx, value=cell_value)
             cell.alignment = Alignment(vertical='top', wrapText=True)
+            if style_match and style_match.get('bg'):
+                bg_rgb = hex_to_rgb(str(style_match['bg']))
+                cell.fill = PatternFill(start_color=bg_rgb, end_color=bg_rgb, fill_type='solid')
+                continue
 
             # Custom per-column color takes precedence; else optional zebra stripes
             if col_idx in colored_col_idx:
