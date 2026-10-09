@@ -51,21 +51,27 @@ router = APIRouter()
 # Display names for KRI cards, charts, and tables (used for PDF/Excel title and filenames)
 KRI_DISPLAY_NAMES = {
     "totalKris": "Total KRIs",
+    "totalKriAssessments": "Total KRI Assessments",
     "pendingPreparer": "KRIs Pending Preparer",
     "pendingChecker": "KRIs Pending Checker",
     "pendingReviewer": "KRIs Pending Reviewer",
     "pendingAcceptance": "KRIs Pending Acceptance",
+    "approved": "KRI Approved",
+    "checkerRefused": "Checker Refused",
+    "acceptanceRefused": "Acceptance Refused",
     "krisByStatus": "KRIs by Status",
     "krisByLevel": "KRIs by Risk Level",
     "assessmentHistoryByLevel": "KRIs by Risk Level",
-    "lowKriValues": "Low KRI Values",
-    "mediumKriValues": "Medium KRI Values",
-    "highKriValues": "High KRI Values",
-    "kriValuesPendingPreparer": "KRI Values Pending Preparer",
-    "kriValuesPendingChecker": "KRI Values Pending Checker",
-    "kriValuesPendingReviewer": "KRI Values Pending Reviewer",
-    "kriValuesPendingAcceptance": "KRI Values Pending Acceptance",
-    "kriValuesApproved": "KRI Values Approved",
+    "lowKriValues": "Low KRI Assessment",
+    "mediumKriValues": "Medium KRI Assessment",
+    "highKriValues": "High KRI Assessment",
+    "kriValuesPendingPreparer": "KRI Assessment Pending Preparer",
+    "kriValuesPendingChecker": "KRI Assessment Pending Checker",
+    "kriValuesPendingReviewer": "KRI Assessment Pending Reviewer",
+    "kriValuesPendingAcceptance": "KRI Assessment Pending Acceptance",
+    "kriValuesApproved": "KRI Assessment Approved",
+    "kriValuesCheckerRefused": "KRI Assessment Checker Refused",
+    "kriValuesAcceptanceRefused": "KRI Assessment Acceptance Refused",
     "breachedKRIsByDepartment": "Breached KRIs by Function",
     "kriAssessmentCount": "KRI Assessment Count by Function",
     "kriCountsByFrequency": "KRIs by Frequency",
@@ -225,6 +231,8 @@ async def export_kris_pdf(
                 write_debug(f"[KRIS PDF] using totalKrisList from POST body, len={len(data)}")
             else:
                 data = await kri_service.get_kris_list(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'totalKriAssessments':
+            data = await kri_service.get_kri_values_list(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'pendingPreparer':
             data = await kri_service.get_kris_by_status_detail('pendingPreparer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'pendingChecker':
@@ -235,7 +243,11 @@ async def export_kris_pdf(
             data = await kri_service.get_kris_by_status_detail('pendingAcceptance', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'approved':
             data = await kri_service.get_kris_by_status_detail('Approved', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        
+        elif cardType == 'checkerRefused':
+            data = await kri_service.get_checker_refused_kris(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'acceptanceRefused':
+            data = await kri_service.get_acceptance_refused_kris(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+
         # Charts
         elif cardType == 'krisByStatus':
             data = await kri_service.get_kris_by_status(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
@@ -260,6 +272,10 @@ async def export_kris_pdf(
             data = await kri_service.get_kri_values_pending_acceptance(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'kriValuesApproved':
             data = await kri_service.get_kri_values_approved(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'kriValuesCheckerRefused':
+            data = await kri_service.get_kri_values_checker_refused(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'kriValuesAcceptanceRefused':
+            data = await kri_service.get_kri_values_acceptance_refused(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'breachedKRIsByDepartment':
             data = await kri_service.get_breached_kris_by_department_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'kriAssessmentCount':
@@ -291,7 +307,7 @@ async def export_kris_pdf(
         elif cardType == 'overdueKrisByDepartment':
             data = await kri_service.get_overdue_kris_by_department(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'allKrisSubmittedByFunction':
-            data = await kri_service.get_all_kris_submitted_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+            data = await kri_service.get_all_kris_submitted_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q, order_by_function_asc=order_by_function_from_request(request))
         elif cardType == 'monthlyKriSubmissionByFunction':
             data = await kri_service.get_monthly_kri_submission_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'kriRiskRelationships':
@@ -509,6 +525,8 @@ async def export_kris_excel(
                 write_debug(f"[KRIS EXCEL] using totalKrisList from POST body, len={len(data)}")
             else:
                 data = await kri_service.get_kris_list(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'totalKriAssessments':
+            data = await kri_service.get_kri_values_list(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'pendingPreparer':
             data = await kri_service.get_kris_by_status_detail('pendingPreparer', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'pendingChecker':
@@ -519,7 +537,11 @@ async def export_kris_excel(
             data = await kri_service.get_kris_by_status_detail('pendingAcceptance', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'approved':
             data = await kri_service.get_kris_by_status_detail('Approved', start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
-        
+        elif cardType == 'checkerRefused':
+            data = await kri_service.get_checker_refused_kris(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'acceptanceRefused':
+            data = await kri_service.get_acceptance_refused_kris(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+
         # Charts
         elif cardType == 'krisByStatus':
             data = await kri_service.get_kris_by_status(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
@@ -544,6 +566,10 @@ async def export_kris_excel(
             data = await kri_service.get_kri_values_pending_acceptance(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'kriValuesApproved':
             data = await kri_service.get_kri_values_approved(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'kriValuesCheckerRefused':
+            data = await kri_service.get_kri_values_checker_refused(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+        elif cardType == 'kriValuesAcceptanceRefused':
+            data = await kri_service.get_kri_values_acceptance_refused(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'breachedKRIsByDepartment':
             data = await kri_service.get_breached_kris_by_department_detailed(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'kriAssessmentCount':
@@ -575,7 +601,7 @@ async def export_kris_excel(
         elif cardType == 'overdueKrisByDepartment':
             data = await kri_service.get_overdue_kris_by_department(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'allKrisSubmittedByFunction':
-            data = await kri_service.get_all_kris_submitted_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
+            data = await kri_service.get_all_kris_submitted_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q, order_by_function_asc=order_by_function_from_request(request))
         elif cardType == 'monthlyKriSubmissionByFunction':
             data = await kri_service.get_monthly_kri_submission_by_function(start_date_q, end_date_q, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, submission_start_date=submission_start_q, submission_end_date=submission_end_q)
         elif cardType == 'kriRiskRelationships':

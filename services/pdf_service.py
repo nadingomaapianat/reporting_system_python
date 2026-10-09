@@ -743,6 +743,17 @@ class PDFService:
                         "High From": "#EF3D3D",
                     },
                 }
+            elif card_type == 'allKrisSubmittedByFunction':
+                # Render the grey/pending sentinel values (see buildMonthCellExpr /
+                # _build_month_cell_expr) as colored cells instead of literal text, matching the
+                # live view's grey box / yellow Pending badge.
+                final_config = {
+                    **final_config,
+                    "cellValueStyles": {
+                        "grey": {"bg": "#D9D9D9", "text": ""},
+                        "pending": {"bg": "#FFF9C4", "text": "Pending"},
+                    },
+                }
             write_debug(f"DEBUG: Using PDF config (kris): {final_config}")
 
             result = generate_pdf_report(columns, data_rows, final_config)

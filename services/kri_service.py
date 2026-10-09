@@ -107,6 +107,28 @@ class KriService:
                 pass
         return parts
 
+    def _build_month_cell_expr(self, month_num: int) -> str:
+        """SQL expression for one month column of "KRIs Submission Status by Function". Mirrors
+        Node's buildMonthCellExpr: a Quarterly KRI can only ever have a value in Mar/Jun/Sep/Dec,
+        an Annually KRI only in Dec -- any other frequency reports every month. Returns, per row:
+        'grey' (not a valid reporting slot for this KRI's frequency -- any value entered there
+        anyway is bad data and is ignored, never selected by the MAX(CASE...) below), 'pending'
+        (a valid slot with no value yet), or the value cast to text. Assumes the query groups by
+        (at least) k.id so MAX(k.frequency) is just that KRI's frequency."""
+        is_quarterly_due_month = month_num in (3, 6, 9, 12)
+        is_annually_due_month = month_num == 12
+        raw_value = f"MAX(CASE WHEN TRY_CONVERT(int, kv.[month]) = {month_num} THEN kv.value END)"
+        pending_or_value = f"CASE WHEN {raw_value} IS NULL THEN 'pending' ELSE CAST({raw_value} AS NVARCHAR(50)) END"
+        quarterly_branch = pending_or_value if is_quarterly_due_month else "'grey'"
+        annually_branch = pending_or_value if is_annually_due_month else "'grey'"
+        return f"""
+          CASE
+            WHEN LOWER(ISNULL(MAX(k.frequency), '')) = 'quarterly' THEN {quarterly_branch}
+            WHEN LOWER(ISNULL(MAX(k.frequency), '')) = 'annually' THEN {annually_branch}
+            ELSE {pending_or_value}
+          END
+        """
+
     def _build_kri_function_filter(
         self,
         table_alias: str,
@@ -410,6 +432,61 @@ class KriService:
         write_debug(f"get_kris_list query (truncated): SELECT ... FROM Kris k ...")
         return await self.execute_query(query)
 
+    async def get_kri_values_list(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return list of individual KRI VALUE assessments (one row per periodic value, not
+        distinct KRIs) with the same columns as the UI Total KRI Assessments modal. Mirrors
+        get_kris_list, but joins KriValues and accepts the independent Submission Date Filter."""
+        date_filter = ""
+        if start_date and end_date:
+            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND k.createdAt >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        submission_filter = self._build_submission_filter(submission_start_date, submission_end_date)
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
+
+        query = f"""
+        SELECT
+            k.code,
+            ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name,
+            k.kriName AS kri_name,
+            ISNULL(k.frequency, '') AS frequency,
+            ISNULL(k.threshold, '') AS threshold,
+            kv.[month] AS month,
+            kv.[year] AS year,
+            kv.value AS value,
+            kv.assessment AS assessment,
+            FORMAT(CONVERT(datetime, kv.createdAt), 'yyyy-MM-dd HH:mm:ss') AS createdAt
+        FROM Kris k
+        INNER JOIN KriValues kv ON kv.kriId = k.id AND kv.deletedAt IS NULL {submission_filter}
+        LEFT JOIN Functions frel ON frel.id = k.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
+        OUTER APPLY (
+          SELECT TOP 1 f2.name
+          FROM KriFunctions kf2
+          INNER JOIN Functions f2 ON f2.id = kf2.function_id AND f2.isDeleted = 0 AND f2.deletedAt IS NULL
+          WHERE kf2.kri_id = k.id AND kf2.deletedAt IS NULL
+          ORDER BY kf2.function_id
+        ) fkf(name)
+        WHERE k.isDeleted = 0 AND k.deletedAt IS NULL
+          {date_filter}
+          {function_filter}
+        ORDER BY kv.createdAt DESC
+        """
+        return await self.execute_query(query)
+
     async def get_kris_by_status_detail(
         self,
         status: str,
@@ -543,7 +620,9 @@ class KriService:
           k.kriName          AS kri_name,
           CASE
             WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
+            WHEN ISNULL(k.checkerStatus, '') = 'refused' THEN 'Checker Refused'
             WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
+            WHEN ISNULL(k.acceptanceStatus, '') = 'refused' THEN 'Acceptance Refused'
             WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
             WHEN ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
             WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
@@ -666,19 +745,18 @@ class KriService:
             WHEN 'HIGH'   THEN 'High'
             WHEN 'MEDIUM' THEN 'Medium'
             WHEN 'LOW'    THEN 'Low'
-            ELSE 'Unknown'
           END AS level,
           COUNT(kv.id) AS count
         FROM Kris k
         INNER JOIN KriValues kv ON kv.kriId = k.id AND kv.deletedAt IS NULL
         WHERE k.isDeleted = 0 AND k.deletedAt IS NULL {date_filter}
+          AND UPPER(LTRIM(RTRIM(kv.assessment))) IN ('HIGH', 'MEDIUM', 'LOW')
           {function_filter} {submission_filter}
         GROUP BY
           CASE UPPER(LTRIM(RTRIM(kv.assessment)))
             WHEN 'HIGH'   THEN 'High'
             WHEN 'MEDIUM' THEN 'Medium'
             WHEN 'LOW'    THEN 'Low'
-            ELSE 'Unknown'
           END
         ORDER BY count DESC
         """
@@ -925,8 +1003,86 @@ class KriService:
             submission_start_date, submission_end_date,
         )
 
-    async def get_breached_kris_by_department_detailed(
+    async def _get_kris_refused_detail(
         self,
+        field: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Shared query builder for the KRI-level "Checker Refused" / "Acceptance Refused" export
+        detail methods. A refused status is a direct equality on its own field (k.checkerStatus or
+        k.acceptanceStatus), not part of the pendingPreparer/.../approved waterfall, so this is a
+        plain filter rather than a CASE bucket."""
+        date_filter = ""
+        if start_date and end_date:
+            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND k.createdAt >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
+
+        query = f"""
+        SELECT
+          k.code,
+          k.kriName AS title,
+          ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name,
+          'Refused' AS status,
+          FORMAT(CONVERT(datetime, k.createdAt), 'yyyy-MM-dd HH:mm:ss') AS createdAt
+        FROM Kris k
+        LEFT JOIN Functions frel ON frel.id = k.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
+        OUTER APPLY (
+          SELECT TOP 1 f2.name
+          FROM KriFunctions kf2
+          INNER JOIN Functions f2 ON f2.id = kf2.function_id AND f2.isDeleted = 0 AND f2.deletedAt IS NULL
+          WHERE kf2.kri_id = k.id AND kf2.deletedAt IS NULL
+          ORDER BY kf2.function_id
+        ) fkf(name)
+        WHERE k.isDeleted = 0 AND k.deletedAt IS NULL
+          AND ISNULL(k.{field}, '') = 'refused'
+          {date_filter}
+          {function_filter}
+        ORDER BY k.createdAt DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_checker_refused_kris(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Detail rows backing the KRI-level "Checker Refused" card/export."""
+        return await self._get_kris_refused_detail(
+            'checkerStatus', start_date, end_date, user_id, group_name, function_id, function_ids,
+        )
+
+    async def get_acceptance_refused_kris(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Detail rows backing the KRI-level "Acceptance Refused" card/export."""
+        return await self._get_kris_refused_detail(
+            'acceptanceStatus', start_date, end_date, user_id, group_name, function_id, function_ids,
+        )
+
+    async def _get_kri_values_refused_detail(
+        self,
+        field: str,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         user_id: Optional[str] = None,
@@ -936,8 +1092,11 @@ class KriService:
         submission_start_date: Optional[str] = None,
         submission_end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return breached KRIs by function: a KRI is breached when its latest
-        assessment sits in the High-risk band (or an explicit High kri_level)."""
+        """Shared query builder for the KRI VALUE "Checker Refused" / "Acceptance Refused" export
+        detail methods. Mirrors _get_kri_values_by_status_bucket's structure (same K CTE, Derived
+        CTE INNER JOINing KriValues with submission_filter, function name resolved the same way),
+        but a refused status is a direct equality on its own field (kv.checkerStatus or
+        kv.acceptanceStatus), not part of the pending/approved waterfall."""
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -951,51 +1110,112 @@ class KriService:
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
-        WITH LatestKV AS (
-          SELECT kv.kriId, kv.value,
-                 ROW_NUMBER() OVER (PARTITION BY kv.kriId ORDER BY COALESCE(CONVERT(datetime, CONCAT(kv.[year], '-', kv.[month], '-01')), kv.createdAt) DESC) rn
-          FROM KriValues kv
-          WHERE kv.deletedAt IS NULL {submission_filter}
-        ),
-        K AS (
-          SELECT k.id,
-                 ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name,
-                 k.kri_level,
-                 CAST(k.isAscending AS int) AS isAscending,
-                 TRY_CONVERT(float, k.medium_from) AS med_thr,
-                 TRY_CONVERT(float, k.high_from)   AS high_thr
+        WITH K AS (
+          SELECT k.id, k.code, k.kriName, k.createdAt, k.related_function_id
           FROM Kris k
-          LEFT JOIN KriFunctions kf ON kf.kri_id = k.id AND kf.deletedAt IS NULL
-          LEFT JOIN Functions fkf ON fkf.id = kf.function_id AND fkf.isDeleted = 0 AND fkf.deletedAt IS NULL
-          LEFT JOIN Functions frel ON frel.id = k.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
-          WHERE k.isDeleted = 0
-            AND k.deletedAt IS NULL {date_filter}
-            {function_filter}
-        ),
-        KL AS (
-          SELECT K.id, K.function_name, K.kri_level, K.isAscending, K.med_thr, K.high_thr,
-                 TRY_CONVERT(float, kv.value) AS val
-          FROM K
-          LEFT JOIN LatestKV kv ON kv.kriId = K.id AND kv.rn = 1
-        ),
-        Derived AS (
-          SELECT function_name,
-                 CASE
-                   WHEN kri_level IS NOT NULL AND LTRIM(RTRIM(kri_level)) <> '' THEN kri_level
-                   WHEN val IS NULL OR med_thr IS NULL OR high_thr IS NULL THEN 'Unknown'
-                   WHEN isAscending = 1 AND val >= high_thr THEN 'High'
-                   WHEN isAscending = 1 AND val >= med_thr THEN 'Medium'
-                   WHEN isAscending = 1 THEN 'Low'
-                   WHEN isAscending = 0 AND val <= high_thr THEN 'High'
-                   WHEN isAscending = 0 AND val <= med_thr THEN 'Medium'
-                   ELSE 'Low'
-                 END AS level_bucket
-          FROM KL
+          WHERE k.isDeleted = 0 AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
         )
-        SELECT function_name, COUNT(*) AS breached_count
-        FROM Derived
-        WHERE UPPER(LTRIM(RTRIM(level_bucket))) = 'HIGH'
-        GROUP BY function_name
+        SELECT
+          K.code,
+          K.kriName AS name,
+          ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name,
+          kv.value AS value,
+          kv.preparerStatus AS preparerStatus,
+          kv.checkerStatus AS checkerStatus,
+          kv.reviewerStatus AS reviewerStatus,
+          kv.acceptanceStatus AS acceptanceStatus,
+          FORMAT(CONVERT(datetime, kv.createdAt), 'yyyy-MM-dd HH:mm:ss') AS submittedAt,
+          K.createdAt
+        FROM K
+        INNER JOIN KriValues kv ON kv.kriId = K.id AND kv.deletedAt IS NULL AND ISNULL(kv.{field}, '') = 'refused'
+          {submission_filter}
+        LEFT JOIN Functions frel ON frel.id = K.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
+        OUTER APPLY (
+          SELECT TOP 1 f2.name
+          FROM KriFunctions kf2
+          INNER JOIN Functions f2 ON f2.id = kf2.function_id AND f2.isDeleted = 0 AND f2.deletedAt IS NULL
+          WHERE kf2.kri_id = K.id AND kf2.deletedAt IS NULL
+          ORDER BY kf2.function_id
+        ) fkf(name)
+        ORDER BY kv.createdAt DESC
+        """
+        return await self.execute_query(query)
+
+    async def get_kri_values_checker_refused(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Detail rows backing the "KRI Assessment Checker Refused" card/export."""
+        return await self._get_kri_values_refused_detail(
+            'checkerStatus', start_date, end_date, user_id, group_name, function_id, function_ids,
+            submission_start_date, submission_end_date,
+        )
+
+    async def get_kri_values_acceptance_refused(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Detail rows backing the "KRI Assessment Acceptance Refused" card/export."""
+        return await self._get_kri_values_refused_detail(
+            'acceptanceStatus', start_date, end_date, user_id, group_name, function_id, function_ids,
+            submission_start_date, submission_end_date,
+        )
+
+    async def get_breached_kris_by_department_detailed(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+        submission_start_date: Optional[str] = None,
+        submission_end_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return breached KRIs by function: counts individual KRI VALUE assessments
+        (not distinct KRIs) whose recorded kv.assessment is High — the same stored field
+        the "KRIs by Risk Level" chart reads, not a threshold recomputation."""
+        date_filter = ""
+        if start_date and end_date:
+            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        elif start_date:
+            date_filter = f"AND k.createdAt >= '{start_date}'"
+        elif end_date:
+            date_filter = f"AND k.createdAt <= '{end_date}'"
+
+        submission_filter = self._build_submission_filter(submission_start_date, submission_end_date)
+        access = await self._get_user_function_access(user_id, group_name)
+        function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
+
+        query = f"""
+        SELECT
+          ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name,
+          COUNT(kv.id) AS breached_count
+        FROM Kris k
+        INNER JOIN KriValues kv ON kv.kriId = k.id AND kv.deletedAt IS NULL {submission_filter}
+        LEFT JOIN KriFunctions kf ON kf.kri_id = k.id AND kf.deletedAt IS NULL
+        LEFT JOIN Functions fkf ON fkf.id = kf.function_id AND fkf.isDeleted = 0 AND fkf.deletedAt IS NULL
+        LEFT JOIN Functions frel ON frel.id = k.related_function_id AND frel.isDeleted = 0 AND frel.deletedAt IS NULL
+        WHERE k.isDeleted = 0
+          AND k.deletedAt IS NULL {date_filter}
+          {function_filter}
+          AND UPPER(LTRIM(RTRIM(kv.assessment))) = 'HIGH'
+        GROUP BY ISNULL(COALESCE(frel.name, fkf.name), 'Unknown')
         ORDER BY breached_count DESC
         """
         return await self.execute_query(query)
@@ -1493,12 +1713,20 @@ class KriService:
           CASE
             -- Actionplans.year/month are 0 (not NULL) as a sentinel on many rows,
             -- and DATEFROMPARTS errors on an out-of-range month/year, so check ranges
-            -- explicitly rather than just IS NOT NULL.
+            -- explicitly rather than just IS NOT NULL. When the action plan itself has no
+            -- valid period, fall back to the KRI's latest recorded value's period instead of
+            -- leaving this blank.
             WHEN ap.[month] BETWEEN 1 AND 12 AND ap.[year] BETWEEN 1 AND 9999
             THEN DATENAME(MONTH, DATEFROMPARTS(ap.[year], ap.[month], 1))
+            WHEN kv.kv_month BETWEEN 1 AND 12 AND kv.kv_year BETWEEN 1 AND 9999
+            THEN DATENAME(MONTH, DATEFROMPARTS(kv.kv_year, kv.kv_month, 1))
             ELSE ''
           END AS month,
-          CASE WHEN ap.[year] BETWEEN 1 AND 9999 THEN CAST(ap.[year] AS VARCHAR(10)) ELSE '' END AS year,
+          CASE
+            WHEN ap.[year] BETWEEN 1 AND 9999 THEN CAST(ap.[year] AS VARCHAR(10))
+            WHEN kv.kv_year BETWEEN 1 AND 9999 THEN CAST(kv.kv_year AS VARCHAR(10))
+            ELSE ''
+          END AS year,
           CASE
             WHEN kv.value IS NULL THEN ''
             ELSE
@@ -1515,25 +1743,41 @@ class KriService:
           ISNULL(ap.control_procedure, '') AS action_plan,
           FORMAT(CONVERT(datetime, ap.implementation_date), 'yyyy-MM-dd') AS target_date,
           CASE
-            WHEN ap.id IS NULL THEN ''
             WHEN ISNULL(ap.business_unit, '') = '' THEN 'Pending'
             ELSE ap.business_unit
           END AS status
         FROM Kris AS k
-        LEFT JOIN Actionplans AS ap ON ap.kri_id = k.id
+        INNER JOIN Actionplans AS ap ON ap.kri_id = k.id
           AND ap.deletedAt IS NULL
-        LEFT JOIN KriFunctions AS kf ON k.id = kf.kri_id
-          AND kf.deletedAt IS NULL
-        LEFT JOIN Functions AS fkf ON fkf.id = kf.function_id
-          AND fkf.isDeleted = 0
-          AND fkf.deletedAt IS NULL
         LEFT JOIN Functions AS frel ON frel.id = k.related_function_id
           AND frel.isDeleted = 0
           AND frel.deletedAt IS NULL
-        LEFT JOIN KriValues AS kv ON kv.kriId = k.id
-          AND kv.[year] = ap.[year]
-          AND kv.[month] = ap.[month]
-          AND kv.deletedAt IS NULL {submission_filter}
+        OUTER APPLY (
+          SELECT TOP 1 f2.name
+          FROM KriFunctions kf2
+          INNER JOIN Functions f2 ON f2.id = kf2.function_id AND f2.isDeleted = 0 AND f2.deletedAt IS NULL
+          WHERE kf2.kri_id = k.id AND kf2.deletedAt IS NULL
+          ORDER BY kf2.function_id
+        ) fkf(name)
+        -- Prefer the KriValues row matching the action plan's own period exactly; when the
+        -- action plan has no valid period (or no exact-period value exists), fall back to the
+        -- KRI's most recently submitted value instead of leaving Month/Year/Value blank.
+        OUTER APPLY (
+          SELECT TOP 1
+            kv2.value AS value,
+            TRY_CONVERT(int, kv2.[year]) AS kv_year,
+            TRY_CONVERT(int, kv2.[month]) AS kv_month
+          FROM KriValues kv2
+          WHERE kv2.kriId = k.id
+            AND kv2.deletedAt IS NULL {submission_filter}
+          ORDER BY
+            CASE
+              WHEN ap.[month] BETWEEN 1 AND 12 AND ap.[year] BETWEEN 1 AND 9999
+                AND TRY_CONVERT(int, kv2.[year]) = ap.[year] AND TRY_CONVERT(int, kv2.[month]) = ap.[month]
+              THEN 0 ELSE 1
+            END,
+            kv2.createdAt DESC
+        ) kv(value, kv_year, kv_month)
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
           {function_filter}
@@ -1552,11 +1796,24 @@ class KriService:
         function_ids: Optional[str] = None,
         submission_start_date: Optional[str] = None,
         submission_end_date: Optional[str] = None,
+        order_by_function_asc: bool = False,
     ) -> List[Dict[str, Any]]:
-        """Return all KRIs submitted by function.
-        Total KRIs = sum, per KRI, of how many months it has been active (createdAt -> now,
-        inclusive) -- total expected monthly reporting slots for that function, not a count of
-        KRI definitions. Submitted KRIs = sum of months that actually have a recorded value."""
+        """Return KRIs Submission Status by Function: one row per KRI per year it has at least
+        one recorded value, with a Jan..Dec column showing that month's submitted value (or NULL
+        if nothing was recorded that month). Function attribution prioritizes related_function_id
+        over KriFunctions, matching the main app/heatmap's authoritative logic (adib_backend
+        kri.service.ts). Function name resolved via OUTER APPLY ... TOP 1 (not a plain
+        LEFT JOIN KriFunctions) so a KRI linked to several functions is never fanned out into
+        duplicate rows per (KRI, year).
+
+        Row order mirrors Node's getAllKrisSubmittedByFunctionTablePage EXACTLY (the method the
+        live view actually calls, since widgetMode fetches this table on its own, not through the
+        combined dashboard payload): by default, most-recently-submitted-value first
+        (MAX(kv.createdAt) DESC, then function name); with "Order by Function" toggled on,
+        function name A->Z then KRI code then year DESC. Without this, the export used a third,
+        unrelated order (function name/code/year only, no recency) that didn't match either live
+        view mode — on a near-year-end dataset that put the single most-recently-touched row
+        (page 1 in the view) on the very last export page instead."""
         date_filter = ""
         if start_date and end_date:
             date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
@@ -1569,41 +1826,43 @@ class KriService:
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
 
-        # Function attribution prioritizes related_function_id over KriFunctions, matching the
-        # main app/heatmap's authoritative logic (adib_backend kri.service.ts), so a KRI is never
-        # silently reassigned to a different function here than it belongs to there.
         query = f"""
         SELECT
+          k.code,
           ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name,
-          SUM(DATEDIFF(MONTH, k.createdAt, GETDATE()) + 1) AS total_kris,
-          SUM(ISNULL(kv_counts.months_submitted, 0)) AS submitted_kris,
-          CASE
-            WHEN SUM(DATEDIFF(MONTH, k.createdAt, GETDATE()) + 1) = SUM(ISNULL(kv_counts.months_submitted, 0))
-            THEN 'Yes' ELSE 'No'
-          END AS all_submitted
+          k.kriName AS kri_name,
+          TRY_CONVERT(int, kv.[year]) AS year,
+          COUNT(kv.id) AS assessments_count,
+          CASE WHEN COUNT(kv.id) > 0 THEN 'Yes' ELSE 'No' END AS submission,
+          {self._build_month_cell_expr(1)} AS jan,
+          {self._build_month_cell_expr(2)} AS feb,
+          {self._build_month_cell_expr(3)} AS mar,
+          {self._build_month_cell_expr(4)} AS apr,
+          {self._build_month_cell_expr(5)} AS may,
+          {self._build_month_cell_expr(6)} AS jun,
+          {self._build_month_cell_expr(7)} AS jul,
+          {self._build_month_cell_expr(8)} AS aug,
+          {self._build_month_cell_expr(9)} AS sep,
+          {self._build_month_cell_expr(10)} AS oct,
+          {self._build_month_cell_expr(11)} AS nov,
+          {self._build_month_cell_expr(12)} AS [dec]
         FROM Kris AS k
+        INNER JOIN KriValues kv ON kv.kriId = k.id AND kv.deletedAt IS NULL {submission_filter}
         LEFT JOIN Functions AS frel ON frel.id = k.related_function_id
           AND frel.isDeleted = 0
           AND frel.deletedAt IS NULL
         OUTER APPLY (
-          -- A KRI can have several KriFunctions rows; TOP 1 keeps this to one row per KRI so
-          -- SUM() below never double/triple-counts a KRI linked to multiple functions.
           SELECT TOP 1 f2.name
           FROM KriFunctions kf2
           INNER JOIN Functions f2 ON f2.id = kf2.function_id AND f2.isDeleted = 0 AND f2.deletedAt IS NULL
           WHERE kf2.kri_id = k.id AND kf2.deletedAt IS NULL
           ORDER BY kf2.function_id
         ) fkf(name)
-        OUTER APPLY (
-          SELECT COUNT(DISTINCT CONCAT(kv.[year], '-', kv.[month])) AS months_submitted
-          FROM KriValues kv
-          WHERE kv.kriId = k.id AND kv.deletedAt IS NULL {submission_filter}
-        ) kv_counts
         WHERE k.isDeleted = 0
           AND k.deletedAt IS NULL {date_filter}
           {function_filter}
-        GROUP BY ISNULL(COALESCE(frel.name, fkf.name), 'Unknown')
-        ORDER BY ISNULL(COALESCE(frel.name, fkf.name), 'Unknown')
+        GROUP BY k.code, k.kriName, ISNULL(COALESCE(frel.name, fkf.name), 'Unknown'), TRY_CONVERT(int, kv.[year])
+        ORDER BY {"ISNULL(COALESCE(frel.name, fkf.name), 'Unknown'), k.code, year DESC" if order_by_function_asc else "MAX(kv.createdAt) DESC, ISNULL(COALESCE(frel.name, fkf.name), 'Unknown')"}
         """
         return await self.execute_query(query)
 
