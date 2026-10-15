@@ -5,6 +5,7 @@ import asyncio
 import json
 from datetime import datetime
 import os
+import re
 import httpx
 from fastapi import APIRouter, Query, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import Response, FileResponse, StreamingResponse
@@ -19,6 +20,7 @@ from utils.export_utils import get_default_header_config
 from models import ExportRequest, ExportResponse
 from routes.route_utils import write_debug, parse_header_config, merge_header_config, convert_to_boolean
 from utils.https_cert import get_httpx_verify
+from utils.dynamic_query import quote_ident
 
 # Initialize services
 api_service = APIService()
@@ -35,6 +37,16 @@ db_service = control_service
 
 # Create router
 router = APIRouter()
+
+# Column types create-table accepts (the type is written into the CREATE TABLE text).
+_SQL_COLUMN_TYPE = re.compile(
+    r"^(?:BIT|TINYINT|SMALLINT|INT|BIGINT|FLOAT|REAL|MONEY|SMALLMONEY|DATE|DATETIME|SMALLDATETIME"
+    r"|UNIQUEIDENTIFIER|TEXT|NTEXT"
+    r"|(?:DATETIME2|TIME|DATETIMEOFFSET)(?:\s*\(\s*[0-7]\s*\))?"
+    r"|(?:DECIMAL|NUMERIC)(?:\s*\(\s*\d{1,2}\s*(?:,\s*\d{1,2}\s*)?\))?"
+    r"|(?:NVARCHAR|VARCHAR|NCHAR|CHAR|VARBINARY|BINARY)(?:\s*\(\s*(?:\d{1,4}|MAX)\s*\))?)$",
+    re.IGNORECASE,
+)
 
 
 
@@ -491,10 +503,10 @@ async def insert_check_record(
             column_list = ', '.join([f'[{col}]' for col in column_names])
             
             insert_query = f"""
-                INSERT INTO [{table_name}] ({column_list})
+                INSERT INTO {quote_ident(table_name)} ({column_list})
                 VALUES ({placeholders})
             """
-            
+
             # Helper to coerce python value to SQL Server expected type
             from datetime import datetime, date, time
             def coerce_value(sql_type: str, val):
@@ -808,7 +820,12 @@ async def create_table(request: Request):
                 "success": False,
                 "error": "Table name is required"
             }
-        
+        if len(table_name) > 128 or any(ord(c) < 32 for c in table_name):
+            return {
+                "success": False,
+                "error": "Invalid table name"
+            }
+
         if not fields:
             return {
                 "success": False,
@@ -843,8 +860,13 @@ async def create_table(request: Request):
             
             for field in fields:
                 field_name = field.get('name', '').strip()
-                field_type = field.get('type', 'NVARCHAR(255)')
+                field_type = str(field.get('type', 'NVARCHAR(255)') or 'NVARCHAR(255)').strip()
                 is_required = field.get('required', False)
+                if not _SQL_COLUMN_TYPE.match(field_type):
+                    return {
+                        "success": False,
+                        "error": f"Unsupported field type for '{field_name}': {field_type}"
+                    }
 
                 if field_name:
                     # Sanitize field name: replace spaces with underscore, then remove other special chars
@@ -860,7 +882,7 @@ async def create_table(request: Request):
             columns.append("[created_at] DATETIME2 DEFAULT GETDATE()")
             
             create_query = f"""
-                CREATE TABLE [{table_name}] (
+                CREATE TABLE {quote_ident(table_name)} (
                     {', '.join(columns)}
                 )
             """
@@ -889,10 +911,10 @@ async def create_table(request: Request):
                         column_list = ', '.join([f'[{col}]' for col in column_names])
                         
                         insert_query = f"""
-                            INSERT INTO [{table_name}] ({column_list})
+                            INSERT INTO {quote_ident(table_name)} ({column_list})
                             VALUES ({placeholders})
                         """
-                        
+
                         # Prepare values in the correct order
                         values = []
                         for col_name in column_names:

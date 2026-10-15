@@ -403,7 +403,12 @@ async def delete_export(export_id: int):
             if src:
                 try:
                     import os
-                    file_path = src if os.path.isabs(src) else os.path.join(os.getcwd(), src)
+                    file_path = os.path.realpath(src if os.path.isabs(src) else os.path.join(os.getcwd(), src))
+                    # Only files inside the export folders are ever removed (src may come from the client)
+                    base_dir = os.path.dirname(os.path.dirname(__file__))
+                    export_roots = [os.path.realpath(os.path.join(base_dir, d)) for d in ("reports_export", "transaction")]
+                    if not any(file_path.startswith(root + os.sep) for root in export_roots):
+                        return {"success": True, "deleted": True, "fileDeleted": False}
                     if os.path.exists(file_path):
                         os.remove(file_path)
                 except Exception as fe:
@@ -748,10 +753,15 @@ async def download_export(export_id: int):
             if not src:
                 raise HTTPException(status_code=404, detail="Export file not found")
             
-            # Build file path
+            # Build file path — only inside the folders exports are written to
+            # (save_and_log_export: reports_export/<date>/, transaction/<date>/). A logged
+            # src may come from the client, so "../" or absolute paths must not escape them.
             base_dir = os.path.dirname(os.path.dirname(__file__))
-            file_path = os.path.join(base_dir, src)
-            
+            file_path = os.path.realpath(os.path.join(base_dir, src))
+            export_roots = [os.path.realpath(os.path.join(base_dir, d)) for d in ("reports_export", "transaction")]
+            if not any(file_path.startswith(root + os.sep) for root in export_roots):
+                raise HTTPException(status_code=404, detail="Export file not found")
+
             if not os.path.exists(file_path):
                 raise HTTPException(status_code=404, detail="Export file not found on disk")
             

@@ -22,6 +22,21 @@ import urllib.parse
 
 router = APIRouter()
 
+
+def _file_in_folder(folder: str, name: str) -> Optional[str]:
+    """
+    Path of the plain file `name` directly inside `folder`, or None. Names carrying a
+    directory part ("../x", "a/b", "C:\\x") or resolving outside the folder are refused —
+    the listings only ever return plain names from the folder itself.
+    """
+    if not name or name in (".", "..") or name != os.path.basename(name) or "/" in name or "\\" in name:
+        return None
+    base = os.path.realpath(folder)
+    path = os.path.realpath(os.path.join(base, name))
+    if os.path.dirname(path) != base:
+        return None
+    return path
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -2127,11 +2142,11 @@ async def download_template_file(filename: str):
         decoded_filename = urllib.parse.unquote(filename)
         project_root = get_project_root()
         templates_dir = os.path.join(project_root, "files", "template")
-        file_path = os.path.join(templates_dir, decoded_filename)
-        
-        if not os.path.exists(file_path):
+        file_path = _file_in_folder(templates_dir, decoded_filename)
+
+        if not file_path or not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="File not found")
-        
+
         return FileResponse(file_path, filename=filename)
     except Exception as e:
         logger.error(f"Error downloading template file {filename}: {e}")
@@ -2145,11 +2160,11 @@ async def download_disclosure_file(filename: str):
         decoded_filename = urllib.parse.unquote(filename)
         project_root = get_project_root()
         disclosures_dir = os.path.join(project_root, "files", "disclosures")
-        file_path = os.path.join(disclosures_dir, decoded_filename)
-        
-        if not os.path.exists(file_path):
+        file_path = _file_in_folder(disclosures_dir, decoded_filename)
+
+        if not file_path or not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="File not found")
-        
+
         return FileResponse(file_path, filename=filename)
     except Exception as e:
         logger.error(f"Error downloading disclosure file {filename}: {e}")
@@ -2163,11 +2178,11 @@ async def delete_template_file(filename: str):
         decoded_filename = urllib.parse.unquote(filename)
         project_root = get_project_root()
         templates_dir = os.path.join(project_root, "files", "template")
-        file_path = os.path.join(templates_dir, decoded_filename)
-        
-        if not os.path.exists(file_path):
+        file_path = _file_in_folder(templates_dir, decoded_filename)
+
+        if not file_path or not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="File not found")
-        
+
         os.remove(file_path)
         logger.info(f"Deleted template file: {filename}")
         return {"message": "File deleted successfully"}
@@ -2186,11 +2201,11 @@ async def delete_disclosure_file(filename: str):
         decoded_filename = urllib.parse.unquote(filename)
         project_root = get_project_root()
         disclosures_dir = os.path.join(project_root, "files", "disclosures")
-        file_path = os.path.join(disclosures_dir, decoded_filename)
-        
-        if not os.path.exists(file_path):
+        file_path = _file_in_folder(disclosures_dir, decoded_filename)
+
+        if not file_path or not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="File not found")
-        
+
         os.remove(file_path)
         logger.info(f"Deleted disclosure file: {filename}")
         return {"message": "File deleted successfully"}
