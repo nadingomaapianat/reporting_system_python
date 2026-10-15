@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """
 API service for communicating with Node.js backend.
 Outbound HTTPS uses bank CA cert (certs.pem) when CERT_PATH/CERTS_PEM_PATH is set — same as new_adib_backend.
@@ -436,3 +437,443 @@ class APIService:
                     return []
         except Exception:
             return []
+=======
+"""
+API service for communicating with Node.js backend.
+Outbound HTTPS uses bank CA cert (certs.pem) when CERT_PATH/CERTS_PEM_PATH is set — same as new_adib_backend.
+"""
+import aiohttp
+import asyncio
+import json
+from typing import Dict, Any, Optional, List
+from config import API_CONFIG
+from utils.https_cert import get_ssl_context_for_outbound
+
+
+def _make_connector():
+    """Reusable connector with bank CA for HTTPS when configured."""
+    ctx = get_ssl_context_for_outbound()
+    if ctx:
+        return aiohttp.TCPConnector(ssl=ctx)
+    return None
+
+
+class APIService:
+    """Service for API communications"""
+
+    def __init__(self):
+        self.node_api_url = API_CONFIG['node_api_url']
+        self.timeout = API_CONFIG['timeout']
+        self._connector = _make_connector()
+
+    @staticmethod
+    def _node_grc_filter_params(
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids_csv: Optional[str] = None,
+    ) -> Dict[str, str]:
+        """startDate/endDate + function filter like Node GRC (ISO dates; single functionId or comma functionIds)."""
+        from utils.node_grc_query import grc_iso_date_param, grc_merge_function_query_params
+
+        params: Dict[str, str] = {}
+        sd = grc_iso_date_param(start_date)
+        ed = grc_iso_date_param(end_date)
+        if sd:
+            params["startDate"] = sd
+        if ed:
+            params["endDate"] = ed
+        if user_id:
+            params["userId"] = user_id
+        if group_name:
+            params["groupName"] = group_name
+        params.update(grc_merge_function_query_params(function_id, function_ids_csv))
+        return params
+    
+    async def get_risks_data(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get risks data from Node.js API"""
+        try:
+            url = f"{self.node_api_url}/api/grc/risks"
+            params = self._node_grc_filter_params(start_date, end_date, user_id, group_name, function_id)
+            
+            # Add reasonable connect/read timeouts to avoid long hangs
+            timeout = aiohttp.ClientTimeout(total=self.timeout, connect=10)
+            async with aiohttp.ClientSession(timeout=timeout, connector=self._connector) as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data
+                    else:
+                        print(f"DEBUG: Node API returned status {response.status}")
+                        return {}
+        except asyncio.TimeoutError:
+            print("DEBUG: Node API timeout - returning empty risks data")
+            return {}
+        except aiohttp.ClientError as e:
+            print(f"DEBUG: Node API client error: {e}")
+            return {}
+        except Exception as e:
+            print(f"DEBUG: Node API error: {e}")
+            return {}
+    
+    async def get_controls_data(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids_csv: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get controls data from Node.js API with fallback"""
+        try:
+            url = f"{self.node_api_url}/api/grc/controls"
+            params = self._node_grc_filter_params(
+                start_date, end_date, user_id, group_name, function_id, function_ids_csv
+            )
+            
+            # Increase timeout for complex queries
+            timeout = aiohttp.ClientTimeout(total=self.timeout, connect=10)
+            async with aiohttp.ClientSession(timeout=timeout, connector=self._connector) as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data
+                    else:
+                        print(f"DEBUG: Node API returned status {response.status}")
+                        return {}
+        except asyncio.TimeoutError:
+            print("DEBUG: Node API timeout - returning empty data")
+            return {}
+        except aiohttp.ClientError as e:
+            print(f"DEBUG: Node API client error: {e}")
+            return {}
+        except Exception as e:
+            print(f"DEBUG: Node API error: {e}")
+            return {}
+    
+    async def get_risks_card_data(
+        self,
+        card_type: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get specific risks card data from Node.js API"""
+        try:
+            url = f"{self.node_api_url}/api/grc/risks/{card_type}"
+            params = self._node_grc_filter_params(start_date, end_date, user_id, group_name, function_id)
+            
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=self._connector) as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        # Handle paginated response
+                        if isinstance(data, dict) and 'data' in data:
+                            return data['data']
+                        elif isinstance(data, list):
+                            return data
+                        else:
+                            return []
+                    else:
+                        return []
+        except Exception as e:
+            return []
+    
+    async def get_controls_chart_data(
+        self,
+        chart_type: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids_csv: Optional[str] = None,
+    ) -> List[Dict[str, Any]] | Dict[str, Any]:
+        """Get specific controls chart data from Node.js API; returns list or dict depending on endpoint."""
+        try:
+            # Convert camelCase to kebab-case and map to charts endpoint
+            charts_map = {
+                'department': 'charts/department',
+                'risk': 'charts/risk',
+                'quarterlyControlCreationTrend': 'charts/quarterly-control-creation-trend',
+                'controlsByType': 'charts/controls-by-type',
+                'antiFraudDistribution': 'charts/anti-fraud-distribution',
+                'controlsPerLevel': 'charts/controls-per-level',
+                'controlExecutionFrequency': 'charts/control-execution-frequency',
+                'numberOfControlsByIcofrStatus': 'charts/number-of-controls-by-icofr-status',
+                'numberOfFocusPointsPerPrinciple': 'charts/number-of-focus-points-per-principle',
+                'numberOfFocusPointsPerComponent': 'charts/number-of-focus-points-per-component',
+                'numberOfControlsPerComponent': 'charts/number-of-controls-per-component',
+                'actionPlansStatus': 'charts/action-plans-status',
+            }
+            endpoint = charts_map.get(chart_type, f"charts/{chart_type}")
+            url = f"{self.node_api_url}/api/grc/controls/{endpoint}"
+            params = self._node_grc_filter_params(
+                start_date, end_date, user_id, group_name, function_id, function_ids_csv
+            )
+
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout, connect=10), connector=self._connector) as session:
+                async with session.get(url, params=params) as response:
+                    if response.status != 200:
+                        return []
+                    data = await response.json()
+                    if isinstance(data, dict):
+                        # common wrappers
+                        for key in ['data', 'items', 'results']:
+                            if key in data and isinstance(data[key], list):
+                                return data[key]
+                        return data
+                    return data if isinstance(data, list) else []
+        except Exception:
+            return []
+    
+    async def get_controls_card_data(
+        self,
+        card_type: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids_csv: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get specific controls card data from Node.js API"""
+        try:
+            # Convert camelCase to kebab-case for endpoints
+            endpoint_map = {
+                'totalControls': 'total',
+                'unmappedControls': 'unmapped',
+            }
+            
+            endpoint = endpoint_map.get(card_type, card_type)
+            url = f"{self.node_api_url}/api/grc/controls/{endpoint}"
+            # Request a large page size to retrieve all rows for export
+            params: Dict[str, Any] = {'page': 1, 'limit': 10000}
+            params.update(
+                self._node_grc_filter_params(
+                    start_date, end_date, user_id, group_name, function_id, function_ids_csv
+                )
+            )
+            
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=self._connector) as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        # Handle paginated or array response
+                        if isinstance(data, dict):
+                            if 'data' in data and isinstance(data['data'], list):
+                                return data['data']
+                            # Some endpoints may nest results under result/items
+                            if 'items' in data and isinstance(data['items'], list):
+                                return data['items']
+                            if 'results' in data and isinstance(data['results'], list):
+                                return data['results']
+                            return []
+                        elif isinstance(data, list):
+                            return data
+                        else:
+                            return []
+                    else:
+                        return []
+        except Exception as e:
+            return []
+
+    async def get_incidents_data(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Get incidents dashboard data from Node.js API. Pass headers (e.g. Cookie, Authorization) to forward auth."""
+        try:
+            url = f"{self.node_api_url}/api/grc/incidents"
+            params = self._node_grc_filter_params(
+                start_date, end_date, user_id, group_name, function_id, function_ids
+            )
+            request_headers = dict(headers) if headers else {}
+            timeout = aiohttp.ClientTimeout(total=self.timeout)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, params=params, headers=request_headers or None) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    return {}
+        except Exception:
+            return {}
+
+    async def get_node_table_data(
+        self,
+        resource: str,
+        table_id: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Fetch every row of a Node dashboard table (grc-<resource>.controller.ts 'table' route)
+        for export, forwarding auth headers. Used for tables that only exist as a tableId-driven
+        pagination query on the Node side (no entry in the main dashboard payload) — e.g. the
+        KRI Breach Report / Non-Financial Impact Events widgets, which self-fetch client-side
+        the same way."""
+        try:
+            url = f"{self.node_api_url}/api/grc/{resource}/table"
+            params = self._node_grc_filter_params(
+                start_date, end_date, user_id, group_name, function_id, function_ids
+            )
+            params["tableId"] = table_id
+            params["page"] = 1
+            params["limit"] = 100000
+            request_headers = dict(headers) if headers else {}
+            timeout = aiohttp.ClientTimeout(total=self.timeout)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, params=params, headers=request_headers or None) as response:
+                    if response.status == 200:
+                        payload = await response.json()
+                        return payload.get("data", []) if isinstance(payload, dict) else []
+                    return []
+        except Exception:
+            return []
+
+    async def get_incidents_card_data(
+        self,
+        card_type: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get specific incidents card data from Node.js API (paginated-safe)"""
+        try:
+            url = f"{self.node_api_url}/api/grc/incidents/{card_type}"
+            params = {'page': 1, 'limit': 10000}
+            if start_date:
+                params['startDate'] = start_date
+            if end_date:
+                params['endDate'] = end_date
+            if user_id:
+                params['userId'] = user_id
+            if group_name:
+                params['groupName'] = group_name
+            if function_id:
+                params['functionId'] = function_id
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=self._connector) as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if isinstance(data, dict):
+                            for key in ['data', 'items', 'results']:
+                                if key in data and isinstance(data[key], list):
+                                    return data[key]
+                            return []
+                        if isinstance(data, list):
+                            return data
+                        return []
+                    return []
+        except Exception:
+            return []
+
+    async def get_kris_data(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids_csv: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Get KRIs dashboard data from Node.js API. Pass headers (e.g. Authorization, Cookie) to forward auth."""
+        try:
+            url = f"{self.node_api_url}/api/grc/kris"
+            params = self._node_grc_filter_params(
+                start_date, end_date, user_id, group_name, function_id, function_ids_csv
+            )
+            request_headers = dict(headers) if headers else None
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+                async with session.get(url, params=params, headers=request_headers) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    return {}
+        except Exception:
+            return {}
+
+    async def get_comply_dashboard(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+        function_ids_csv: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
+        extra_query: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Get full GRC Comply dashboard from Node (same data as UI). Forward Cookie/Authorization for JWT."""
+        try:
+            url = f"{self.node_api_url}/api/grc/comply"
+            params = self._node_grc_filter_params(
+                start_date, end_date, user_id, group_name, function_id, function_ids_csv
+            )
+            if extra_query:
+                for k, v in extra_query.items():
+                    if v is not None and str(v).strip() != "":
+                        params[str(k)] = str(v)
+            request_headers = dict(headers) if headers else None
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+                async with session.get(url, params=params, headers=request_headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data if isinstance(data, dict) else {}
+                    return {}
+        except Exception:
+            return {}
+
+    async def get_kris_card_data(
+        self,
+        card_type: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_id: Optional[str] = None,
+        group_name: Optional[str] = None,
+        function_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get specific KRIs card data from Node.js API"""
+        try:
+            url = f"{self.node_api_url}/api/grc/kris/{card_type}"
+            params: Dict[str, Any] = {'page': 1, 'limit': 10000}
+            params.update(self._node_grc_filter_params(start_date, end_date, user_id, group_name, function_id))
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if isinstance(data, dict):
+                            for key in ['data', 'items', 'results']:
+                                if key in data and isinstance(data[key], list):
+                                    return data[key]
+                            return []
+                        if isinstance(data, list):
+                            return data
+                        return []
+                    return []
+        except Exception:
+            return []
+>>>>>>> dbf6cf8d8e1e1ca7d284a8bd1ae20bb35ce08ea6
