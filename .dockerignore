@@ -10,3 +10,9 @@ __pycache__
 htmlcov
 debug_log.txt
 *.log
+.ven
+python-packages-offline
+reports_export
+transaction
+exports
+.vscode

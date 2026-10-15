@@ -37,16 +37,15 @@ MAIN_COOKIE_PREFIX = "d_c_c_t_p"
 # Maximum number of split-cookie parts to attempt to reconstruct (matches Node).
 _MAX_SPLIT_PARTS = 64
 
-# Set REPORTING_ALLOW_QUERY_TOKEN_AUTH=false in production to disable ?token= / ?access_token=
-# (avoids leaks in logs).
-_ALLOW_QUERY_TOKEN_GET = os.getenv("REPORTING_ALLOW_QUERY_TOKEN_AUTH", "true").lower() in (
+# ?token= / ?access_token= on GET is off unless REPORTING_ALLOW_QUERY_TOKEN_AUTH=true: tokens in URLs
+# end up in proxy logs and browser history, and no client sends them.
+_ALLOW_QUERY_TOKEN_GET = os.getenv("REPORTING_ALLOW_QUERY_TOKEN_AUTH", "false").lower() in (
     "true", "1", "yes",
 )
 
 # Public paths: allowed without a JWT. Extended for debug below.
 PUBLIC_PATHS: List[str] = [
     "/csrf/token",
-    "/api/auth/validate-token",
     "/api/auth/logout",
     "/docs",
     "/redoc",
@@ -209,7 +208,10 @@ def candidate_jwt_strings(request: Request) -> List[str]:
     if export_token and export_token.strip():
         add(export_token.strip())
 
-    # 5. iframe split cookies
+    # 5. iframe cookie: reporting Node sets one cookie for a small token, split _1.._n for a large one
+    single_iframe = cookies.get(IFRAME_COOKIE_PREFIX)
+    if single_iframe:
+        add(_decode_cookie_value(str(single_iframe)))
     add(_read_split_cookies(cookies, IFRAME_COOKIE_PREFIX))
 
     # 6. main-app split cookies (set by DCC on .pianat.ai / .adib.co.eg)
@@ -221,6 +223,7 @@ def candidate_jwt_strings(request: Request) -> List[str]:
         add(_cookie_from_header(raw_cookie, REPORTING_NODE_TOKEN_LEGACY))
         add(_split_cookies_from_header(raw_cookie, REPORTING_NODE_TOKEN_PREFIX))
         add(_cookie_from_header(raw_cookie, REPORTING_AUTH_COOKIE_NAME))
+        add(_cookie_from_header(raw_cookie, IFRAME_COOKIE_PREFIX))
         add(_split_cookies_from_header(raw_cookie, IFRAME_COOKIE_PREFIX))
         add(_split_cookies_from_header(raw_cookie, MAIN_COOKIE_PREFIX))
 
@@ -368,28 +371,3 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         request.state.user = payload
         set_request_jwt_claims(payload)
         return await call_next(request)
-
-
-# =============================================================================
-# Used by /api/auth/validate-token endpoint
-# =============================================================================
-def validate_token(token: str) -> Dict[str, Any]:
-    """Validate a token and return the decoded payload — matches v2_backend response shape."""
-    if not token:
-        return {"success": False, "message": "Token is required"}
-
-    try:
-        payload = verify_token(token)
-        return {
-            "success": True,
-            "data": {
-                "group": payload.get("group"),
-                "title": payload.get("title"),
-                "name": payload.get("name"),
-                "id": payload.get("id"),
-            },
-        }
-    except HTTPException as e:
-        return {"success": False, "message": e.detail}
-    except Exception:
-        return {"success": False, "message": "Invalid or expired token"}

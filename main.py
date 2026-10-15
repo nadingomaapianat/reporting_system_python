@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Import API routes
 print("DEBUG: main.py - About to import routers...")
@@ -37,12 +38,14 @@ def create_app() -> FastAPI:
         ]
     )
     
+    # Interactive API docs list every route; off in production unless explicitly enabled.
+    _api_docs = not is_production() or os.getenv("REPORTING_API_DOCS", "").lower() in ("1", "true", "yes")
     app = FastAPI(
         title="Reporting System Python API",
         version="1.0.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
+        docs_url="/docs" if _api_docs else None,
+        redoc_url="/redoc" if _api_docs else None,
+        openapi_url="/openapi.json" if _api_docs else None,
     )
     
     print("DEBUG: FastAPI app created, adding middleware...")
@@ -59,13 +62,23 @@ def create_app() -> FastAPI:
             content={"detail": safe_message},
         )
     
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+        # 5xx details are often raw exception text (DB/driver messages); in production the
+        # client gets a generic message and the detail stays in the log. 4xx messages are kept.
+        detail = exc.detail
+        if exc.status_code >= 500 and is_production():
+            logger.error("HTTP %s on %s: %s", exc.status_code, request.url.path, exc.detail)
+            detail = "An error occurred while processing your request. Please try again later."
+        return JSONResponse(status_code=exc.status_code, content={"detail": detail}, headers=getattr(exc, "headers", None))
+
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
-        logger.error(f"REQUEST: {request.method} {request.url.path}")
-        logger.error(f"PARAMS: {request.query_params}")
+        # Path and status only: query strings can carry personal data.
+        logger.info(f"REQUEST: {request.method} {request.url.path}")
         try:
             response = await call_next(request)
-            logger.error(f"RESPONSE: {response.status_code}")
+            logger.info(f"RESPONSE: {response.status_code} {request.url.path}")
             return response
         except Exception as e:
             logger.error(f"ERROR in middleware: {e}")

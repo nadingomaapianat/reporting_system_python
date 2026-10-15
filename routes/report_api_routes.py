@@ -299,7 +299,8 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
             cursor.close()
             conn.close()
     except Exception as e:
-        return {"success": False, "error": str(e), "exports": [], "pagination": {}}
+        write_debug(f"[Reports] request failed: {e}")
+        return {"success": False, "error": "Request failed. Please try again later.", "exports": [], "pagination": {}}
 
 @router.delete("/api/exports/{export_id}")
 async def delete_export(export_id: int):
@@ -341,7 +342,8 @@ async def delete_export(export_id: int):
     except HTTPException:
         raise
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        write_debug(f"[Reports] request failed: {e}")
+        return {"success": False, "error": "Request failed. Please try again later."}
 
 @router.post("/api/reports/dynamic")
 async def generate_dynamic_report(request: Request):
@@ -627,7 +629,8 @@ async def get_dynamic_dashboard_charts():
             cursor.close()
             conn.close()
     except Exception as e:
-        return {"success": False, "error": str(e), "charts": []}
+        write_debug(f"[Reports] request failed: {e}")
+        return {"success": False, "error": "Request failed. Please try again later.", "charts": []}
 
 
 @router.delete("/api/reports/dynamic-dashboard/charts/{chart_id}")
@@ -649,7 +652,8 @@ async def delete_dynamic_dashboard_chart(chart_id: int):
             cursor.close()
             conn.close()
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        write_debug(f"[Reports] request failed: {e}")
+        return {"success": False, "error": "Request failed. Please try again later."}
 
 
 @router.get("/api/exports/{export_id}/download")

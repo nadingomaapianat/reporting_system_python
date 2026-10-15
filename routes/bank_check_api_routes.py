@@ -106,6 +106,6 @@ async def get_database_tables():
             "tables": sample_tables,
             "count": len(sample_tables),
             "note": "Using fallback data - SQL Server connection failed",
-            "error": str(e)
+            "error": "Request failed. Please try again later."
         }
 

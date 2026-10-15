@@ -1,12 +1,7 @@
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
-from utils.auth import validate_token, get_current_user
+from utils.auth import get_current_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-
-
-class TokenValidationRequest(BaseModel):
-    token: str
 
 
 @router.get("/profile")
@@ -18,12 +13,6 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
         "name": current_user.get("name", "Demo User"),
         "role": current_user.get("role", "admin"),
     }
-
-
-@router.post("/validate-token")
-async def validate_token_endpoint(request: TokenValidationRequest):
-    """Validate a JWT token from v2_backend and return user information."""
-    return validate_token(request.token)
 
 
 @router.post("/logout")
