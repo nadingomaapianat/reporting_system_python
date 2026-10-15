@@ -62,9 +62,6 @@ RULES: List[Tuple[Optional[Tuple[str, ...]], "re.Pattern[str]", Any]] = [
     (("GET",), re.compile(r"^/$"), LOGIN_ONLY),
     # Developer diagnostics
     (None, re.compile(r"^/debug/"), SUPER_ADMIN),
-    (None, re.compile(r"^/api/reports/bank-check/debug$"), SUPER_ADMIN),
-    (None, re.compile(r"^/api/reports/enhanced-bank-check/test-db$"), SUPER_ADMIN),
-    (None, re.compile(r"^/api/reports/excel-to-word/debug$"), SUPER_ADMIN),
     # Dashboard module exports: the dashboard tab AND the module's own page
     (None, re.compile(r"^/api/grc/controls/"), _dashboard_module("Control Catalog")),
     (None, re.compile(r"^/api/grc/risks/"), _dashboard_module("Risk Catalog")),
@@ -77,22 +74,15 @@ RULES: List[Tuple[Optional[Tuple[str, ...]], "re.Pattern[str]", Any]] = [
     (("DELETE",), re.compile(r"^/api/reports/dynamic-dashboard/charts/[^/]+$"), [[("Dashboard", EDIT_OR_DELETE)]]),
     (("GET",), re.compile(r"^/api/reports/dynamic-dashboard/charts$"), [[("Dashboard", SHOW)]]),
     # Report builder: used by dynamic charts (Dashboard) and ReportGenerator (Reports/Transactions)
-    (None, re.compile(r"^/api/reports/dynamic(/tables|/preview|-alt)?$"), DASHBOARD_OR_REPORTS_SHOW),
-    # Export history: written from dashboard exports, read on the Reports page
-    (None, re.compile(r"^/api/exports/log$"), DASHBOARD_OR_REPORTS_SHOW),
+    (None, re.compile(r"^/api/reports/dynamic(/preview)?$"), DASHBOARD_OR_REPORTS_SHOW),
     # Reports / Transactions tab
     (("DELETE",), re.compile(r"^/api/exports/[^/]+$"), _reporting_tab(DELETE)),
-    (("DELETE",), re.compile(r"^/api/reports/files/"), _reporting_tab(DELETE)),
     (("DELETE",), re.compile(r"^/api/scheduled-reports(/|$)"), _reporting_tab(DELETE)),
     (None, re.compile(r"^/api/reports/schedule$"), _reporting_tab(CREATE_OR_EDIT)),
     (("POST", "PUT", "PATCH"), re.compile(r"^/api/scheduled-reports(/|$)"), _reporting_tab(CREATE_OR_EDIT)),
-    (("POST",), re.compile(r"^/api/reports/enhanced-bank-check/(insert|create-table)$"), _reporting_tab(CREATE)),
     (None, re.compile(r"^/api/exports(/|$)"), _reporting_tab(SHOW)),
     (None, re.compile(r"^/api/scheduled-reports(/|$)"), _reporting_tab(SHOW)),
-    (None, re.compile(r"^/api/reports/files(/|$)"), _reporting_tab(SHOW)),
-    (None, re.compile(r"^/api/reports/excel-to-word(/|$)"), _reporting_tab(SHOW)),
-    (None, re.compile(r"^/api/reports/(enhanced-)?bank-check(/|$)"), _reporting_tab(SHOW)),
-    (None, re.compile(r"^/word-template/"), _reporting_tab(SHOW)),
+    (None, re.compile(r"^/api/reports/enhanced-bank-check/tables$"), _reporting_tab(SHOW)),
     (None, re.compile(r"^/xbrl/"), _reporting_tab(SHOW)),
 ]
 

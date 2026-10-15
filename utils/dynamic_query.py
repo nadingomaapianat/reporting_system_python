@@ -187,18 +187,3 @@ def unsafe_sql_reason(sql: str, require_select: bool) -> Optional[str]:
         return f"'{bad.group(0).upper()}' is not allowed in a SELECT query"
     return None
 
-
-def build_table_select(cursor, table_name, columns, where) -> str:
-    """
-    SELECT <columns|*> FROM <table> [WHERE <where>] for the word-template data sources.
-    Table/columns must exist; `where` is a free-text filter, so it must pass the read-only check.
-    """
-    db = SchemaResolver(cursor)
-    cols = [db.column(table_name, c) for c in (columns or [])]
-    sql = f"SELECT {', '.join(cols) if cols else '*'} FROM {db.from_ref(table_name)}"
-    if where and str(where).strip():
-        reason = unsafe_sql_reason(where, require_select=False)
-        if reason:
-            raise QueryBuildError(reason)
-        sql += f" WHERE {where}"
-    return sql
