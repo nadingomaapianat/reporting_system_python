@@ -15,6 +15,7 @@ import openpyxl
 import pandas as pd
 from lxml import etree
 from config import get_db_connection
+from utils.dynamic_query import QueryBuildError, build_table_select
 
 router = APIRouter(prefix="/word-template", tags=["word-template"])
 logger = logging.getLogger(__name__)
@@ -1050,10 +1051,9 @@ async def generate_report(payload: dict = Body(...)):
 								conn = get_db_connection()
 								cursor = conn.cursor()
 								
-								query = f"SELECT {', '.join(columns) if columns else '*'} FROM {table_name}"
-								if where_clause:
-									query += f" WHERE {where_clause}"
-								
+								# Table/columns checked against the schema; the filter must be read-only
+								query = build_table_select(cursor, table_name, columns, where_clause)
+
 								cursor.execute(query)
 								rows = cursor.fetchall()
 								col_names = [desc[0] for desc in cursor.description] if cursor.description else []
@@ -1668,10 +1668,13 @@ async def fetch_data_from_source(payload: dict = Body(...)):
 			conn = get_db_connection()
 			cursor = conn.cursor()
 			
-			query = f"SELECT {', '.join(columns) if columns else '*'} FROM {table_name}"
-			if where_clause:
-				query += f" WHERE {where_clause}"
-			
+			# Table/columns checked against the schema; the filter must be read-only
+			try:
+				query = build_table_select(cursor, table_name, columns, where_clause)
+			except QueryBuildError as e:
+				conn.close()
+				return {'success': False, 'error': str(e)}
+
 			cursor.execute(query)
 			rows = cursor.fetchall()
 			columns = [desc[0] for desc in cursor.description]

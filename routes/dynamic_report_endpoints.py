@@ -2,44 +2,24 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 import json
 import logging
-import re
 import traceback
 from config import get_db_connection
 from utils.export_utils import get_default_header_config, filter_export_columns_rows
+from utils.dynamic_query import (
+    QueryBuildError,
+    SchemaResolver,
+    condition_sql,
+    join_type,
+    params_or_none,
+    unsafe_sql_reason,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Statements and features a read-only chart query never needs. Checked as whole words
-# after string literals and [bracketed] names are blanked out.
-_SQL_FORBIDDEN_WORDS = re.compile(
-    r"\b(INSERT|UPDATE|DELETE|MERGE|DROP|ALTER|CREATE|TRUNCATE|EXEC|EXECUTE|INTO|GRANT|REVOKE|DENY"
-    r"|OPENROWSET|OPENQUERY|OPENDATASOURCE|OPENXML|BULK|SHUTDOWN|WAITFOR|DBCC|BACKUP|RESTORE|KILL"
-    r"|RECONFIGURE|DECLARE|SET|USE|GO)\b|\b(XP|SP)_\w+",
-    re.IGNORECASE,
-)
-
-
 def _single_select_error(sql: str):
     """Why `sql` is not exactly one plain SELECT statement, or None when it is."""
-    # Blank out 'string literals' (with '' escapes) and [identifiers] so their text is not inspected.
-    masked = re.sub(r"'(?:[^']|'')*'", "''", sql)
-    masked = re.sub(r"\[[^\]]*\]", "[]", masked)
-    if "'" in masked.replace("''", ""):
-        return "Unterminated string literal in query"
-    if "--" in masked or "/*" in masked or "*/" in masked:
-        return "Comments are not allowed in the query"
-    body = masked.strip()
-    if body.endswith(";"):
-        body = body[:-1].rstrip()
-    if ";" in body:
-        return "Only a single SELECT statement is allowed"
-    if not body.upper().startswith("SELECT"):
-        return "Only SELECT queries are allowed"
-    bad = _SQL_FORBIDDEN_WORDS.search(body)
-    if bad:
-        return f"'{bad.group(0).upper()}' is not allowed in a SELECT query"
-    return None
+    return unsafe_sql_reason(sql, require_select=True)
 
 
 @router.get("/api/reports/dynamic/tables")
@@ -252,12 +232,14 @@ async def preview_dynamic_report(request: Request):
         if not tables or not columns:
             raise HTTPException(status_code=400, detail="Tables and columns are required")
 
-        sql_query = build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter)
-
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute(sql_query)
+            try:
+                sql_query, sql_params = build_dynamic_sql_query(cursor, tables, joins, columns, where_conditions, time_filter)
+            except QueryBuildError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            cursor.execute(sql_query, sql_params)
             # Fetch limited number of rows for preview
             rows = cursor.fetchmany(preview_limit) if preview_limit > 0 else cursor.fetchall()
 
@@ -309,20 +291,22 @@ async def generate_dynamic_report(request: Request):
         if not tables or not columns:
             raise HTTPException(status_code=400, detail="Tables and columns are required")
         
-        # Build SQL query
-        sql_query = build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter)
-        print(f"[DynamicReport] SQL Query: {sql_query}")
-        print(f"[DynamicReport] Columns: {columns}")
-        print(f"[DynamicReport] Tables: {tables}")
-        
         # Execute query and get data
         print(f"[DynamicReport] Connecting to database...")
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         try:
+            # Build SQL query
+            try:
+                sql_query, sql_params = build_dynamic_sql_query(cursor, tables, joins, columns, where_conditions, time_filter)
+            except QueryBuildError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            print(f"[DynamicReport] SQL Query: {sql_query}")
+            print(f"[DynamicReport] Columns: {columns}")
+            print(f"[DynamicReport] Tables: {tables}")
             print(f"[DynamicReport] Executing query...")
-            cursor.execute(sql_query)
+            cursor.execute(sql_query, sql_params)
             rows = cursor.fetchall()
             print(f"[DynamicReport] Found {len(rows)} rows")
             
@@ -354,65 +338,61 @@ async def generate_dynamic_report(request: Request):
         finally:
             cursor.close()
             conn.close()
-            
+
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[DynamicReport] Error: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to generate dynamic report: {str(e)}")
 
-def build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter):
-    """Build SQL query based on dynamic report configuration"""
-    # Start with SELECT clause
-    select_columns = []
-    for col in columns:
-        if '.' in col:
-            # Split table.column and quote each part separately
-            table_part, column_part = col.split('.', 1)
-            select_columns.append(f"[{table_part}].[{column_part}]")
-        else:
-            # Add to first table
-            select_columns.append(f"[{tables[0]}].[{col}]")
-    
+def build_dynamic_sql_query(cursor, tables, joins, columns, where_conditions, time_filter):
+    """
+    Build the dynamic report query. Returns (sql, params) for cursor.execute.
+    Table/column names must exist in the database schema; values are bound parameters.
+    Raises QueryBuildError for anything else.
+    """
+    db = SchemaResolver(cursor)
+    tables = list(tables or [])
+    first = tables[0]
+    params = []
+
+    # Start with SELECT clause (bare columns belong to the first table)
+    select_columns = [db.column_ref(col, tables, first, qualify_bare=True) for col in columns]
     query = f"SELECT {', '.join(select_columns)}"
-    
+
     # Add FROM clause
-    query += f" FROM [{tables[0]}]"
-    
+    query += f" FROM {db.from_ref(first)}"
+
     # Add JOINs
-    for join in joins:
+    for join in joins or []:
         if join.get('leftTable') and join.get('rightTable') and join.get('leftColumn') and join.get('rightColumn'):
-            join_type = join.get('type', 'INNER')
-            query += f" {join_type} JOIN [{join['rightTable']}] ON [{join['leftTable']}].[{join['leftColumn']}] = [{join['rightTable']}].[{join['rightColumn']}]"
-    
-    # Add WHERE conditions
+            query += (
+                f" {join_type(join.get('type', 'INNER'))} JOIN {db.from_ref(join['rightTable'])}"
+                f" ON {db.column(join['leftTable'], join['leftColumn'])}"
+                f" = {db.column(join['rightTable'], join['rightColumn'])}"
+            )
+
+    # Add WHERE conditions (bare columns stay unqualified, as before)
     where_clauses = []
-    for condition in where_conditions:
+    for condition in where_conditions or []:
         if condition.get('column') and condition.get('operator') and condition.get('value'):
-            col_name = condition['column']
-            if '.' in col_name:
-                # Split table.column and quote each part separately
-                table_part, column_part = col_name.split('.', 1)
-                col_name = f"[{table_part}].[{column_part}]"
-            else:
-                col_name = f"[{col_name}]"
-            where_clauses.append(f"{col_name} {condition['operator']} '{condition['value']}'")
-    
+            col_sql = db.column_ref(condition['column'], tables, first, qualify_bare=False)
+            clause, values = condition_sql(col_sql, condition['operator'], condition['value'])
+            where_clauses.append(clause)
+            params.extend(values)
+
     # Add time filter
     if time_filter and time_filter.get('column') and time_filter.get('startDate') and time_filter.get('endDate'):
-        col_name = time_filter['column']
-        if '.' in col_name:
-            # Split table.column and quote each part separately
-            table_part, column_part = col_name.split('.', 1)
-            col_name = f"[{table_part}].[{column_part}]"
-        else:
-            col_name = f"[{col_name}]"
-        where_clauses.append(f"{col_name} BETWEEN '{time_filter['startDate']}' AND '{time_filter['endDate']}'")
-    
+        col_sql = db.column_ref(time_filter['column'], tables, first, qualify_bare=False)
+        where_clauses.append(f"{col_sql} BETWEEN %s AND %s")
+        params.extend([str(time_filter['startDate']), str(time_filter['endDate'])])
+
     if where_clauses:
         query += " WHERE " + " AND ".join(where_clauses)
-    
-    return query
+
+    return query, params_or_none(params)
 
 default_header_config = {
     "includeHeader": True,

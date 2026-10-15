@@ -435,26 +435,25 @@ async def generate_dynamic_report(request: Request):
         if not tables or not columns:
             raise HTTPException(status_code=400, detail="Tables and columns are required")
         
-        # Build SQL query
-        try:
-            sql_query = build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter)
-            write_debug(f"[Dynamic Report] SQL query built: {sql_query[:200]}...")
-        except Exception as sql_err:
-            write_debug(f"[Dynamic Report] SQL query build failed: {str(sql_err)}")
-            raise HTTPException(status_code=400, detail=f"Failed to build SQL query: {str(sql_err)}")
-        
         # Execute query and get data
         from config import get_db_connection
-        
+
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
         except Exception as db_err:
             write_debug(f"[Dynamic Report] Database connection failed: {str(db_err)}")
             raise HTTPException(status_code=500, detail=f"Database connection failed: {str(db_err)}")
-        
+
         try:
-            cursor.execute(sql_query)
+            # Build SQL query (names checked against the schema, values bound as parameters)
+            try:
+                sql_query, sql_params = build_dynamic_sql_query(cursor, tables, joins, columns, where_conditions, time_filter)
+                write_debug(f"[Dynamic Report] SQL query built: {sql_query[:200]}...")
+            except ValueError as sql_err:
+                write_debug(f"[Dynamic Report] SQL query build failed: {str(sql_err)}")
+                raise HTTPException(status_code=400, detail=f"Failed to build SQL query: {str(sql_err)}")
+            cursor.execute(sql_query, sql_params)
             rows = cursor.fetchall()
             write_debug(f"[Dynamic Report] Query executed, fetched {len(rows)} rows")
             

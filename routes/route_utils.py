@@ -736,61 +736,65 @@ def hex_to_color_for_pdf(hex_color: str):
     except:
         return colors.HexColor(f"#{hex_color}")
 
-def build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter):
-    """Build SQL query from dynamic report configuration"""
-    # Helper function to qualify table name with schema if needed
-    def qualify_table_name(table_name):
-        """Add schema qualification if table name doesn't already have one"""
-        if not table_name:
-            return table_name
-        # Check if table already has schema qualification (contains a dot)
-        if '.' in table_name:
-            return table_name
-        # Add dbo schema by default
-        return f"dbo.{table_name}"
-    
-    # Start with SELECT clause
-    select_columns = ', '.join(columns) if columns else '*'
-    sql = f"SELECT {select_columns}"
-    
-    # Add FROM clause with first table
+def build_dynamic_sql_query(cursor, tables, joins, columns, where_conditions, time_filter):
+    """
+    Build SQL query from dynamic report configuration. Returns (sql, params) for
+    cursor.execute. Table/column names must exist in the database schema, values are
+    bound parameters; anything else raises QueryBuildError.
+    """
+    from utils.dynamic_query import (
+        QueryBuildError, SchemaResolver, condition_sql, join_type, logical_operator, params_or_none,
+    )
+
     if not tables:
-        raise ValueError("At least one table is required")
-    
-    qualified_table = qualify_table_name(tables[0])
-    sql += f" FROM {qualified_table}"
-    
+        raise QueryBuildError("At least one table is required")
+    if not columns:
+        raise QueryBuildError("At least one column is required")
+    db = SchemaResolver(cursor)
+    tables = list(tables)
+    params: List[str] = []
+
+    # Start with SELECT clause (bare names stay unqualified, as before)
+    select_columns = [db.column_ref(col, tables, tables[0], qualify_bare=False) for col in columns]
+    sql = f"SELECT {', '.join(select_columns)}"
+
+    # Add FROM clause with first table
+    sql += f" FROM {db.from_ref(tables[0])}"
+
     # Add JOINs
-    for join in joins:
+    for join in joins or []:
         if join.get('leftTable') and join.get('rightTable') and join.get('leftColumn') and join.get('rightColumn'):
-            join_type = join.get('type', 'INNER')
-            qualified_left = qualify_table_name(join['leftTable'])
-            qualified_right = qualify_table_name(join['rightTable'])
-            sql += f" {join_type} JOIN {qualified_right} ON {qualified_left}.{join['leftColumn']} = {qualified_right}.{join['rightColumn']}"
-    
+            sql += (
+                f" {join_type(join.get('type', 'INNER'))} JOIN {db.from_ref(join['rightTable'])}"
+                f" ON {db.column(join['leftTable'], join['leftColumn'])}"
+                f" = {db.column(join['rightTable'], join['rightColumn'])}"
+            )
+
     # Add WHERE clause
-    where_clauses = []
-    
+    where_sql = ""
+
     # Add time filter
     if time_filter and time_filter.get('column') and time_filter.get('startDate') and time_filter.get('endDate'):
-        where_clauses.append(f"{time_filter['column']} BETWEEN '{time_filter['startDate']}' AND '{time_filter['endDate']}'")
-    
-    # Add custom WHERE conditions
-    for i, condition in enumerate(where_conditions):
+        col_sql = db.column_ref(time_filter['column'], tables, tables[0], qualify_bare=False)
+        where_sql = f"{col_sql} BETWEEN %s AND %s"
+        params.extend([str(time_filter['startDate']), str(time_filter['endDate'])])
+
+    # Add custom WHERE conditions; each after the first is joined by its AND/OR
+    for i, condition in enumerate(where_conditions or []):
         if condition.get('column') and condition.get('value'):
-            operator = condition.get('operator', '=')
-            value = condition.get('value', '')
-            logical_op = condition.get('logicalOperator', 'AND') if i > 0 else ''
-            
-            if logical_op:
-                where_clauses.append(f" {logical_op} {condition['column']} {operator} '{value}'")
+            col_sql = db.column_ref(condition['column'], tables, tables[0], qualify_bare=False)
+            clause, values = condition_sql(col_sql, condition.get('operator', '='), condition.get('value', ''))
+            if where_sql:
+                op = logical_operator(condition.get('logicalOperator', 'AND')) if i > 0 else 'AND'
+                where_sql += f" {op} {clause}"
             else:
-                where_clauses.append(f"{condition['column']} {operator} '{value}'")
-    
-    if where_clauses:
-        sql += " WHERE " + " ".join(where_clauses)
-    
-    return sql
+                where_sql = clause
+            params.extend(values)
+
+    if where_sql:
+        sql += " WHERE " + where_sql
+
+    return sql, params_or_none(params)
 
 def generate_excel_report(columns, data_rows, header_config=None):
     """Generate Excel report from dynamic data with full header configuration support"""
