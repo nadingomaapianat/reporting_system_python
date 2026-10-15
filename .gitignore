@@ -13,3 +13,8 @@ __pycache__/
 config.bat
 node_modules
 .ven/
+
+# Written at start-up by the env vault (env_vault.py)
+.passcode
+*.env.enc
+.env.enc

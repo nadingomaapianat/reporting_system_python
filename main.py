@@ -1,4 +1,16 @@
 import os
+import sys
+
+# Unlock the encrypted .env / environment.env first: config, auth and settings read them
+# while importing (see env_vault.py).
+from env_vault import unlock_env
+
+try:
+    unlock_env()
+except Exception as _env_err:
+    print(f"[env] {_env_err}", file=sys.stderr)
+    sys.exit(1)
+
 # Load .env / environment.env so all links and config come from env
 try:
     from dotenv import load_dotenv
