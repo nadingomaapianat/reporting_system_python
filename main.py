@@ -17,6 +17,7 @@ print("DEBUG: main.py - About to import routers...")
 from utils import api_routes
 from utils.csrf import CSRFMiddleware, create_csrf_token, set_csrf_cookie
 from utils.auth import JWTAuthMiddleware
+from utils.page_permissions import PagePermissionMiddleware
 from utils.security_middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from utils.error_sanitizer import sanitize_error_message, is_production
 api_router = api_routes.router
@@ -85,6 +86,10 @@ def create_app() -> FastAPI:
         "/openapi.json",
         "/api/auth/logout",
     )
+
+    # Added before JWTAuthMiddleware so it sits inside it: every request reaching the page
+    # check has already passed login. Unmapped routes are refused (utils/page_permissions.py).
+    app.add_middleware(PagePermissionMiddleware)
 
     app.add_middleware(JWTAuthMiddleware)
 

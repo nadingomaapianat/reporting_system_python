@@ -2,12 +2,44 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 import json
 import logging
+import re
 import traceback
 from config import get_db_connection
 from utils.export_utils import get_default_header_config, filter_export_columns_rows
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Statements and features a read-only chart query never needs. Checked as whole words
+# after string literals and [bracketed] names are blanked out.
+_SQL_FORBIDDEN_WORDS = re.compile(
+    r"\b(INSERT|UPDATE|DELETE|MERGE|DROP|ALTER|CREATE|TRUNCATE|EXEC|EXECUTE|INTO|GRANT|REVOKE|DENY"
+    r"|OPENROWSET|OPENQUERY|OPENDATASOURCE|OPENXML|BULK|SHUTDOWN|WAITFOR|DBCC|BACKUP|RESTORE|KILL"
+    r"|RECONFIGURE|DECLARE|SET|USE|GO)\b|\b(XP|SP)_\w+",
+    re.IGNORECASE,
+)
+
+
+def _single_select_error(sql: str):
+    """Why `sql` is not exactly one plain SELECT statement, or None when it is."""
+    # Blank out 'string literals' (with '' escapes) and [identifiers] so their text is not inspected.
+    masked = re.sub(r"'(?:[^']|'')*'", "''", sql)
+    masked = re.sub(r"\[[^\]]*\]", "[]", masked)
+    if "'" in masked.replace("''", ""):
+        return "Unterminated string literal in query"
+    if "--" in masked or "/*" in masked or "*/" in masked:
+        return "Comments are not allowed in the query"
+    body = masked.strip()
+    if body.endswith(";"):
+        body = body[:-1].rstrip()
+    if ";" in body:
+        return "Only a single SELECT statement is allowed"
+    if not body.upper().startswith("SELECT"):
+        return "Only SELECT queries are allowed"
+    bad = _SQL_FORBIDDEN_WORDS.search(body)
+    if bad:
+        return f"'{bad.group(0).upper()}' is not allowed in a SELECT query"
+    return None
 
 
 @router.get("/api/reports/dynamic/tables")
@@ -163,12 +195,12 @@ async def execute_sql(request: Request):
         if not sql:
             raise HTTPException(status_code=400, detail="SQL query is required")
 
-        # Allow only SELECT (strip comments and whitespace for check)
-        sql_upper = sql.upper().lstrip()
-        if not sql_upper.startswith("SELECT"):
+        # Exactly one plain SELECT: no batches, comments, writes or EXEC.
+        sql_error = _single_select_error(sql)
+        if sql_error:
             raise HTTPException(
                 status_code=400,
-                detail="Only SELECT queries are allowed. Use CAST for datetime columns, e.g. CAST(createdAt AS VARCHAR(MAX)) AS createdAt",
+                detail=f"{sql_error}. Use CAST for datetime columns, e.g. CAST(createdAt AS VARCHAR(MAX)) AS createdAt",
             )
 
         conn = get_db_connection()
