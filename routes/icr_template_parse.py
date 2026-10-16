@@ -4,11 +4,16 @@ ICR template parser: POST /parse-template (called by reporting_system_node
 (commit 7af2241b "word parse": the /parse-template alias of /word-template/analyze); only the
 parsing code, none of the other word-template routes. The helpers below are unchanged.
 
+Only reporting Node may call it: Node runs the per-user upload quota (R-WAPT02) before
+forwarding, so a direct call from a browser would skip that count. Node adds X-Internal-Token,
+a 60-second HS256 token signed with the shared JWT_SECRET for this route and this user; users
+cannot make one. The user's own JWT and the ICR Templates page check still apply.
+
 Settings (.env), read per request:
   UPLOAD_MAX_FILE_MB             largest template accepted            (default 50, as reporting Node)
   WORD_TEMPLATE_MAX_UNZIPPED_MB  largest unzipped size of a .docx     (default 200, guards zip bombs)
 """
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Request
 from fastapi.responses import JSONResponse
 from io import BytesIO
 import logging
@@ -21,6 +26,8 @@ from docx.oxml.text.paragraph import CT_P
 from docx.oxml.table import CT_Tbl
 from docx.table import Table
 from docx.text.paragraph import Paragraph
+from jose import jwt as jose_jwt, JWTError
+from utils.auth import JWT_ALGORITHM, JWT_SECRET, resolve_jwt_token_and_payload
 
 router = APIRouter(tags=["icr-template"])
 logger = logging.getLogger(__name__)
@@ -34,6 +41,26 @@ def _mb_setting(name: str, default_mb: float) -> int:
 	except ValueError:
 		mb = 0
 	return int((mb if mb > 0 else default_mb) * _MB)
+
+
+INTERNAL_AUDIENCE = "reporting-python:parse-template"
+
+
+def _sent_by_reporting_node(request: Request) -> bool:
+	"""X-Internal-Token is valid, unexpired, for this route and for the logged-in user."""
+	raw = (request.headers.get("x-internal-token") or "").strip()
+	if not raw:
+		return False
+	try:
+		claims = jose_jwt.decode(raw, JWT_SECRET, algorithms=[JWT_ALGORITHM], audience=INTERNAL_AUDIENCE)
+	except JWTError:
+		return False
+	# python-jose accepts a token without aud / exp; login tokens have neither, so require both
+	if claims.get("aud") != INTERNAL_AUDIENCE or "exp" not in claims:
+		return False
+	_, user = resolve_jwt_token_and_payload(request)
+	user_id = (user or {}).get("id") or (user or {}).get("sub")
+	return bool(user_id) and str(claims.get("sub", "")).strip().lower() == str(user_id).strip().lower()
 
 
 def _bad_request(message: str) -> JSONResponse:
@@ -384,10 +411,14 @@ def table_to_html(table: Table) -> str:
 
 @router.post("/parse-template")
 async def parse_template(
+	request: Request,
 	template: UploadFile | None = File(default=None),
 	file: UploadFile | None = File(default=None),
 ):
 	"""Analyze a Word template and extract sections (same response as /word-template/analyze on main)."""
+	if not _sent_by_reporting_node(request):
+		logger.warning("parse-template: refused a call that did not come through reporting Node")
+		return JSONResponse(status_code=403, content={'success': False, 'message': 'You do not have permission to perform this action.'})
 	upload = template or file
 	if upload is None:
 		return _bad_request('No file provided')
