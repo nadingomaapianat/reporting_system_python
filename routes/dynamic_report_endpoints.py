@@ -12,6 +12,7 @@ from utils.dynamic_query import (
     unsafe_sql_reason,
     blocked_reference_reason,
 )
+from utils.export_utils import hide_id_fields
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -176,6 +177,7 @@ async def execute_sql(request: Request):
                     rec[col_name] = val
                 json_rows.append(rec)
 
+            columns, json_rows = hide_id_fields(columns, json_rows)  # no ids on screen
             return {"success": True, "columns": columns, "rows": json_rows}
         finally:
             cursor.close()
@@ -223,6 +225,7 @@ async def preview_dynamic_report(request: Request):
                     rec[col_name] = str(row[idx]) if idx < len(row) and row[idx] is not None else ''
                 json_rows.append(rec)
 
+            columns, json_rows = hide_id_fields(columns, json_rows)  # no ids on screen
             return {
                 "success": True,
                 "columns": columns,

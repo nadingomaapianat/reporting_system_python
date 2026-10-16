@@ -94,6 +94,11 @@ def is_hidden_export_column_key(key: str) -> bool:
         return True
     if k in ('guid', 'uuid', 'rowguid', 'uniqueidentifier'):
         return True
+    # camelCase / PascalCase ids: functionId, createdById, groupID, userIds (last segment of
+    # Table.column); the capital I keeps words like "paid" or "valid" out.
+    last = str(key).strip().rsplit('.', 1)[-1]
+    if re.search(r'[a-z0-9]I[dD]s?$', last):
+        return True
     # token-based: hide ..._uuid, my_uuid, "Row Guid", etc.; avoid matching 'guidance' (no standalone guid/uuid token)
     toks = _column_key_tokens(key)
     if 'uuid' in toks or 'guid' in toks:
@@ -172,6 +177,21 @@ def redact_uuid_like_for_export(value) -> str:
     if _value_is_uuid_like(value):
         return ''
     return str(value) if value is not None else ''
+
+
+def hide_id_fields(columns: Sequence[str], rows: Sequence[dict]) -> Tuple[List[str], List[dict]]:
+    """
+    On-screen counterpart of filter_export_columns_rows for JSON rows (report preview, SQL box):
+    drops id / uuid columns and blanks UUID-like values left in other columns.
+    """
+    keep = [
+        c for c in columns
+        if not (is_hidden_export_column_key(c) or is_hidden_export_column_key(_normalize_column_label_for_filter(c)))
+    ]
+    out = []
+    for row in rows:
+        out.append({c: ('' if _value_is_uuid_like(row.get(c)) else row.get(c)) for c in keep})
+    return keep, out
 
 
 def format_cell_value_for_export(key: str, value, _from_bytes: int = 0) -> str:
