@@ -84,7 +84,6 @@ RULES: List[Tuple[Optional[Tuple[str, ...]], "re.Pattern[str]", Any]] = [
     (None, re.compile(r"^/api/exports(/|$)"), _reporting_tab(SHOW)),
     (None, re.compile(r"^/api/scheduled-reports(/|$)"), _reporting_tab(SHOW)),
     (None, re.compile(r"^/api/reports/enhanced-bank-check/tables$"), _reporting_tab(SHOW)),
-    (None, re.compile(r"^/xbrl/"), _reporting_tab(SHOW)),
 ]
 
 _CACHE_TTL = float(os.getenv("REPORTING_PERMISSIONS_CACHE_SECONDS", "60"))
