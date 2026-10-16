@@ -69,7 +69,6 @@ RULES: List[Tuple[Optional[Tuple[str, ...]], "re.Pattern[str]", Any]] = [
     (None, re.compile(r"^/api/grc/incidents/"), _dashboard_module("Incidents Catalog")),
     (None, re.compile(r"^/api/grc/comply/"), _dashboard_module("cs Dashboard")),
     # Dynamic charts (Dashboard) — authoring needs create/edit
-    (("POST",), re.compile(r"^/api/reports/execute-sql$"), [[("Dashboard", CREATE_OR_EDIT)]]),
     (("POST",), re.compile(r"^/api/reports/dynamic-dashboard/save-chart$"), [[("Dashboard", CREATE_OR_EDIT)]]),
     (("DELETE",), re.compile(r"^/api/reports/dynamic-dashboard/charts/[^/]+$"), [[("Dashboard", EDIT_OR_DELETE)]]),
     (("GET",), re.compile(r"^/api/reports/dynamic-dashboard/charts$"), [[("Dashboard", SHOW)]]),

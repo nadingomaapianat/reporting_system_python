@@ -181,7 +181,7 @@ def redact_uuid_like_for_export(value) -> str:
 
 def hide_id_fields(columns: Sequence[str], rows: Sequence[dict]) -> Tuple[List[str], List[dict]]:
     """
-    On-screen counterpart of filter_export_columns_rows for JSON rows (report preview, SQL box):
+    On-screen counterpart of filter_export_columns_rows for JSON rows (report preview):
     drops id / uuid columns and blanks UUID-like values left in other columns.
     """
     keep = [

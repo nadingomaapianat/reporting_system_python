@@ -9,8 +9,6 @@ from utils.dynamic_query import (
     condition_sql,
     join_type,
     params_or_none,
-    unsafe_sql_reason,
-    blocked_reference_reason,
 )
 from utils.export_utils import hide_id_fields
 
@@ -124,69 +122,6 @@ async def save_dynamic_dashboard_chart(request: Request):
         traceback.print_exc()
         logger.exception("save-chart: %s", e)
         raise HTTPException(status_code=500, detail=f"Failed to save chart: {str(e)}")
-
-
-@router.post("/api/reports/execute-sql")
-async def execute_sql(request: Request):
-    """
-    Execute a read-only SQL query (SELECT only) and return columns and rows.
-    Body: { "sql": "SELECT ...", "limit": 1000 }.
-    Used by Create Chart from SQL Query in the dynamic dashboard.
-    """
-    try:
-        body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
-        if not isinstance(body, dict):
-            body = {}
-        sql = (body.get("sql") or "").strip()
-        limit = int(body.get("limit") or 1000)
-        if limit <= 0 or limit > 10000:
-            limit = 1000
-
-        if not sql:
-            raise HTTPException(status_code=400, detail="SQL query is required")
-
-        # Exactly one plain SELECT: no batches, comments, writes or EXEC.
-        sql_error = unsafe_sql_reason(sql, require_select=True)
-        if sql_error:
-            raise HTTPException(
-                status_code=400,
-                detail=f"{sql_error}. Use CAST for datetime columns, e.g. CAST(createdAt AS VARCHAR(MAX)) AS createdAt",
-            )
-        # Never over credential / audit data (REPORTING_BLOCKED_TABLES / _COLUMNS).
-        blocked = blocked_reference_reason(sql)
-        if blocked:
-            raise HTTPException(status_code=400, detail=blocked)
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(sql)
-            rows = cursor.fetchmany(limit) if limit > 0 else cursor.fetchall()
-            columns = [col[0] for col in cursor.description] if cursor.description else []
-
-            # Serialize rows to JSON-safe types (e.g. datetime -> str)
-            json_rows = []
-            for row in rows:
-                rec = {}
-                for idx, col_name in enumerate(columns):
-                    val = row[idx] if idx < len(row) else None
-                    if hasattr(val, "isoformat"):
-                        val = val.isoformat()
-                    elif val is not None and not isinstance(val, (str, int, float, bool, type(None))):
-                        val = str(val)
-                    rec[col_name] = val
-                json_rows.append(rec)
-
-            columns, json_rows = hide_id_fields(columns, json_rows)  # no ids on screen
-            return {"success": True, "columns": columns, "rows": json_rows}
-        finally:
-            cursor.close()
-            conn.close()
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("execute-sql: %s", e)
-        raise HTTPException(status_code=500, detail=f"Error executing query: {str(e)}")
 
 
 @router.post("/api/reports/dynamic/preview")

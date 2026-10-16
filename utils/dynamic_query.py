@@ -13,7 +13,7 @@ import re
 import time
 from typing import Dict, List, Optional, Sequence, Tuple
 
-# Never offered to the report builder / SQL box, from new_adib_backend's models:
+# Never offered to the report builder, from new_adib_backend's models:
 #   tables  BlockedToken.token, IframeEntryToken.token_hash, IntegrationSetting.payload
 #           (encrypted credentials), Target (SIEM audit log — has its own page permission)
 #   columns User.password / User.currentToken (live session), GroupModel.permissions
@@ -190,64 +190,3 @@ def condition_sql(column_sql: str, operator, value) -> Tuple[str, List[str]]:
 def params_or_none(params: List[str]):
     """pymssql formats the SQL text whenever params is not None; pass None when there are none."""
     return tuple(params) if params else None
-
-
-# Statements and features a read-only query (or filter) never needs. Checked as whole words
-# after string literals and [bracketed] names are blanked out.
-_SQL_FORBIDDEN_WORDS = re.compile(
-    r"\b(INSERT|UPDATE|DELETE|MERGE|DROP|ALTER|CREATE|TRUNCATE|EXEC|EXECUTE|INTO|GRANT|REVOKE|DENY"
-    r"|OPENROWSET|OPENQUERY|OPENDATASOURCE|OPENXML|BULK|SHUTDOWN|WAITFOR|DBCC|BACKUP|RESTORE|KILL"
-    r"|RECONFIGURE|DECLARE|SET|USE|GO)\b|\b(XP|SP)_\w+",
-    re.IGNORECASE,
-)
-
-
-def unsafe_sql_reason(sql: str, require_select: bool) -> Optional[str]:
-    """
-    Why `sql` is not a single read-only statement (require_select=True) or a read-only
-    WHERE fragment (require_select=False); None when it is acceptable.
-    """
-    # Blank out 'string literals' (with '' escapes) and [identifiers] so their text is not inspected.
-    masked = re.sub(r"'(?:[^']|'')*'", "''", str(sql))
-    masked = re.sub(r"\[[^\]]*\]", "[]", masked)
-    if "'" in masked.replace("''", ""):
-        return "Unterminated string literal in query"
-    if "--" in masked or "/*" in masked or "*/" in masked:
-        return "Comments are not allowed in the query"
-    body = masked.strip()
-    if body.endswith(";"):
-        body = body[:-1].rstrip()
-    if ";" in body:
-        return "Only a single SELECT statement is allowed" if require_select else "Only one filter expression is allowed"
-    if require_select and not body.upper().startswith("SELECT"):
-        return "Only SELECT queries are allowed"
-    bad = _SQL_FORBIDDEN_WORDS.search(body)
-    if bad:
-        return f"'{bad.group(0).upper()}' is not allowed in a SELECT query"
-    return None
-
-
-def blocked_reference_reason(sql: str) -> Optional[str]:
-    """
-    Why free SQL (the "Create chart from SQL" box) touches blocked data, or None: a blocked
-    table, or a table with hidden columns together with one of them or a * selection.
-    """
-    text = re.sub(r"'(?:[^']|'')*'", "''", str(sql))      # ignore string literals
-    text = re.sub(r"\[([^\]]*)\]", r" \1 ", text)          # [Users] -> Users
-    words = {w.lower() for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", text)}
-    for table in _csv(os.getenv("REPORTING_BLOCKED_TABLES", _DEFAULT_BLOCKED_TABLES)):
-        if table.lower() in words:
-            return f"Table '{table}' is not available in reports"
-    star = "*" in re.sub(r"(?i)\bcount\s*\(\s*\*\s*\)", "", text)
-    for item in _csv(os.getenv("REPORTING_BLOCKED_COLUMNS", _DEFAULT_BLOCKED_COLUMNS)):
-        if "." not in item:
-            continue
-        table, column = (part.strip() for part in item.rsplit(".", 1))
-        if table.lower() not in words:
-            continue
-        if column.lower() in words:
-            return f"Column '{table}.{column}' is not available in reports"
-        if star:
-            return f"Select the needed columns of '{table}' by name instead of *"
-    return None
-
