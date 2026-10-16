@@ -4,6 +4,8 @@ getEnhancedBankCheckTables). The other bank-check endpoints were unused and remo
 """
 from fastapi import APIRouter
 
+from utils.dynamic_query import is_blocked_table, visible_columns
+
 # Create router
 router = APIRouter()
 
@@ -37,6 +39,8 @@ async def get_database_tables():
             for table in tables_result:  # Get ALL tables from database
                 table_name = table[1]  # TABLE_NAME
                 schema_name = table[0]  # TABLE_SCHEMA
+                if is_blocked_table(table_name):
+                    continue  # credentials / audit data: never offered to the report builder
                 full_table_name = f"{schema_name}.{table_name}" if schema_name != 'dbo' else table_name
                 
                 # Get columns for each table
@@ -53,7 +57,7 @@ async def get_database_tables():
                 
                 cursor.execute(columns_query, (schema_name, table_name))
                 columns_result = cursor.fetchall()
-                column_names = [col[0] for col in columns_result]  # COLUMN_NAME
+                column_names = visible_columns(table_name, [col[0] for col in columns_result])  # COLUMN_NAME, minus hidden ones
                 
                 tables.append({
                     "id": f"{schema_name}_{table_name}",

@@ -8,9 +8,45 @@ Join types, operators and AND/OR are allow-listed.
 """
 from __future__ import annotations
 
+import os
 import re
 import time
 from typing import Dict, List, Optional, Sequence, Tuple
+
+# Never offered to the report builder / SQL box, from new_adib_backend's models:
+#   tables  BlockedToken.token, IframeEntryToken.token_hash, IntegrationSetting.payload
+#           (encrypted credentials), Target (SIEM audit log — has its own page permission)
+#   columns User.password / User.currentToken (live session), GroupModel.permissions
+# Overridable (comma-separated) with REPORTING_BLOCKED_TABLES / REPORTING_BLOCKED_COLUMNS.
+_DEFAULT_BLOCKED_TABLES = "blocked_tokens,iframe_entry_tokens,integration_settings,Targets"
+_DEFAULT_BLOCKED_COLUMNS = "Users.password,Users.currentToken,Groups.permissions"
+
+
+def _csv(value: str) -> List[str]:
+    return [v.strip() for v in value.split(",") if v.strip()]
+
+
+def blocked_tables() -> set:
+    return {t.lower() for t in _csv(os.getenv("REPORTING_BLOCKED_TABLES", _DEFAULT_BLOCKED_TABLES))}
+
+
+def blocked_columns() -> Dict[str, set]:
+    """lower(table) -> {lower(column)}"""
+    out: Dict[str, set] = {}
+    for item in _csv(os.getenv("REPORTING_BLOCKED_COLUMNS", _DEFAULT_BLOCKED_COLUMNS)):
+        if "." in item:
+            table, column = item.rsplit(".", 1)
+            out.setdefault(table.strip().lower(), set()).add(column.strip().lower())
+    return out
+
+
+def is_blocked_table(name: str) -> bool:
+    return str(name).split(".")[-1].strip("[]").lower() in blocked_tables()
+
+
+def visible_columns(table: str, columns: Sequence[str]) -> List[str]:
+    hidden = blocked_columns().get(str(table).split(".")[-1].lower(), set())
+    return [c for c in columns if str(c).lower() not in hidden]
 
 _SCHEMA_TTL = 300.0
 _schema_cache: Tuple[float, Dict[str, Tuple[str, str, Dict[str, str]]]] = (0.0, {})
@@ -48,7 +84,10 @@ def _load_schema(cursor) -> Dict[str, Tuple[str, str, Dict[str, str]]]:
         """
     )
     schema: Dict[str, Tuple[str, str, Dict[str, str]]] = {}
+    hidden_tables, hidden_cols = blocked_tables(), blocked_columns()
     for sch, tbl, col in cursor.fetchall():
+        if str(tbl).lower() in hidden_tables or str(col).lower() in hidden_cols.get(str(tbl).lower(), set()):
+            continue  # blocked: unknown to every builder
         key = f"{sch}.{tbl}".lower()
         entry = schema.setdefault(key, (str(sch), str(tbl), {}))
         entry[2][str(col).lower()] = str(col)
@@ -185,5 +224,30 @@ def unsafe_sql_reason(sql: str, require_select: bool) -> Optional[str]:
     bad = _SQL_FORBIDDEN_WORDS.search(body)
     if bad:
         return f"'{bad.group(0).upper()}' is not allowed in a SELECT query"
+    return None
+
+
+def blocked_reference_reason(sql: str) -> Optional[str]:
+    """
+    Why free SQL (the "Create chart from SQL" box) touches blocked data, or None: a blocked
+    table, or a table with hidden columns together with one of them or a * selection.
+    """
+    text = re.sub(r"'(?:[^']|'')*'", "''", str(sql))      # ignore string literals
+    text = re.sub(r"\[([^\]]*)\]", r" \1 ", text)          # [Users] -> Users
+    words = {w.lower() for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", text)}
+    for table in _csv(os.getenv("REPORTING_BLOCKED_TABLES", _DEFAULT_BLOCKED_TABLES)):
+        if table.lower() in words:
+            return f"Table '{table}' is not available in reports"
+    star = "*" in re.sub(r"(?i)\bcount\s*\(\s*\*\s*\)", "", text)
+    for item in _csv(os.getenv("REPORTING_BLOCKED_COLUMNS", _DEFAULT_BLOCKED_COLUMNS)):
+        if "." not in item:
+            continue
+        table, column = (part.strip() for part in item.rsplit(".", 1))
+        if table.lower() not in words:
+            continue
+        if column.lower() in words:
+            return f"Column '{table}.{column}' is not available in reports"
+        if star:
+            return f"Select the needed columns of '{table}' by name instead of *"
     return None
 

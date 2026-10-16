@@ -10,14 +10,12 @@ from utils.dynamic_query import (
     join_type,
     params_or_none,
     unsafe_sql_reason,
+    blocked_reference_reason,
 )
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-def _single_select_error(sql: str):
-    """Why `sql` is not exactly one plain SELECT statement, or None when it is."""
-    return unsafe_sql_reason(sql, require_select=True)
 
 
 
@@ -147,12 +145,16 @@ async def execute_sql(request: Request):
             raise HTTPException(status_code=400, detail="SQL query is required")
 
         # Exactly one plain SELECT: no batches, comments, writes or EXEC.
-        sql_error = _single_select_error(sql)
+        sql_error = unsafe_sql_reason(sql, require_select=True)
         if sql_error:
             raise HTTPException(
                 status_code=400,
                 detail=f"{sql_error}. Use CAST for datetime columns, e.g. CAST(createdAt AS VARCHAR(MAX)) AS createdAt",
             )
+        # Never over credential / audit data (REPORTING_BLOCKED_TABLES / _COLUMNS).
+        blocked = blocked_reference_reason(sql)
+        if blocked:
+            raise HTTPException(status_code=400, detail=blocked)
 
         conn = get_db_connection()
         cursor = conn.cursor()
