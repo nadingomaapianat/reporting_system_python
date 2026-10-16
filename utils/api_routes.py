@@ -14,6 +14,7 @@ from routes.excel_to_word_endpoints import router as excel_word_router
 from routes.xbrl_routes import router as xbrl_router
 from routes.word_template_routes import router as word_template_router
 from routes.auth_routes import router as auth_router
+from routes.icr_template_parse import router as icr_template_parse_router
 
 # Create main router
 router = APIRouter()
@@ -31,4 +32,5 @@ router.include_router(dynamic_router)
 router.include_router(excel_word_router)
 router.include_router(xbrl_router)
 router.include_router(word_template_router)
+router.include_router(icr_template_parse_router)
 
