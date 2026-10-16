@@ -72,6 +72,8 @@ RULES: List[Tuple[Optional[Tuple[str, ...]], "re.Pattern[str]", Any]] = [
     (("POST",), re.compile(r"^/api/reports/dynamic-dashboard/save-chart$"), [[("Dashboard", CREATE_OR_EDIT)]]),
     (("DELETE",), re.compile(r"^/api/reports/dynamic-dashboard/charts/[^/]+$"), [[("Dashboard", EDIT_OR_DELETE)]]),
     (("GET",), re.compile(r"^/api/reports/dynamic-dashboard/charts$"), [[("Dashboard", SHOW)]]),
+    # ICR template parser, called by reporting Node /api/icr/admin/parse-template (same page check)
+    (("POST",), re.compile(r"^/parse-template$"), [[("ICR Templates", CREATE_OR_EDIT)]]),
     # Report builder: used by dynamic charts (Dashboard) and ReportGenerator (Reports/Transactions)
     (None, re.compile(r"^/api/reports/dynamic(/preview)?$"), DASHBOARD_OR_REPORTS_SHOW),
     # Reports / Transactions tab
