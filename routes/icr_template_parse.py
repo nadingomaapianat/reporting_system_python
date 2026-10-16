@@ -26,8 +26,8 @@ from docx.oxml.text.paragraph import CT_P
 from docx.oxml.table import CT_Tbl
 from docx.table import Table
 from docx.text.paragraph import Paragraph
-from jose import jwt as jose_jwt, JWTError
-from utils.auth import JWT_ALGORITHM, JWT_SECRET, resolve_jwt_token_and_payload
+import jwt as pyjwt
+from utils.auth import JWT_ALGORITHM, JWT_CLOCK_LEEWAY_SECONDS, JWT_SECRET, resolve_jwt_token_and_payload
 
 router = APIRouter(tags=["icr-template"])
 logger = logging.getLogger(__name__)
@@ -52,10 +52,13 @@ def _sent_by_reporting_node(request: Request) -> bool:
 	if not raw:
 		return False
 	try:
-		claims = jose_jwt.decode(raw, JWT_SECRET, algorithms=[JWT_ALGORITHM], audience=INTERNAL_AUDIENCE)
-	except JWTError:
+		claims = pyjwt.decode(
+			raw, JWT_SECRET, algorithms=[JWT_ALGORITHM], audience=INTERNAL_AUDIENCE,
+			options={"require": ["exp", "aud", "sub"]}, leeway=JWT_CLOCK_LEEWAY_SECONDS,
+		)
+	except pyjwt.PyJWTError:
 		return False
-	# python-jose accepts a token without aud / exp; login tokens have neither, so require both
+	# login tokens carry no aud / exp of this kind; checked again explicitly
 	if claims.get("aud") != INTERNAL_AUDIENCE or "exp" not in claims:
 		return False
 	_, user = resolve_jwt_token_and_payload(request)

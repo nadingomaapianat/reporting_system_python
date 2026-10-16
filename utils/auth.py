@@ -10,7 +10,8 @@ from urllib.parse import unquote
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import jwt, JWTError
+import jwt  # PyJWT (python-jose replaced: unpatched advisories)
+from jwt import PyJWTError as JWTError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
@@ -26,6 +27,8 @@ JWT_SECRET = (os.getenv("JWT_SECRET") or os.getenv("JWT_SECRET_KEY") or "").stri
 if not JWT_SECRET:
     raise RuntimeError("JWT_SECRET (or JWT_SECRET_KEY) must be set")
 JWT_ALGORITHM = "HS256"
+# Node and Python run on different servers: allow a little clock drift on exp / iat / nbf.
+JWT_CLOCK_LEEWAY_SECONDS = 30
 
 # Cookie names — must match reporting_system_node2 / new_adib_backend.
 REPORTING_AUTH_COOKIE_NAME = "reporting_auth_token"  # legacy single cookie
@@ -246,7 +249,7 @@ def _decode_jwt_payload(token: str) -> Optional[Dict[str, Any]]:
     if not token or not token.strip():
         return None
     try:
-        return jwt.decode(token.strip(), JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return jwt.decode(token.strip(), JWT_SECRET, algorithms=[JWT_ALGORITHM], leeway=JWT_CLOCK_LEEWAY_SECONDS)
     except JWTError:
         return None
 
@@ -254,7 +257,7 @@ def _decode_jwt_payload(token: str) -> Optional[Dict[str, Any]]:
 def verify_token(token: str) -> Dict[str, Any]:
     """Verify and decode a JWT token (raises 401 on failure)."""
     try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM], leeway=JWT_CLOCK_LEEWAY_SECONDS)
     except JWTError as e:
         _auth_log(
             f"Token verification failed: {e} "
