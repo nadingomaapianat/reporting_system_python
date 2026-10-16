@@ -34,4 +34,5 @@ USER app
 EXPOSE 8000
 
 # Same DB env as Node: DB_HOST, DB_PORT, DB_NAME, DB_USE_WINDOWS_AUTH=0, DB_DOMAIN, DB_USERNAME, DB_PASSWORD
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --no-server-header: don't advertise "server: uvicorn" (WAPT11 server fingerprinting)
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--no-server-header"]
