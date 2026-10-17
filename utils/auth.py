@@ -371,6 +371,30 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             # `is_token_blocked` already swallows DB errors with a warning.
             pass
 
+        # Follow the main app's session: reporting's own 2h JWT survives an admin force-logout
+        # or a logout in another browser, so tie it to the shared Users.isSessionActive flag.
+        # Once the main session ends, reject here (same behaviour as the main front / compliance).
+        try:
+            from utils.user_session import is_user_session_active
+
+            session_user_id = payload.get("id") or payload.get("sub")
+            active = await asyncio.to_thread(is_user_session_active, session_user_id)
+            if not active:
+                _auth_log(
+                    f"401 path={request.url.path} method={request.method} -> reason: "
+                    f"session_ended user={session_user_id or '?'}"
+                )
+                return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content={
+                        "success": False,
+                        "message": "Session has ended. Please sign in again.",
+                    },
+                )
+        except Exception:
+            # Fail-open on unexpected errors; is_user_session_active already swallows DB errors.
+            pass
+
         request.state.user = payload
         set_request_jwt_claims(payload)
         return await call_next(request)

@@ -18,3 +18,8 @@ node_modules
 .passcode
 *.env.enc
 .env.enc
+
+# local-testing env backup (never commit)
+.env.localtest
+# local virtualenv
+venv/
