@@ -24,7 +24,7 @@ class APIService:
     def __init__(self):
         self.node_api_url = API_CONFIG['node_api_url']
         self.timeout = API_CONFIG['timeout']
-        self._connector = _make_connector()
+        self._connector = None  # connectors are created per-session (see _make_connector) to avoid sharing
 
     @staticmethod
     def _node_grc_filter_params(
@@ -67,7 +67,7 @@ class APIService:
             
             # Add reasonable connect/read timeouts to avoid long hangs
             timeout = aiohttp.ClientTimeout(total=self.timeout, connect=10)
-            async with aiohttp.ClientSession(timeout=timeout, connector=self._connector) as session:
+            async with aiohttp.ClientSession(timeout=timeout, connector=_make_connector()) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -103,7 +103,7 @@ class APIService:
             
             # Increase timeout for complex queries
             timeout = aiohttp.ClientTimeout(total=self.timeout, connect=10)
-            async with aiohttp.ClientSession(timeout=timeout, connector=self._connector) as session:
+            async with aiohttp.ClientSession(timeout=timeout, connector=_make_connector()) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -135,7 +135,7 @@ class APIService:
             url = f"{self.node_api_url}/api/grc/risks/{card_type}"
             params = self._node_grc_filter_params(start_date, end_date, user_id, group_name, function_id)
             
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=self._connector) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=_make_connector()) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -184,7 +184,7 @@ class APIService:
                 start_date, end_date, user_id, group_name, function_id, function_ids_csv
             )
 
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout, connect=10), connector=self._connector) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout, connect=10), connector=_make_connector()) as session:
                 async with session.get(url, params=params) as response:
                     if response.status != 200:
                         return []
@@ -227,7 +227,7 @@ class APIService:
                 )
             )
             
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=self._connector) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=_make_connector()) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -268,7 +268,7 @@ class APIService:
             )
             request_headers = dict(headers) if headers else {}
             timeout = aiohttp.ClientTimeout(total=self.timeout)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, connector=_make_connector()) as session:
                 async with session.get(url, params=params, headers=request_headers or None) as response:
                     if response.status == 200:
                         return await response.json()
@@ -303,7 +303,7 @@ class APIService:
             params["limit"] = 100000
             request_headers = dict(headers) if headers else {}
             timeout = aiohttp.ClientTimeout(total=self.timeout)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, connector=_make_connector()) as session:
                 async with session.get(url, params=params, headers=request_headers or None) as response:
                     if response.status == 200:
                         payload = await response.json()
@@ -335,7 +335,7 @@ class APIService:
                 params['groupName'] = group_name
             if function_id:
                 params['functionId'] = function_id
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=self._connector) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=_make_connector()) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -368,7 +368,7 @@ class APIService:
                 start_date, end_date, user_id, group_name, function_id, function_ids_csv
             )
             request_headers = dict(headers) if headers else None
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=_make_connector()) as session:
                 async with session.get(url, params=params, headers=request_headers) as response:
                     if response.status == 200:
                         return await response.json()
@@ -398,7 +398,7 @@ class APIService:
                     if v is not None and str(v).strip() != "":
                         params[str(k)] = str(v)
             request_headers = dict(headers) if headers else None
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=_make_connector()) as session:
                 async with session.get(url, params=params, headers=request_headers) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -421,7 +421,7 @@ class APIService:
             url = f"{self.node_api_url}/api/grc/kris/{card_type}"
             params: Dict[str, Any] = {'page': 1, 'limit': 10000}
             params.update(self._node_grc_filter_params(start_date, end_date, user_id, group_name, function_id))
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout), connector=_make_connector()) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
