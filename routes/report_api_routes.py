@@ -147,8 +147,12 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
                 # Trim user_id to handle spaces
                 user_id = str(user_id).strip() if user_id else None
                 
-                # If user is super admin, show all reports
-                if group_name == 'super_admin_':
+                # If user is super admin, show all reports. Use the shared helper so the
+                # super-admin rule matches the main backend and the rest of reporting
+                # (word-based groupHasRole, user-id allowlist, role/isAdmin claims).
+                from utils.reporting_access import is_reporting_admin
+                from utils.jwt_context import get_request_jwt_claims
+                if is_reporting_admin(user_id, group_name, get_request_jwt_claims()):
                     # Super admin sees all reports - no filter needed
                     pass
                 else:

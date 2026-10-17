@@ -6,6 +6,7 @@ Reporting data access helpers — aligned with reporting_system_node2
 from __future__ import annotations
 
 import os
+import re
 from typing import Any, Dict, Optional
 
 
@@ -32,21 +33,20 @@ def _truthy(value: Any) -> bool:
 
 def _group_matches_super_admin(group: Optional[str]) -> bool:
     """
-    True if the group string means "super admin" in the reporting sense.
-
-    Main backend / LDAP may send labels like:
-    - super_admin_   (legacy, exact)
-    - Super Admin, super admin, SUPER_ADMIN (same meaning, different formatting)
-
-    Node only checks exact 'super_admin_'; we accept common variants so Python
-    matches what operators expect when they say "super admin user".
+    True if the group string means "super admin" — same rule as the main backend's
+    groupHasRole(name, "super_admin") (src/auth/admin-groups.ts): the words "super" then
+    "admin" appear consecutively once the name is split on _, space or -. So it matches
+    super_admin_, "Super Admin", branch_super_admin_, etc., and future variants without a
+    code change — consistent with DCC. The single-word "superadmin" form is kept too.
     """
     if not group:
         return False
     s = str(group).strip()
-    if s == "super_admin_":
-        return True
-    # Compare alphanumeric-only: "Super Admin" -> "superadmin"
+    words = [w for w in re.split(r"[_\s-]+", s.lower()) if w]
+    for i in range(len(words) - 1):
+        if words[i] == "super" and words[i + 1] == "admin":
+            return True
+    # Single-token "superadmin" / "Super Admin" collapsed to alphanumerics.
     alnum = "".join(ch.lower() for ch in s if ch.isalnum())
     return alnum == "superadmin"
 
