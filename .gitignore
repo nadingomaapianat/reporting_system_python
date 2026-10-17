@@ -23,3 +23,5 @@ node_modules
 .env.localtest
 # local virtualenv
 venv/
+# runtime env (deploy team creates it from .env.bank); never commit
+.env
