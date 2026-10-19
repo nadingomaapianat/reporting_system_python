@@ -228,10 +228,10 @@ class KriService:
         query = f"""
         SELECT 
             CASE 
-                WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-                WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' AND ISNULL(k.checkerStatus, '') <> 'approved' THEN 'Pending Checker'
-                WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' THEN 'Pending Reviewer'
-                WHEN ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
+                WHEN ISNULL(k.preparerStatus, '') <> 'sent' AND ISNULL(k.checkerStatus, '') IN ('', 'pending') AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Preparer'
+                WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') IN ('', 'pending') AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Checker'
+                WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Reviewer'
+                WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Acceptance'
                 WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
                 ELSE 'Other'
             END as status,
@@ -242,10 +242,10 @@ class KriService:
           {function_filter}
         GROUP BY 
             CASE 
-                WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-                WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' AND ISNULL(k.checkerStatus, '') <> 'approved' THEN 'Pending Checker'
-                WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' THEN 'Pending Reviewer'
-                WHEN ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
+                WHEN ISNULL(k.preparerStatus, '') <> 'sent' AND ISNULL(k.checkerStatus, '') IN ('', 'pending') AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Preparer'
+                WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') IN ('', 'pending') AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Checker'
+                WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Reviewer'
+                WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Acceptance'
                 WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
                 ELSE 'Other'
             END
@@ -520,13 +520,13 @@ class KriService:
                 k.kriName as kri_name,
                 CASE
                     -- 1) Pending preparer: preparerStatus is anything other than 'sent'
-                    WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
+                    WHEN ISNULL(k.preparerStatus, '') <> 'sent' AND ISNULL(k.checkerStatus, '') IN ('', 'pending') AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'pendingPreparer'
                     -- 2) Pending checker: preparer sent AND checker not approved AND acceptance not approved
-                    WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'pendingChecker'
+                    WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') IN ('', 'pending') AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'pendingChecker'
                     -- 3) Pending reviewer: checker approved AND reviewer not approved AND acceptance not approved
-                    WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'pendingReviewer'
+                    WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'pendingReviewer'
                     -- 4) Pending acceptance: reviewer approved AND acceptance not approved
-                    WHEN ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'pendingAcceptance'
+                    WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'pendingAcceptance'
                     -- 5) Fully approved
                     WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
                     ELSE 'Other'
@@ -570,10 +570,10 @@ class KriService:
         WITH KrisStatus AS (
           SELECT 
             CASE 
-              WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
-              WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'pendingChecker'
-              WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'pendingReviewer'
-              WHEN ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'pendingAcceptance'
+              WHEN ISNULL(k.preparerStatus, '') <> 'sent' AND ISNULL(k.checkerStatus, '') IN ('', 'pending') AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'pendingPreparer'
+              WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') IN ('', 'pending') AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'pendingChecker'
+              WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'pendingReviewer'
+              WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'pendingAcceptance'
               WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'approved'
               ELSE 'Other'
             END AS status
@@ -619,12 +619,12 @@ class KriService:
           ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name,
           k.kriName          AS kri_name,
           CASE
-            WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
+            WHEN ISNULL(k.preparerStatus, '') <> 'sent' AND ISNULL(k.checkerStatus, '') IN ('', 'pending') AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Preparer'
             WHEN ISNULL(k.checkerStatus, '') = 'refused' THEN 'Checker Refused'
-            WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
+            WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') IN ('', 'pending') AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Checker'
             WHEN ISNULL(k.acceptanceStatus, '') = 'refused' THEN 'Acceptance Refused'
-            WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-            WHEN ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
+            WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Reviewer'
+            WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Acceptance'
             WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
             ELSE 'Unknown'
           END AS status
@@ -866,10 +866,10 @@ class KriService:
 
         bucket_case = """
           CASE
-            WHEN ISNULL(kv.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
-            WHEN ISNULL(kv.preparerStatus, '') = 'sent' AND ISNULL(kv.checkerStatus, '') <> 'approved' AND ISNULL(kv.acceptanceStatus, '') <> 'approved' THEN 'pendingChecker'
-            WHEN ISNULL(kv.checkerStatus, '') = 'approved' AND ISNULL(kv.reviewerStatus, '') <> 'sent' AND ISNULL(kv.acceptanceStatus, '') <> 'approved' THEN 'pendingReviewer'
-            WHEN ISNULL(kv.reviewerStatus, '') = 'sent' AND ISNULL(kv.acceptanceStatus, '') <> 'approved' THEN 'pendingAcceptance'
+            WHEN ISNULL(kv.preparerStatus, '') <> 'sent' AND ISNULL(kv.checkerStatus, '') IN ('', 'pending') AND ISNULL(kv.reviewerStatus, '') IN ('', 'pending') AND ISNULL(kv.acceptanceStatus, '') IN ('', 'pending') THEN 'pendingPreparer'
+            WHEN ISNULL(kv.preparerStatus, '') = 'sent' AND ISNULL(kv.checkerStatus, '') IN ('', 'pending') AND ISNULL(kv.reviewerStatus, '') IN ('', 'pending') AND ISNULL(kv.acceptanceStatus, '') IN ('', 'pending') THEN 'pendingChecker'
+            WHEN ISNULL(kv.preparerStatus, '') = 'sent' AND ISNULL(kv.checkerStatus, '') = 'approved' AND ISNULL(kv.reviewerStatus, '') IN ('', 'pending') AND ISNULL(kv.acceptanceStatus, '') IN ('', 'pending') THEN 'pendingReviewer'
+            WHEN ISNULL(kv.preparerStatus, '') = 'sent' AND ISNULL(kv.checkerStatus, '') = 'approved' AND ISNULL(kv.reviewerStatus, '') = 'sent' AND ISNULL(kv.acceptanceStatus, '') IN ('', 'pending') THEN 'pendingAcceptance'
             WHEN ISNULL(kv.acceptanceStatus, '') = 'approved' THEN 'approved'
             ELSE 'Other'
           END
@@ -2090,10 +2090,10 @@ class KriService:
           ISNULL(COALESCE(frel.name, f.name), NULL) AS function_name,
           k.kriName AS kriName,
           CASE
-            WHEN ISNULL(k.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-            WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') <> 'approved' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
-            WHEN ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') <> 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-            WHEN ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
+            WHEN ISNULL(k.preparerStatus, '') <> 'sent' AND ISNULL(k.checkerStatus, '') IN ('', 'pending') AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Preparer'
+            WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') IN ('', 'pending') AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Checker'
+            WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') IN ('', 'pending') AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Reviewer'
+            WHEN ISNULL(k.preparerStatus, '') = 'sent' AND ISNULL(k.checkerStatus, '') = 'approved' AND ISNULL(k.reviewerStatus, '') = 'sent' AND ISNULL(k.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Acceptance'
             WHEN ISNULL(k.acceptanceStatus, '') = 'approved' THEN 'Approved'
             ELSE 'Unknown'
           END AS approved_status,
