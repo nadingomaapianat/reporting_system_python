@@ -11,3 +11,5 @@ dcc-reporting-python.tar
 # Bytecode
 __pycache__/
 *.pyc
+config.bat
+node_modules
