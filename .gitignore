@@ -1,6 +1,5 @@
 
 .venv/
-.env
 environment.env
 environment.docker.env
 *.tar
@@ -13,3 +12,7 @@ __pycache__/
 *.pyc
 config.bat
 node_modules
+
+venv/
+.venv/
+.ven/
