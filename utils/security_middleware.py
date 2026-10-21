@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 
 # --- Trust proxy: use X-Forwarded-For when behind reverse proxy ---
 TRUST_PROXY = os.getenv("TRUST_PROXY", "1").strip().lower() in ("1", "true", "yes")
+try:
+    TRUST_PROXY_HOPS = max(1, int(os.getenv("TRUST_PROXY_HOPS", "1")))
+except ValueError:
+    TRUST_PROXY_HOPS = 1
 
 
 def get_client_ip(request: Request) -> str:
@@ -21,9 +25,13 @@ def get_client_ip(request: Request) -> str:
         if request.client:
             return request.client.host
         return "0.0.0.0"
+    # The client can send its own X-Forwarded-For; the trusted proxy appends the address it
+    # saw, so read from the right (TRUST_PROXY_HOPS = number of proxies in front, default 1).
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        hops = [h.strip() for h in forwarded.split(",") if h.strip()]
+        if hops:
+            return hops[-min(TRUST_PROXY_HOPS, len(hops))]
     if request.client:
         return request.client.host
     return "0.0.0.0"
@@ -72,6 +80,24 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 _store[ip] = (count, start)
         else:
             _store[ip] = (1, now)
+        return await call_next(request)
+
+
+# --- Date query params: many GRC queries write these straight into SQL text ---
+DATE_QUERY_PARAMS = ("startDate", "endDate", "start_date", "end_date")
+
+
+class DateParamsMiddleware(BaseHTTPMiddleware):
+    """Refuses a malformed date query param with 400 before any route runs (same as reporting Node)."""
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        from utils.node_grc_query import is_iso_date_value
+
+        for name in DATE_QUERY_PARAMS:
+            for value in request.query_params.getlist(name):
+                text = value.strip()
+                if text and not is_iso_date_value(text):
+                    return JSONResponse(status_code=400, content={"detail": f"Invalid {name}"})
         return await call_next(request)
 
 

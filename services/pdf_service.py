@@ -23,9 +23,11 @@ def write_debug(msg):
     from datetime import datetime
     timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
     msg_with_time = f"[{timestamp}] {msg}"
-    with open('debug_log.txt', 'a', encoding='utf-8') as f:
-        f.write(f"{msg_with_time}\n")
-        f.flush()
+    from routes.route_utils import debug_file_enabled
+    if debug_file_enabled():
+        with open('debug_log.txt', 'a', encoding='utf-8') as f:
+            f.write(f"{msg_with_time}\n")
+            f.flush()
     import sys
     sys.stderr.write(f"{msg_with_time}\n")
     sys.stderr.flush()

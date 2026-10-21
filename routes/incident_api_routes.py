@@ -140,17 +140,9 @@ async def export_incidents_pdf(
     incident_action_plan_override = None
     overdue_incidents_override = None
     non_financial_impact_events_override = None
-    if request.method == "POST":
-        try:
-            body = await request.json()
-            if isinstance(body, dict) and "incidentActionPlan" in body:
-                incident_action_plan_override = body.get("incidentActionPlan")
-            if isinstance(body, dict) and "overdueIncidents" in body:
-                overdue_incidents_override = body.get("overdueIncidents")
-            if isinstance(body, dict) and "nonFinancialImpactEvents" in body:
-                non_financial_impact_events_override = body.get("nonFinancialImpactEvents")
-        except Exception:
-            pass
+    # Rows a client POSTs are ignored: the export always rebuilds them on the server (Node, same
+    # date / function filters, the caller's own auth), so a user cannot put made-up rows into a
+    # saved export. The POST method stays accepted for the existing frontend.
     try:
         write_debug(f"[INCIDENTS PDF] startDate={startDate} endDate={endDate}")
         write_debug(f"[INCIDENTS PDF] cardType={cardType} onlyCard={onlyCard} onlyChart={onlyChart}")
@@ -406,7 +398,7 @@ async def export_incidents_pdf(
         )
     except Exception as e:
         write_debug(f"[INCIDENTS PDF] Export failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Export failed")
 
 @router.api_route("/api/grc/incidents/export-excel", methods=["GET", "POST"])
 async def export_incidents_excel(
@@ -430,17 +422,9 @@ async def export_incidents_excel(
     incident_action_plan_override = None
     overdue_incidents_override = None
     non_financial_impact_events_override = None
-    if request.method == "POST":
-        try:
-            body = await request.json()
-            if isinstance(body, dict) and "incidentActionPlan" in body:
-                incident_action_plan_override = body.get("incidentActionPlan")
-            if isinstance(body, dict) and "overdueIncidents" in body:
-                overdue_incidents_override = body.get("overdueIncidents")
-            if isinstance(body, dict) and "nonFinancialImpactEvents" in body:
-                non_financial_impact_events_override = body.get("nonFinancialImpactEvents")
-        except Exception:
-            pass
+    # Rows a client POSTs are ignored: the export always rebuilds them on the server (Node, same
+    # date / function filters, the caller's own auth), so a user cannot put made-up rows into a
+    # saved export. The POST method stays accepted for the existing frontend.
     try:
         # Extract user and function params so export uses same filters as Node/UI (e.g. Incidents Financial Details count matches)
         user_id, group_name, function_id = extract_user_and_function_params(request)
@@ -665,6 +649,6 @@ async def export_incidents_excel(
             }
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Export failed")
 
 

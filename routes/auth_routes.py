@@ -8,10 +8,10 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 async def get_profile(current_user: dict = Depends(get_current_user)):
     """Get current user profile from JWT token (token comes from v2_backend)."""
     return {
-        "id": current_user.get("id", "1"),
-        "email": current_user.get("email", "demo@example.com"),
-        "name": current_user.get("name", "Demo User"),
-        "role": current_user.get("role", "admin"),
+        "id": current_user.get("id"),
+        "email": current_user.get("email"),
+        "name": current_user.get("name"),
+        "role": current_user.get("role"),
     }
 
 

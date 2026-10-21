@@ -11,7 +11,16 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Tuple
 
-_ISO_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}")
+# YYYY-MM-DD, optionally with a time and zone (same rule as reporting Node's DateParamsMiddleware).
+# The allowed characters can never close a SQL string literal.
+_ISO_DATE_VALUE = re.compile(
+    r"\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,7})?)?(?:Z|[+-]\d{2}:?\d{2})?)?"
+)
+
+
+def is_iso_date_value(s: Optional[str]) -> bool:
+    """True when s is a plain ISO date (optionally with time); the only shape allowed into SQL."""
+    return isinstance(s, str) and _ISO_DATE_VALUE.fullmatch(s.strip()) is not None
 
 
 def norm_grc_query_string(s: Optional[str]) -> Optional[str]:
@@ -26,14 +35,17 @@ def norm_grc_query_string(s: Optional[str]) -> Optional[str]:
 def grc_iso_date_param(s: Optional[str]) -> Optional[str]:
     """
     Valid start/end date for Node GRC dashboards: same rule as
-    BaseDashboardService.isValidDateString and comply /all (YYYY-MM-DD prefix after norm).
+    BaseDashboardService.isValidDateString and comply /all. Only a full ISO date (optionally
+    with time) is returned, because callers write the value into SQL text.
     """
     if not s:
         return None
     t = norm_grc_query_string(s)
-    if not t or len(t) < 10 or not _ISO_PREFIX.match(t):
-        return None
-    return t
+    if t and is_iso_date_value(t):
+        return t
+    # A zone offset such as +02:00 keeps its "+" (norm turns it into a space).
+    raw = s.strip() if isinstance(s, str) else None
+    return raw if raw and is_iso_date_value(raw) else None
 
 
 def grc_function_id_param(s: Optional[str]) -> Optional[str]:
@@ -96,14 +108,14 @@ def comply_filters_matching_node_all(
 ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """
     Same tuple passed to GrcComplyService.runAllReports from getAllReports:
-    only ISO-prefixed dates and non-empty functionId after norm.
+    only full ISO dates and non-empty functionId after norm.
     """
     start = norm_grc_query_string(start_date) if start_date else None
     end = norm_grc_query_string(end_date) if end_date else None
     fid = norm_grc_query_string(function_id) if function_id else None
-    if not (start and _ISO_PREFIX.match(start)):
+    if not (start and is_iso_date_value(start)):
         start = None
-    if not (end and _ISO_PREFIX.match(end)):
+    if not (end and is_iso_date_value(end)):
         end = None
     if not (fid and len(fid) > 0):
         fid = None

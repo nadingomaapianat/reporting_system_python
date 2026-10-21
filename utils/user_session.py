@@ -70,11 +70,11 @@ def is_user_session_active(user_id: Optional[str]) -> bool:
             except Exception:
                 pass
     except Exception as e:
-        # Fail-open: a transient DB outage should not lock everyone out.
+        # Fail closed: a session that cannot be checked is not treated as active.
         logger.warning(
-            "[Python Auth][UserSession] DB query failed (allowing through): %s", e
+            "[Python Auth][UserSession] DB query failed (rejecting): %s", e
         )
-        return True
+        return False
 
     _cache[uid] = (active, now + _CACHE_TTL_S)
     return active

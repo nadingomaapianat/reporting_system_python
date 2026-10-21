@@ -31,7 +31,7 @@ from utils import api_routes
 from utils.csrf import CSRFMiddleware, create_csrf_token, set_csrf_cookie
 from utils.auth import JWTAuthMiddleware
 from utils.page_permissions import PagePermissionMiddleware
-from utils.security_middleware import RateLimitMiddleware, SecurityHeadersMiddleware
+from utils.security_middleware import DateParamsMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware
 from utils.error_sanitizer import sanitize_error_message, is_production
 api_router = api_routes.router
 print("DEBUG: main.py - All routers imported (consolidated in api_router)")
@@ -114,6 +114,9 @@ def create_app() -> FastAPI:
 
     # Added before JWTAuthMiddleware so it sits inside it: every request reaching the page
     # check has already passed login. Unmapped routes are refused (utils/page_permissions.py).
+    # Innermost: runs after login and the page check, before any route reads startDate/endDate.
+    app.add_middleware(DateParamsMiddleware)
+
     app.add_middleware(PagePermissionMiddleware)
 
     app.add_middleware(JWTAuthMiddleware)
@@ -136,7 +139,6 @@ def create_app() -> FastAPI:
                     "https://dcc-reporting.theubeg.ub.dom",
                     "https://dcc-grc.theubeg.ub.dom",
                     _fe,
-                    "http://127.0.0.1:3000",
                     "https://dcc-reporting-api-node.theubeg.ub.dom",
                 ]
             )

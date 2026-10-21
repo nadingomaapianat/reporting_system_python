@@ -186,7 +186,7 @@ async def export_kris_pdf(
                 write_debug(f"[KRIS PDF] Failed to reinitialize kri_service: {init_err}")
                 import traceback
                 traceback.print_exc()
-                raise HTTPException(status_code=500, detail=f"KRI service not available: {str(init_err)}")
+                raise HTTPException(status_code=500, detail="KRI service not available")
         
         if not kri_service:
             raise HTTPException(status_code=500, detail="KRI service not available after initialization attempt")
@@ -313,7 +313,7 @@ async def export_kris_pdf(
         raise
     except Exception as e:
         write_debug(f"[KRIS PDF] Error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate PDF")
 
 @router.api_route("/api/grc/kris/export/excel", methods=["GET", "POST"])
 async def export_kris_excel(
@@ -425,7 +425,7 @@ async def export_kris_excel(
                 write_debug(f"[KRIS EXCEL] Failed to reinitialize kri_service: {init_err}")
                 import traceback
                 traceback.print_exc()
-                raise HTTPException(status_code=500, detail=f"KRI service not available: {str(init_err)}")
+                raise HTTPException(status_code=500, detail="KRI service not available")
         
         if not kri_service:
             raise HTTPException(status_code=500, detail="KRI service not available after initialization attempt")
@@ -549,6 +549,6 @@ async def export_kris_excel(
         raise
     except Exception as e:
         write_debug(f"[KRIS EXCEL] Error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate Excel: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate Excel")
 
 

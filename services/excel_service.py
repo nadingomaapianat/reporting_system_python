@@ -1,3 +1,4 @@
+from utils.export_utils import neutralize_formulas
 import asyncio
 import aiohttp
 from typing import Dict, Any, Optional, List
@@ -213,6 +214,7 @@ class ExcelService:
                 
                 from io import BytesIO
                 output = BytesIO()
+                neutralize_formulas(wb)
                 wb.save(output)
                 return output.getvalue()
         except Exception as e:
@@ -459,6 +461,7 @@ class ExcelService:
                 ws['A2'] = 'Generated Successfully'
                 from io import BytesIO
                 output = BytesIO()
+                neutralize_formulas(wb)
                 wb.save(output)
                 return output.getvalue()
 
@@ -754,6 +757,7 @@ class ExcelService:
                 ws['A2'] = 'Generated Successfully'
                 from io import BytesIO
                 output = BytesIO()
+                neutralize_formulas(wb)
                 wb.save(output)
                 return output.getvalue()
                 
@@ -970,6 +974,7 @@ class ExcelService:
                 ws['A2'] = 'Generated Successfully'
                 from io import BytesIO
                 output = BytesIO()
+                neutralize_formulas(wb)
                 wb.save(output)
                 return output.getvalue()
                 
@@ -1156,6 +1161,7 @@ class ExcelService:
             ws["A1"] = "Comply Dashboard Report"
             ws["A2"] = "Generated Successfully"
             output = BytesIO()
+            neutralize_formulas(wb)
             wb.save(output)
             return output.getvalue()
         except Exception as e:

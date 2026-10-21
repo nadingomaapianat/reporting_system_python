@@ -26,6 +26,41 @@ def _csv(value: str) -> List[str]:
     return [v.strip() for v in value.split(",") if v.strip()]
 
 
+# Tables the report builder may use (allow-list; REPORTING_ALLOWED_TABLES, comma-separated,
+# replaces it). GRC business data only: users / groups / permissions, tokens and settings, the
+# audit log, notifications, workflow internals, file-path tables and assets / vulnerabilities
+# (scoped elsewhere) are not reportable. Anything not listed is unknown to every builder.
+_DEFAULT_ALLOWED_TABLES = (
+    "Actionplans, Activities, AdequateFindings, Assertions, BankQuestionControls, "
+    "BankQuestionFunctions, BankQuestionRisks, BankQuestions, BankQuestionSurveys, "
+    "BusinessUnits, Catalogs, Categories, CBEDomains, CBEFunctions, CobitDomains, "
+    "CobitPractices, CobitProcesses, ComplianceControlActions, "
+    "ComplianceControlActionsComments, ComplianceGaps, ComplianceMappings, "
+    "complianceReferences, Compliances, ComplianceTeam, ControlAssertions, ControlCBEs, "
+    "ControlCobits, ControlControlReferences, ControlCosos, ControlDesignTests, "
+    "controlDomains, ControlFunctions, ControlIsos, ControlNists, ControlProcesses, "
+    "ControlReferences, ControlRequirements, Controls, ControlSurveyAnswer, CosoComponents, "
+    "CosoExamples, CosoPoints, CosoPrinciples, Currencies, DocumentCategories, Documents, "
+    "DocumentVersions, Domains, EaCapabilities, EaCapabilityControls, EaCapabilityRisks, "
+    "EaCapabilitySystemMaps, EffectiveFindings, EventTypes, FinancialImpacts, "
+    "FinancialStatementLineItems, FinancialStatements, FunctionProcesses, Functions, "
+    "ImpactedAreas, IncidentAccounts, IncidentCategories, IncidentCauses, IncidentEvents, "
+    "IncidentRecoveryDetails, Incidents, IncidentSubCategories, Isos, JobTitles, "
+    "KriFunctions, KriProcesses, KriRisks, Kris, KriUsers, KriValues, NistCats, NistSubs, "
+    "Processes, PublicSurveyFunctions, PublicSurveys, PublicSurveyUsers, RecoverySources, "
+    "RemediationActivities, RemediationComments, RemediationCompliances, Remediations, "
+    "RemediationTasks, ResidualRiskRatings, Residualrisks, RiskCategories, RiskControls, "
+    "RiskFunctions, RiskIncidents, RiskInherentImpacts, RiskProcesses, "
+    "RiskResidualAssessments, Risks, RootCauses, Sectors, StatementCategories, "
+    "SubBusinessUnits, SubFunctions, SubProcesses, survey_assessment, survey_impacted_area, "
+    "Systems"
+)
+
+
+def allowed_tables() -> set:
+    return {t.lower() for t in _csv(os.getenv("REPORTING_ALLOWED_TABLES", _DEFAULT_ALLOWED_TABLES))}
+
+
 def blocked_tables() -> set:
     return {t.lower() for t in _csv(os.getenv("REPORTING_BLOCKED_TABLES", _DEFAULT_BLOCKED_TABLES))}
 
@@ -41,12 +76,35 @@ def blocked_columns() -> Dict[str, set]:
 
 
 def is_blocked_table(name: str) -> bool:
-    return str(name).split(".")[-1].strip("[]").lower() in blocked_tables()
+    """Hidden from the builders: blocked, or not on the allow-list."""
+    table = str(name).split(".")[-1].strip("[]").lower()
+    return table in blocked_tables() or table not in allowed_tables()
 
 
 def visible_columns(table: str, columns: Sequence[str]) -> List[str]:
     hidden = blocked_columns().get(str(table).split(".")[-1].lower(), set())
     return [c for c in columns if str(c).lower() not in hidden]
+
+# Row caps so one request cannot pull a whole table into memory (REPORTING_MAX_ROWS overrides).
+PREVIEW_MAX_ROWS = 5000
+
+
+def max_report_rows() -> int:
+    try:
+        return max(1, int(os.getenv("REPORTING_MAX_ROWS", "50000")))
+    except ValueError:
+        return 50000
+
+
+def preview_row_limit(value) -> int:
+    """previewLimit from the client: default 1000 when missing or <= 0, at most PREVIEW_MAX_ROWS."""
+    try:
+        n = int(value) if value not in (None, "") else 1000
+    except (TypeError, ValueError):
+        n = 1000
+    if n <= 0:
+        n = 1000
+    return min(n, PREVIEW_MAX_ROWS)
 
 _SCHEMA_TTL = 300.0
 _schema_cache: Tuple[float, Dict[str, Tuple[str, str, Dict[str, str]]]] = (0.0, {})
@@ -84,10 +142,10 @@ def _load_schema(cursor) -> Dict[str, Tuple[str, str, Dict[str, str]]]:
         """
     )
     schema: Dict[str, Tuple[str, str, Dict[str, str]]] = {}
-    hidden_tables, hidden_cols = blocked_tables(), blocked_columns()
+    hidden_tables, hidden_cols, allowed = blocked_tables(), blocked_columns(), allowed_tables()
     for sch, tbl, col in cursor.fetchall():
-        if str(tbl).lower() in hidden_tables or str(col).lower() in hidden_cols.get(str(tbl).lower(), set()):
-            continue  # blocked: unknown to every builder
+        if str(tbl).lower() not in allowed or str(tbl).lower() in hidden_tables or str(col).lower() in hidden_cols.get(str(tbl).lower(), set()):
+            continue  # not allowed / blocked: unknown to every builder
         key = f"{sch}.{tbl}".lower()
         entry = schema.setdefault(key, (str(sch), str(tbl), {}))
         entry[2][str(col).lower()] = str(col)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import re
 import os
 import secrets
 from typing import Iterable, Sequence, Set
@@ -14,6 +15,16 @@ CSRF_HEADER_NAME = "x-csrf-token"
 # Enforce CSRF on state‑changing methods only.
 # OPTIONS, GET and HEAD are treated as safe so that reads and preflight can succeed.
 DEFAULT_SAFE_METHODS: Set[str] = {"OPTIONS", "GET", "HEAD"}
+
+# Except these GETs: a dashboard export writes a file and a saved-export row, so it is not a
+# read. They need the token whenever the browser's login cookie is what authenticates them
+# (server-to-server calls with a Bearer token carry no cookie a foreign page could ride on).
+STATE_CHANGING_GET = re.compile(r"^/api/grc/[^/]+/export[-/]")
+AUTH_COOKIE_PREFIXES = ("iframe_d_c_c_t_p", "d_c_c_t_p", "reporting_auth_token")
+
+
+def _cookie_authenticated(request: Request) -> bool:
+    return any(name.startswith(AUTH_COOKIE_PREFIXES) for name in request.cookies)
 
 
 def create_csrf_token() -> str:
@@ -44,7 +55,12 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         self.exempt_paths = tuple(exempt_paths or ())
 
     async def dispatch(self, request: Request, call_next):
-        if request.method.upper() in self.safe_methods:
+        method = request.method.upper()
+        if method in self.safe_methods and not (
+            method in ("GET", "HEAD")
+            and STATE_CHANGING_GET.match(request.url.path)
+            and _cookie_authenticated(request)
+        ):
             return await call_next(request)
 
         path = request.url.path

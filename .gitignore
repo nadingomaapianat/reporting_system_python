@@ -24,4 +24,11 @@ node_modules
 # local virtualenv
 venv/
 # runtime env (deploy team creates it from .env.bank); never commit
-.env
+
+# Generated at runtime - client data, never in git (templates in files/template stay tracked)
+/files/exports/
+/reports_export/
+/transaction/
+debug_log.txt
+# Offline wheels are rebuilt by download-offline-packages.* (already *.whl above)
+/python-packages-offline/

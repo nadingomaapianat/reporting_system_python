@@ -12,6 +12,7 @@ import sys
 from datetime import datetime
 
 from utils.jwt_context import set_request_jwt_claims
+from utils.export_utils import neutralize_formulas
 
 
 def write_debug(msg: str) -> None:
@@ -19,11 +20,18 @@ def write_debug(msg: str) -> None:
     from datetime import datetime
     timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
     msg_with_time = f"[{timestamp}] {msg}"
-    with open('debug_log.txt', 'a', encoding='utf-8') as f:
-        f.write(f"{msg_with_time}\n")
-        f.flush()
+    # Debug lines can hold full SQL and user ids: the file copy is opt-in (REPORTING_DEBUG_FILE=true).
+    if debug_file_enabled():
+        with open('debug_log.txt', 'a', encoding='utf-8') as f:
+            f.write(f"{msg_with_time}\n")
+            f.flush()
     sys.stderr.write(f"{msg_with_time}\n")
     sys.stderr.flush()
+
+
+def debug_file_enabled() -> bool:
+    import os
+    return os.getenv("REPORTING_DEBUG_FILE", "").strip().lower() in ("1", "true", "yes")
 
 
 def parse_header_config(headerConfig: Optional[str]) -> Dict[str, Any]:
@@ -85,7 +93,8 @@ def extract_user_and_function_params(request: Any) -> tuple[Optional[str], Optio
         # Node signs { id }; some JWTs use sub only
         _uid = user.get("id") or user.get("sub")
         user_id = str(_uid).strip() if _uid is not None and str(_uid).strip() else None
-        group_name = user.get('group') or user.get('groupName') or None
+        # The main backend signs group = the group's id and groupName = its name; roles need the name.
+        group_name = user.get('groupName') or user.get('group') or None
 
     # When export is proxied through Node, user context is sent via headers (no JWT on Python)
     if not user_id and hasattr(request, 'headers'):
@@ -1308,6 +1317,7 @@ def generate_excel_report(columns, data_rows, header_config=None):
     output = BytesIO()
     try:
         # Save workbook (keep_vba parameter is not available in all openpyxl versions)
+        neutralize_formulas(wb)
         wb.save(output)
     except Exception as e:
         write_debug(f"Error saving workbook: {e}")

@@ -9,6 +9,7 @@ from utils.dynamic_query import (
     condition_sql,
     join_type,
     params_or_none,
+    preview_row_limit,
 )
 from utils.export_utils import hide_id_fields
 
@@ -121,7 +122,7 @@ async def save_dynamic_dashboard_chart(request: Request):
         print(f"[save-chart] ERROR: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
         traceback.print_exc()
         logger.exception("save-chart: %s", e)
-        raise HTTPException(status_code=500, detail=f"Failed to save chart: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to save chart")
 
 
 @router.post("/api/reports/dynamic/preview")
@@ -137,7 +138,7 @@ async def preview_dynamic_report(request: Request):
         columns = body.get('columns', [])
         where_conditions = body.get('whereConditions', [])
         time_filter = body.get('timeFilter')
-        preview_limit = int(body.get('previewLimit') or 1000)
+        preview_limit = preview_row_limit(body.get('previewLimit'))
 
         if not tables or not columns:
             raise HTTPException(status_code=400, detail="Tables and columns are required")
@@ -151,7 +152,7 @@ async def preview_dynamic_report(request: Request):
                 raise HTTPException(status_code=400, detail=str(e))
             cursor.execute(sql_query, sql_params)
             # Fetch limited number of rows for preview
-            rows = cursor.fetchmany(preview_limit) if preview_limit > 0 else cursor.fetchall()
+            rows = cursor.fetchmany(preview_limit)
 
             json_rows = []
             for row in rows:
@@ -172,7 +173,7 @@ async def preview_dynamic_report(request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to preview dynamic report: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to preview dynamic report")
 
 
 def build_dynamic_sql_query(cursor, tables, joins, columns, where_conditions, time_filter):

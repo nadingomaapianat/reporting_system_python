@@ -216,7 +216,7 @@ async def export_risks_pdf(
         )
     except Exception as e:
         write_debug(f"[RISKS PDF] Export failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Export failed")
 
 @router.get("/api/grc/risks/export-excel")
 async def export_risks_excel(
@@ -384,4 +384,4 @@ async def export_risks_excel(
             }
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Export failed")

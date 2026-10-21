@@ -274,7 +274,7 @@ async def export_controls_pdf(
         write_debug(f"Error during export_controls_pdf: {str(e)}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Export failed")
 
 
 @router.get("/api/grc/controls/export-excel")
@@ -464,5 +464,5 @@ async def export_controls_excel(
         )
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Export failed")
 

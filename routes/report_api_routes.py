@@ -30,6 +30,7 @@ from routes.route_utils import (
     extract_user_and_function_params
 )
 from utils.pymssql_params import normalize_params
+from utils.dynamic_query import max_report_rows
 
 # Initialize services
 api_service = APIService()
@@ -49,6 +50,41 @@ router = APIRouter()
 
 
 
+
+
+def _may_access_export(cursor, request: Request, created_by) -> bool:
+    """
+    Same visibility as /api/exports/recent: super admins see every export; anyone else
+    only exports created by themselves or by users who share one of their functions.
+    """
+    from utils.reporting_access import is_reporting_admin
+    from utils.jwt_context import get_request_jwt_claims
+
+    user_id, group_name, _ = extract_user_and_function_params(request)
+    user_id = str(user_id).strip() if user_id else ""
+    if not user_id:
+        return False
+    if is_reporting_admin(user_id, group_name, get_request_jwt_claims()):
+        return True
+    owner = str(created_by).strip() if created_by else ""
+    if not owner:
+        return False
+    if owner == user_id:
+        return True
+    cursor.execute(
+        """
+        SELECT TOP 1 1
+        FROM dbo.UserFunction mine
+        JOIN dbo.UserFunction theirs
+          ON LTRIM(RTRIM(theirs.functionId)) = LTRIM(RTRIM(mine.functionId))
+        JOIN dbo.Functions f ON LTRIM(RTRIM(f.id)) = LTRIM(RTRIM(mine.functionId))
+        WHERE mine.userId = %s AND theirs.userId = %s
+          AND mine.deletedAt IS NULL AND theirs.deletedAt IS NULL
+          AND f.isDeleted = 0 AND f.deletedAt IS NULL
+        """,
+        (user_id, owner),
+    )
+    return cursor.fetchone() is not None
 
 
 @router.get("/api/exports/recent")
@@ -307,16 +343,16 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
         return {"success": False, "error": "Request failed. Please try again later.", "exports": [], "pagination": {}}
 
 @router.delete("/api/exports/{export_id}")
-async def delete_export(export_id: int):
+async def delete_export(export_id: int, request: Request):
     """Delete an export row and its file if present"""
     try:
         from config import get_db_connection
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT src FROM dbo.report_exports WHERE id = %s", (export_id,))
+            cursor.execute("SELECT src, created_by_user_id FROM dbo.report_exports WHERE id = %s", (export_id,))
             row = cursor.fetchone()
-            if not row:
+            if not row or not _may_access_export(cursor, request, row[1]):
                 raise HTTPException(status_code=404, detail="Export not found")
             src = row[0]
 
@@ -328,16 +364,18 @@ async def delete_export(export_id: int):
             if src:
                 try:
                     import os
-                    file_path = os.path.realpath(src if os.path.isabs(src) else os.path.join(os.getcwd(), src))
-                    # Only files inside the export folders are ever removed (src may come from the client)
+                    # Only files inside the export folders are ever removed (src may come from the client).
+                    # Resolved from the app folder, the same way download_export finds the file.
                     base_dir = os.path.dirname(os.path.dirname(__file__))
+                    file_path = os.path.realpath(os.path.join(base_dir, src))
                     export_roots = [os.path.realpath(os.path.join(base_dir, d)) for d in ("reports_export", "transaction")]
                     if not any(file_path.startswith(root + os.sep) for root in export_roots):
                         return {"success": True, "deleted": True, "fileDeleted": False}
                     if os.path.exists(file_path):
                         os.remove(file_path)
                 except Exception as fe:
-                    return {"success": True, "deleted": True, "fileDeleted": False, "warning": str(fe)}
+                    write_debug(f"[Reports] export file delete failed: {fe}")
+                    return {"success": True, "deleted": True, "fileDeleted": False}
 
             return {"success": True, "deleted": True, "fileDeleted": True}
         finally:
@@ -374,7 +412,7 @@ async def generate_dynamic_report(request: Request):
             cursor = conn.cursor()
         except Exception as db_err:
             write_debug(f"[Dynamic Report] Database connection failed: {str(db_err)}")
-            raise HTTPException(status_code=500, detail=f"Database connection failed: {str(db_err)}")
+            raise HTTPException(status_code=500, detail="Database connection failed")
 
         try:
             # Build SQL query (names checked against the schema, values bound as parameters)
@@ -385,7 +423,7 @@ async def generate_dynamic_report(request: Request):
                 write_debug(f"[Dynamic Report] SQL query build failed: {str(sql_err)}")
                 raise HTTPException(status_code=400, detail=f"Failed to build SQL query: {str(sql_err)}")
             cursor.execute(sql_query, sql_params)
-            rows = cursor.fetchall()
+            rows = cursor.fetchmany(max_report_rows())
             write_debug(f"[Dynamic Report] Query executed, fetched {len(rows)} rows")
             
             # Convert to list of dicts keyed by column name
@@ -509,7 +547,7 @@ async def generate_dynamic_report(request: Request):
                 write_debug(f"[Dynamic Report] Report generation failed: {str(gen_err)}")
                 import traceback
                 write_debug(f"[Dynamic Report] Traceback: {traceback.format_exc()}")
-                raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(gen_err)}")
+                raise HTTPException(status_code=500, detail="Failed to generate report")
             
             # Save file and log to database
             try:
@@ -573,7 +611,7 @@ async def generate_dynamic_report(request: Request):
         write_debug(f"[Dynamic Report] Unexpected error: {str(e)}")
         import traceback
         write_debug(f"[Dynamic Report] Full traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate dynamic report: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate dynamic report")
 
 
 @router.get("/api/reports/dynamic-dashboard/charts")
@@ -661,7 +699,7 @@ async def delete_dynamic_dashboard_chart(chart_id: int):
 
 
 @router.get("/api/exports/{export_id}/download")
-async def download_export(export_id: int):
+async def download_export(export_id: int, request: Request):
     """Download a saved export file by ID"""
     try:
         from config import get_db_connection
@@ -670,9 +708,9 @@ async def download_export(export_id: int):
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT src, format FROM dbo.report_exports WHERE id = %s", (export_id,))
+            cursor.execute("SELECT src, format, created_by_user_id FROM dbo.report_exports WHERE id = %s", (export_id,))
             row = cursor.fetchone()
-            if not row:
+            if not row or not _may_access_export(cursor, request, row[2]):
                 raise HTTPException(status_code=404, detail="Export not found")
             
             src = row[0]
@@ -714,7 +752,8 @@ async def download_export(export_id: int):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to download export: {str(e)}")
+        write_debug(f"[Reports] export download failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to download export")
 
 
 @router.post("/api/reports/schedule")
@@ -760,7 +799,7 @@ async def save_report_schedule(request: Request):
             conn.close()
             
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save schedule: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to save schedule")
 
 
 

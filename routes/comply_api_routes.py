@@ -200,7 +200,7 @@ async def export_comply_pdf(
         import traceback
 
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Export failed") from e
 
 
 @router.api_route("/api/grc/comply/export-excel", methods=["GET", "POST"])
@@ -316,4 +316,4 @@ async def export_comply_excel(
         import traceback
 
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Export failed") from e

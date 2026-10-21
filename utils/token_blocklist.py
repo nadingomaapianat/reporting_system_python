@@ -53,7 +53,8 @@ def is_token_blocked(token: Optional[str]) -> bool:
             except Exception:
                 pass
     except Exception as e:
+        # Fail closed: if revocation cannot be checked, the token is not trusted.
         logger.warning(
-            "[Python Auth][Blocklist] DB query failed (allowing token through): %s", e
+            "[Python Auth][Blocklist] DB query failed (rejecting token): %s", e
         )
-        return False
+        return True

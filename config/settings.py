@@ -23,12 +23,12 @@ _db_connect_timeout = max(5, min(120, int(os.getenv('DB_CONNECT_TIMEOUT', '10'))
 
 # database: MUST match reporting_system_node DB_NAME for GRC exports; otherwise UI (Node) and exports (Python) read different DBs.
 DATABASE_CONFIG = {
-    'server': _db_host or '206.189.57.0',
+    'server': _db_host,
     'port': _db_port or '1433',
     'database': _db_name or 'NEWDCC-V4-UAT',
     'domain': _db_domain,
-    'username': _db_username or 'SA',
-    'password': _db_password or 'Nothing_159',
+    'username': _db_username,
+    'password': _db_password,
     'driver': os.getenv('DB_DRIVER', 'ODBC Driver 18 for SQL Server'),
     'trusted_connection': 'yes' if _use_windows_auth else 'no',
     'encrypt': 'yes',

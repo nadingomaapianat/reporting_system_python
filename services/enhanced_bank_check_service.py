@@ -2,6 +2,7 @@
 Enhanced Bank Check Service for Arabic/English check processing
 Extracts data using webhook and generates formatted Excel/Word reports
 """
+from utils.export_utils import neutralize_formulas
 import os
 import json
 import httpx
@@ -245,6 +246,7 @@ class EnhancedBankCheckService:
 
         # Save to bytes
         buffer = BytesIO()
+        neutralize_formulas(wb)
         wb.save(buffer)
         return buffer.getvalue()
 

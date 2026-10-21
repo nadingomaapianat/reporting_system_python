@@ -405,3 +405,16 @@ __all__ = [
     'get_overdue_incidents_label',
     'get_overdue_incidents_cell_value',
 ]
+
+
+def neutralize_formulas(wb) -> None:
+    """
+    Store every cell openpyxl would write as a formula (a string starting with "=") as plain
+    text instead. Exports hold database values, never formulas, so a value such as
+    "=HYPERLINK(...)" must not run when the user opens the file. Call right before wb.save().
+    """
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.data_type == "f":
+                    cell.data_type = "s"

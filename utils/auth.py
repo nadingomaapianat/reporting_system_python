@@ -366,10 +366,13 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
                         "message": "Session has been revoked. Please sign in again.",
                     },
                 )
-        except Exception:
-            # Fail-open on unexpected errors so DB blip does not lock everyone out;
-            # `is_token_blocked` already swallows DB errors with a warning.
-            pass
+        except Exception as e:
+            # Fail closed: a token whose revocation cannot be checked is refused.
+            _auth_log(f"401 path={request.url.path} method={request.method} -> reason: blocklist_check_failed ({e})")
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"success": False, "message": "Session has ended. Please sign in again."},
+            )
 
         # Follow the main app's session: reporting's own 2h JWT survives an admin force-logout
         # or a logout in another browser, so tie it to the shared Users.isSessionActive flag.
@@ -391,9 +394,13 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
                         "message": "Session has ended. Please sign in again.",
                     },
                 )
-        except Exception:
-            # Fail-open on unexpected errors; is_user_session_active already swallows DB errors.
-            pass
+        except Exception as e:
+            # Fail closed: a session that cannot be checked is refused.
+            _auth_log(f"401 path={request.url.path} method={request.method} -> reason: session_check_failed ({e})")
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"success": False, "message": "Session has ended. Please sign in again."},
+            )
 
         request.state.user = payload
         set_request_jwt_claims(payload)
