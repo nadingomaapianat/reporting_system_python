@@ -1,0 +1,134 @@
+Defaulting to user installation because normal site-packages is not writeable
+Collecting fastapi==0.104.1 (from -r requirements.txt (line 1))
+  Using cached fastapi-0.104.1-py3-none-any.whl.metadata (24 kB)
+Collecting uvicorn==0.24.0 (from uvicorn[standard]==0.24.0->-r requirements.txt (line 2))
+  Using cached uvicorn-0.24.0-py3-none-any.whl.metadata (6.4 kB)
+Collecting pandas==2.1.4 (from -r requirements.txt (line 3))
+  Using cached pandas-2.1.4.tar.gz (4.3 MB)
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Installing backend dependencies: started
+  Installing backend dependencies: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): still running...
+  Preparing metadata (pyproject.toml): finished with status 'error'
+  error: subprocess-exited-with-error
+  
+  Preparing metadata (pyproject.toml) did not run successfully.
+  exit code: 2
+  
+  [98 lines of output]
+  + meson setup C:\Users\HP\AppData\Local\Temp\pip-install-ph6lxbms\pandas_10ead3b627f541b593fd514f7b8c2b26 C:\Users\HP\AppData\Local\Temp\pip-install-ph6lxbms\pandas_10ead3b627f541b593fd514f7b8c2b26\.mesonpy-teko5pq8\build -Dbuildtype=release -Db_ndebug=if-release -Db_vscrt=md --vsenv --native-file=C:\Users\HP\AppData\Local\Temp\pip-install-ph6lxbms\pandas_10ead3b627f541b593fd514f7b8c2b26\.mesonpy-teko5pq8\build\meson-python-native-file.ini
+  The Meson build system
+  Version: 1.2.1
+  Source dir: C:\Users\HP\AppData\Local\Temp\pip-install-ph6lxbms\pandas_10ead3b627f541b593fd514f7b8c2b26
+  Build dir: C:\Users\HP\AppData\Local\Temp\pip-install-ph6lxbms\pandas_10ead3b627f541b593fd514f7b8c2b26\.mesonpy-teko5pq8\build
+  Build type: native build
+  Project name: pandas
+  Project version: 2.1.4
+  Activating VS 17.14.20
+  C compiler for the host machine: cl (msvc 19.44.35220 "Microsoft (R) C/C++ Optimizing Compiler Version 19.44.35220 for x64")
+  C linker for the host machine: link link 14.44.35220.0
+  C++ compiler for the host machine: cl (msvc 19.44.35220 "Microsoft (R) C/C++ Optimizing Compiler Version 19.44.35220 for x64")
+  C++ linker for the host machine: link link 14.44.35220.0
+  Cython compiler for the host machine: cython (cython 0.29.37)
+  Host machine cpu family: x86_64
+  Host machine cpu: x86_64
+  Program python found: YES (C:\Python314\python.exe)
+  Run-time dependency python found: YES 3.14
+  Build targets in project: 53
+  
+  pandas 2.1.4
+  
+    User defined options
+      Native files: C:\Users\HP\AppData\Local\Temp\pip-install-ph6lxbms\pandas_10ead3b627f541b593fd514f7b8c2b26\.mesonpy-teko5pq8\build\meson-python-native-file.ini
+      buildtype   : release
+      vsenv       : True
+      b_ndebug    : if-release
+      b_vscrt     : md
+  
+  Found ninja.EXE-1.13.2.git.kitware.jobserver-pipe-1 at C:\Users\HP\AppData\Local\Temp\pip-build-env-ahy0fq79\normal\Scripts\ninja.EXE
+  
+  Visual Studio environment is needed to run Ninja. It is recommended to use Meson wrapper:
+  C:\Users\HP\AppData\Local\Temp\pip-build-env-ahy0fq79\overlay\Scripts\meson compile -C .
+  + meson compile
+  [1/151] Generating pandas/_libs/khash_primitive_helper_pxi with a custom command
+  [2/151] Generating pandas/_libs/algos_common_helper_pxi with a custom command
+  [3/151] Generating pandas/_libs/algos_take_helper_pxi with a custom command
+  [4/151] Generating pandas/_libs/intervaltree_helper_pxi with a custom command
+  [5/151] Generating pandas/_libs/hashtable_class_helper_pxi with a custom command
+  [6/151] Generating pandas/_libs/hashtable_func_helper_pxi with a custom command
+  [7/151] Generating pandas/_libs/sparse_op_helper_pxi with a custom command
+  [8/151] Generating pandas/_libs/index_class_helper_pxi with a custom command
+  [9/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslibs/base.pyx
+  [10/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslibs/ccalendar.pyx
+  [11/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslibs/nattype.pyx
+  [12/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslibs/dtypes.pyx
+  [13/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslibs/np_datetime.pyx
+  [14/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslibs/fields.pyx
+  [15/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslibs/conversion.pyx
+  [16/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslibs/parsing.pyx
+  [17/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslibs/offsets.pyx
+  [18/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslibs/period.pyx
+  [19/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslibs/strptime.pyx
+  [20/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslibs/timezones.pyx
+  [21/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslibs/tzconversion.pyx
+  [22/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslibs/timestamps.pyx
+  [23/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslibs/timedeltas.pyx
+  [24/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/arrays.pyx
+  [25/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslibs/vectorized.pyx
+  [26/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/indexing.pyx
+  [27/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/hashing.pyx
+  [28/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/internals.pyx
+  [29/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/missing.pyx
+  [30/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/index.pyx
+  [31/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/ops_dispatch.pyx
+  [32/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/lib.pyx
+  [33/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/parsers.pyx
+  [34/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/properties.pyx
+  [35/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/ops.pyx
+  [36/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/interval.pyx
+  [37/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/byteswap.pyx
+  [38/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/algos.pyx
+  [39/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/sas.pyx
+  [40/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/testing.pyx
+  [41/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/groupby.pyx
+  [42/151] Compiling C object pandas/_libs/tslibs/base.cp314-win_amd64.pyd.p/meson-generated_pandas__libs_tslibs_base.pyx.c.obj
+  FAILED: [code=2] pandas/_libs/tslibs/base.cp314-win_amd64.pyd.p/meson-generated_pandas__libs_tslibs_base.pyx.c.obj
+  "cl" "-Ipandas\_libs\tslibs\base.cp314-win_amd64.pyd.p" "-Ipandas\_libs\tslibs" "-I..\..\pandas\_libs\tslibs" "-I..\..\..\..\pip-build-env-ahy0fq79\overlay\Lib\site-packages\numpy\core\include" "-I..\..\pandas\_libs\include" "-IC:\Python314\Include" "-DNDEBUG" "/MD" "/nologo" "/showIncludes" "/utf-8" "-w" "/O2" "/Gw" "-DNPY_NO_DEPRECATED_API=0" "-DNPY_TARGET_VERSION=NPY_1_21_API_VERSION" "/Fdpandas\_libs\tslibs\base.cp314-win_amd64.pyd.p\meson-generated_pandas__libs_tslibs_base.pyx.c.pdb" /Fopandas/_libs/tslibs/base.cp314-win_amd64.pyd.p/meson-generated_pandas__libs_tslibs_base.pyx.c.obj "/c" pandas/_libs/tslibs/base.cp314-win_amd64.pyd.p/pandas/_libs/tslibs/base.pyx.c
+  pandas/_libs/tslibs/base.cp314-win_amd64.pyd.p/pandas/_libs/tslibs/base.pyx.c(5397): error C2198: 'int _PyLong_AsByteArray(PyLongObject *,unsigned char *,size_t,int,int,int)': too few arguments for call
+  pandas/_libs/tslibs/base.cp314-win_amd64.pyd.p/pandas/_libs/tslibs/base.pyx.c(5631): error C2198: 'int _PyLong_AsByteArray(PyLongObject *,unsigned char *,size_t,int,int,int)': too few arguments for call
+  [43/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/reshape.pyx
+  [44/151] Compiling C object pandas/_libs/tslibs/ccalendar.cp314-win_amd64.pyd.p/meson-generated_pandas__libs_tslibs_ccalendar.pyx.c.obj
+  FAILED: [code=2] pandas/_libs/tslibs/ccalendar.cp314-win_amd64.pyd.p/meson-generated_pandas__libs_tslibs_ccalendar.pyx.c.obj
+  "cl" "-Ipandas\_libs\tslibs\ccalendar.cp314-win_amd64.pyd.p" "-Ipandas\_libs\tslibs" "-I..\..\pandas\_libs\tslibs" "-I..\..\..\..\pip-build-env-ahy0fq79\overlay\Lib\site-packages\numpy\core\include" "-I..\..\pandas\_libs\include" "-IC:\Python314\Include" "-DNDEBUG" "/MD" "/nologo" "/showIncludes" "/utf-8" "-w" "/O2" "/Gw" "-DNPY_NO_DEPRECATED_API=0" "-DNPY_TARGET_VERSION=NPY_1_21_API_VERSION" "/Fdpandas\_libs\tslibs\ccalendar.cp314-win_amd64.pyd.p\meson-generated_pandas__libs_tslibs_ccalendar.pyx.c.pdb" /Fopandas/_libs/tslibs/ccalendar.cp314-win_amd64.pyd.p/meson-generated_pandas__libs_tslibs_ccalendar.pyx.c.obj "/c" pandas/_libs/tslibs/ccalendar.cp314-win_amd64.pyd.p/pandas/_libs/tslibs/ccalendar.pyx.c
+  pandas/_libs/tslibs/ccalendar.cp314-win_amd64.pyd.p/pandas/_libs/tslibs/ccalendar.pyx.c(7376): error C2198: 'int _PyLong_AsByteArray(PyLongObject *,unsigned char *,size_t,int,int,int)': too few arguments for call
+  pandas/_libs/tslibs/ccalendar.cp314-win_amd64.pyd.p/pandas/_libs/tslibs/ccalendar.pyx.c(7686): error C2198: 'int _PyLong_AsByteArray(PyLongObject *,unsigned char *,size_t,int,int,int)': too few arguments for call
+  [45/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/join.pyx
+  [46/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/hashtable.pyx
+  [47/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/tslib.pyx
+  [48/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/writers.pyx
+  [49/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/window/indexers.pyx
+  [50/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/window/aggregations.pyx
+  [51/151] Compiling Cython source C:/Users/HP/AppData/Local/Temp/pip-install-ph6lxbms/pandas_10ead3b627f541b593fd514f7b8c2b26/pandas/_libs/sparse.pyx
+  ninja: build stopped: subcommand failed.
+  Activating VS 17.14.20
+  INFO: automatically activated MSVC compiler environment
+  INFO: autodetecting backend as ninja
+  INFO: calculating backend command to run: C:\Users\HP\AppData\Local\Temp\pip-build-env-ahy0fq79\normal\Scripts\ninja.EXE
+  [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+
+[notice] A new release of pip is available: 25.2 -> 26.2.2
+[notice] To update, run: python.exe -m pip install --upgrade pip
+error: metadata-generation-failed
+
+Encountered error while generating package metadata.
+
+See above for output.
+
+note: This is an issue with the package mentioned above, not pip.
+hint: See above for details.
