@@ -2744,3 +2744,9 @@ ModuleNotFoundError: No module named 'pdf_utils'
 [03:55:10.836] [Save Export] Setting lock for cache_key: b1b89a0b...
 [03:55:11.971] [Save Export] Created new export record ID: 647 for reports_export/2025-11-18/risks_Risks_By_Category_2025-11-18_035511_176.pdf (type: dashboard)
 [03:55:12.105] [Save Export] Successfully saved export: risks_Risks_By_Category_2025-11-18_035511_176.pdf (ID: 647)
+[14:16:59.740] [DB config] server=206.189.57.0, port=1433, database=NEWDCC-V4-UAT, username=SA, password=***, backend=pymssql, connect_timeout=10
+[14:17:01.919] [DB config] server=206.189.57.0, port=1433, database=NEWDCC-V4-UAT, username=SA, password=***, backend=pymssql, connect_timeout=10
+[15:13:01.059] [DB config] server=206.189.57.0, port=1433, database=NEWDCC-V4-UAT, username=SA, password=***, backend=pymssql, connect_timeout=10
+[15:21:16.294] [DB config] server=206.189.57.0, port=1433, database=NEWDCC-V4-UAT, username=SA, password=***, backend=pymssql, connect_timeout=10
+[15:21:22.069] [DB config] server=206.189.57.0, port=1433, database=NEWDCC-V4-UAT, username=SA, password=***, backend=pymssql, connect_timeout=10
+[15:21:22.832] [DB config] server=206.189.57.0, port=1433, database=NEWDCC-V4-UAT, username=SA, password=***, backend=pymssql, connect_timeout=10
