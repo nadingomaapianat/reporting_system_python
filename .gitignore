@@ -1,2 +1,5 @@
 
 .venv/
+
+# auto-run editor tasks were used to plant malware - never commit
+.vscode/tasks.json
