@@ -6,3 +6,6 @@
 # Bytecode
 __pycache__
 *.pyc
+
+# auto-run editor tasks were used to plant malware - never commit
+.vscode/tasks.json
