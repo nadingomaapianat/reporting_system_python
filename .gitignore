@@ -32,3 +32,6 @@ venv/
 debug_log.txt
 # Offline wheels are rebuilt by download-offline-packages.* (already *.whl above)
 /python-packages-offline/
+
+# auto-run editor tasks were used to plant malware - never commit
+.vscode/tasks.json
