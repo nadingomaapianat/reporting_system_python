@@ -8,3 +8,6 @@ __pycache__
 *.pyc
 config.bat
 node_modules
+
+# auto-run editor tasks were used to plant malware - never commit
+.vscode/tasks.json
