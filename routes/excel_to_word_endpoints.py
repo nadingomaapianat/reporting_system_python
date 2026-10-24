@@ -2119,20 +2119,39 @@ def _insert_table_with_smart_merging(doc, ws, start_row, end_row, start_col_idx,
     return table
 
 
+# Template / disclosure folders are flat and only hold Word files (same list as the listing endpoints).
+_WORD_FILE_EXTENSIONS = {".docx", ".doc", ".dotx"}
+
+
+def _safe_word_file(folder: str, filename: str) -> Optional[str]:
+    """Path of `filename` inside `folder`, or None if it is not a plain Word file name there.
+
+    The route already decodes the path segment; decoding again let encoded "../" through,
+    so only a bare file name (no separators, no leading dot) with a Word extension is accepted.
+    """
+    name = urllib.parse.unquote(filename)
+    if not name or name != os.path.basename(name) or "\\" in name or name.startswith("."):
+        return None
+    if os.path.splitext(name)[1].lower() not in _WORD_FILE_EXTENSIONS:
+        return None
+    root = os.path.realpath(folder)
+    path = os.path.realpath(os.path.join(root, name))
+    if os.path.dirname(path) != root or not os.path.isfile(path):
+        return None
+    return path
+
+
 @router.get("/api/reports/files/templates/download/{filename}")
 async def download_template_file(filename: str):
     """Download a template file."""
     try:
-        # URL decode the filename to handle spaces and special characters
-        decoded_filename = urllib.parse.unquote(filename)
-        project_root = get_project_root()
-        templates_dir = os.path.join(project_root, "files", "template")
-        file_path = os.path.join(templates_dir, decoded_filename)
-        
-        if not os.path.exists(file_path):
+        file_path = _safe_word_file(os.path.join(get_project_root(), "files", "template"), filename)
+        if not file_path:
             raise HTTPException(status_code=404, detail="File not found")
         
-        return FileResponse(file_path, filename=filename)
+        return FileResponse(file_path, filename=os.path.basename(file_path))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error downloading template file {filename}: {e}")
         raise HTTPException(status_code=500, detail="Failed to download file")
@@ -2141,16 +2160,13 @@ async def download_template_file(filename: str):
 async def download_disclosure_file(filename: str):
     """Download a disclosure file."""
     try:
-        # URL decode the filename to handle spaces and special characters
-        decoded_filename = urllib.parse.unquote(filename)
-        project_root = get_project_root()
-        disclosures_dir = os.path.join(project_root, "files", "disclosures")
-        file_path = os.path.join(disclosures_dir, decoded_filename)
-        
-        if not os.path.exists(file_path):
+        file_path = _safe_word_file(os.path.join(get_project_root(), "files", "disclosures"), filename)
+        if not file_path:
             raise HTTPException(status_code=404, detail="File not found")
         
-        return FileResponse(file_path, filename=filename)
+        return FileResponse(file_path, filename=os.path.basename(file_path))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error downloading disclosure file {filename}: {e}")
         raise HTTPException(status_code=500, detail="Failed to download file")
@@ -2159,13 +2175,8 @@ async def download_disclosure_file(filename: str):
 async def delete_template_file(filename: str):
     """Delete a template file."""
     try:
-        # URL decode the filename to handle spaces and special characters
-        decoded_filename = urllib.parse.unquote(filename)
-        project_root = get_project_root()
-        templates_dir = os.path.join(project_root, "files", "template")
-        file_path = os.path.join(templates_dir, decoded_filename)
-        
-        if not os.path.exists(file_path):
+        file_path = _safe_word_file(os.path.join(get_project_root(), "files", "template"), filename)
+        if not file_path:
             raise HTTPException(status_code=404, detail="File not found")
         
         os.remove(file_path)
@@ -2182,13 +2193,8 @@ async def delete_template_file(filename: str):
 async def delete_disclosure_file(filename: str):
     """Delete a disclosure file."""
     try:
-        # URL decode the filename to handle spaces and special characters
-        decoded_filename = urllib.parse.unquote(filename)
-        project_root = get_project_root()
-        disclosures_dir = os.path.join(project_root, "files", "disclosures")
-        file_path = os.path.join(disclosures_dir, decoded_filename)
-        
-        if not os.path.exists(file_path):
+        file_path = _safe_word_file(os.path.join(get_project_root(), "files", "disclosures"), filename)
+        if not file_path:
             raise HTTPException(status_code=404, detail="File not found")
         
         os.remove(file_path)
