@@ -446,6 +446,19 @@ async def extract_excel_headers(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Header extraction failed: {str(e)}")
 
+# The enhanced bank-check feature only works with these tables. The insert endpoint used to
+# accept any table name, so a user could write rows into any table (e.g. permissions).
+BANK_CHECK_TABLES = ("bank_checks", "customer_records")
+
+
+def _bank_check_table(name) -> Optional[str]:
+    """Canonical bank-check table name, or None if `name` is not one of BANK_CHECK_TABLES."""
+    n = ('' if name is None else str(name)).strip().lower()
+    if n.startswith('dbo.'):
+        n = n[4:]
+    return n if n in BANK_CHECK_TABLES else None
+
+
 @router.post("/api/reports/enhanced-bank-check/insert")
 async def insert_check_record(
     request: Request
@@ -456,7 +469,12 @@ async def insert_check_record(
         
         body = await request.json()
         record = body.get('record', {})
-        table_name = body.get('table_name', 'bank_checks')
+        table_name = _bank_check_table(body.get('table_name', 'bank_checks'))
+        if not table_name:
+            return {
+                "success": False,
+                "error": f"Records can only be inserted into: {', '.join(BANK_CHECK_TABLES)}"
+            }
         
         if not record:
             return {
@@ -487,7 +505,8 @@ async def insert_check_record(
             
             # Prepare insert statement
             column_names = [col[0] for col in columns]
-            placeholders = ', '.join(['?' for _ in column_names])
+            from routes.route_utils import _sql_placeholder
+            placeholders = ', '.join([_sql_placeholder() for _ in column_names])
             column_list = ', '.join([f'[{col}]' for col in column_names])
             
             insert_query = f"""
@@ -603,11 +622,13 @@ async def get_database_tables():
                     TABLE_NAME,
                     TABLE_TYPE
                 FROM INFORMATION_SCHEMA.TABLES 
-                WHERE TABLE_TYPE = 'BASE TABLE'
+                WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = 'dbo'
+                  AND TABLE_NAME IN (%s, %s)
                 ORDER BY TABLE_SCHEMA, TABLE_NAME;
             """
             
-            cursor.execute(tables_query)
+            # Only the bank-check tables, not every table/column in the database.
+            cursor.execute(tables_query, BANK_CHECK_TABLES)
             tables_result = cursor.fetchall()
             
             tables = []
@@ -736,6 +757,12 @@ async def check_table_exists(request: Request):
                 "success": False,
                 "error": "Table name is required"
             }
+        if not _bank_check_table(table_name):
+            return {
+                "success": False,
+                "error": f"Only these tables can be checked: {', '.join(BANK_CHECK_TABLES)}"
+            }
+        table_name = _bank_check_table(table_name)
         
         # Use existing SQL Server connection
         conn = get_db_connection()
