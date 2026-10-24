@@ -5,7 +5,7 @@ import logging
 import traceback
 from config import get_db_connection
 from utils.export_utils import get_default_header_config, filter_export_columns_rows
-from routes.route_utils import build_dynamic_sql_query
+from routes.route_utils import build_dynamic_sql_query, is_report_table_allowed, is_report_column_allowed
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -38,10 +38,13 @@ async def list_dynamic_tables():
             rows = cursor.fetchall()
 
             # Preserve table order (rows are already ordered by TABLE_NAME).
+            # Only tables/columns the report policy allows (see route_utils).
             tables_map = {}
             for r in rows:
                 table_name = str(r[0])
                 column_name = str(r[1])
+                if not is_report_table_allowed(table_name) or not is_report_column_allowed(column_name):
+                    continue
                 if table_name not in tables_map:
                     tables_map[table_name] = []
                 tables_map[table_name].append(column_name)
@@ -91,6 +94,12 @@ async def save_dynamic_dashboard_chart(request: Request):
             "yKey": body.get("yKey"),
             "visibleColumns": body.get("visibleColumns") or [],
         }
+        # Reject charts on tables/columns the report policy does not allow.
+        try:
+            build_dynamic_sql_query(config["tables"], config["joins"], config["columns"],
+                                    config["whereConditions"], config["timeFilter"])
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -184,7 +193,8 @@ async def preview_dynamic_report(request: Request):
         columns = body.get('columns', [])
         where_conditions = body.get('whereConditions', [])
         time_filter = body.get('timeFilter')
-        preview_limit = int(body.get('previewLimit') or 1000)
+        # Capped: a client value of 0 or less used to return every row.
+        preview_limit = min(max(int(body.get('previewLimit') or 1000), 1), 1000)
 
         if not tables or not columns:
             raise HTTPException(status_code=400, detail="Tables and columns are required")
@@ -218,6 +228,9 @@ async def preview_dynamic_report(request: Request):
             conn.close()
     except HTTPException:
         raise
+    except ValueError as e:
+        # Report policy / invalid configuration (e.g. a blocked table): client error, safe message.
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to preview dynamic report: {str(e)}")
 
@@ -298,6 +311,9 @@ async def generate_dynamic_report(request: Request):
             cursor.close()
             conn.close()
             
+    except ValueError as e:
+        # Report policy / invalid configuration (e.g. a blocked table): client error, safe message.
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         print(f"[DynamicReport] Error: {str(e)}")
         import traceback

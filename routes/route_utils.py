@@ -767,6 +767,54 @@ def _sql_placeholder() -> str:
     return '%s' if backend == 'pymssql' else '?'
 
 
+# --- Transaction Report builder access policy -------------------------------
+# Any logged-in user can build reports, so tables that hold credentials, sessions,
+# audit trails, permissions or reporting-system internals are never queryable, and
+# sensitive columns are refused on every table. Only dbo tables, no cross-database names.
+REPORT_BLOCKED_TABLES = frozenset(t.lower() for t in (
+    'blocked_tokens', 'iframe_entry_tokens', 'Targets', 'Groups', 'Pages',
+    'Notifications', 'SequelizeMeta', 'report_exports', 'scheduled_reports',
+    'dynamic_dashboard_charts', 'dashboard_activity',
+))
+REPORT_BLOCKED_TABLE_PREFIXES = ('icr_',)
+_SENSITIVE_COLUMN_RE = re.compile(
+    r'password|passwd|passcode|pwd|token|secret|salt|hash|api_?key|private_?key|(^|_)otp($|_)',
+    re.IGNORECASE,
+)
+
+
+def is_report_table_allowed(name) -> bool:
+    """True when a bare dbo table name may be used in the Transaction Report builder."""
+    t = ('' if name is None else str(name)).strip().lower()
+    return bool(t) and t not in REPORT_BLOCKED_TABLES and not t.startswith(REPORT_BLOCKED_TABLE_PREFIXES)
+
+
+def is_report_column_allowed(name) -> bool:
+    """True when a column may be selected/filtered/joined in the Transaction Report builder."""
+    c = ('' if name is None else str(name)).strip()
+    return bool(c) and not _SENSITIVE_COLUMN_RE.search(c)
+
+
+def _report_table(name) -> str:
+    """Bare table name after enforcing the policy ('Table' or 'dbo.Table' only)."""
+    s = ('' if name is None else str(name)).strip()
+    parts = [p.strip() for p in s.split('.')]
+    if len(parts) == 2 and parts[0].lower() == 'dbo':
+        parts = parts[1:]
+    if len(parts) != 1 or not parts[0]:
+        raise ValueError(f"Table {name!r} is not available for reports (only dbo tables)")
+    if not is_report_table_allowed(parts[0]):
+        raise ValueError(f"Table {parts[0]!r} is not available for reports")
+    return parts[0]
+
+
+def _report_column(name) -> str:
+    s = ('' if name is None else str(name)).strip()
+    if not is_report_column_allowed(s):
+        raise ValueError(f"Column {name!r} is not available for reports")
+    return s
+
+
 def _quote_ident(name) -> str:
     """
     Bracket-quote a single SQL Server identifier, escaping ']' as ']]'.
@@ -784,13 +832,8 @@ def _quote_qualified(name) -> str:
 
 
 def _quote_table(name) -> str:
-    """Quote a table name, defaulting to the dbo schema when unqualified."""
-    s = ('' if name is None else str(name)).strip()
-    if not s:
-        raise ValueError("Empty table name")
-    if '.' not in s:
-        s = f"dbo.{s}"
-    return _quote_qualified(s)
+    """Quote a table name as dbo.[Table] after the report access policy check."""
+    return f"[dbo].{_quote_ident(_report_table(name))}"
 
 
 def _column_ref(col, default_table) -> str:
@@ -799,8 +842,9 @@ def _column_ref(col, default_table) -> str:
     if not s:
         raise ValueError("Empty column name")
     if '.' in s:
-        return _quote_qualified(s)
-    return f"{_quote_ident(default_table)}.{_quote_ident(s)}"
+        table, _, column = s.rpartition('.')
+        return f"{_quote_ident(_report_table(table))}.{_quote_ident(_report_column(column))}"
+    return f"{_quote_ident(_report_table(default_table))}.{_quote_ident(_report_column(s))}"
 
 
 def build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filter):
@@ -822,11 +866,10 @@ def build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filte
     if not first_table:
         raise ValueError("At least one table is required")
 
-    # SELECT
-    if columns:
-        select_columns = ', '.join(_column_ref(c, first_table) for c in columns)
-    else:
-        select_columns = '*'
+    # SELECT (explicit columns only: "*" would bypass the column policy)
+    if not columns:
+        raise ValueError("Select at least one column")
+    select_columns = ', '.join(_column_ref(c, first_table) for c in columns)
     sql = f"SELECT {select_columns}"
 
     # FROM
@@ -842,8 +885,8 @@ def build_dynamic_sql_query(tables, joins, columns, where_conditions, time_filte
                 raise ValueError(f"Unsupported join type: {join.get('type')!r}")
             sql += (
                 f" {join_type} JOIN {_quote_table(right_t)} ON "
-                f"{_quote_table(left_t)}.{_quote_ident(left_c)} = "
-                f"{_quote_table(right_t)}.{_quote_ident(right_c)}"
+                f"{_quote_table(left_t)}.{_quote_ident(_report_column(left_c))} = "
+                f"{_quote_table(right_t)}.{_quote_ident(_report_column(right_c))}"
             )
 
     # WHERE

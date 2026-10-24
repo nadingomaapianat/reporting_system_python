@@ -614,6 +614,9 @@ async def generate_dynamic_report(request: Request):
             
     except HTTPException:
         raise
+    except ValueError as e:
+        # Report policy / invalid configuration (e.g. a blocked table): client error, safe message.
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         write_debug(f"[Dynamic Report] Unexpected error: {str(e)}")
         import traceback
