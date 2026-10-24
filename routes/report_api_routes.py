@@ -47,6 +47,13 @@ db_service = control_service
 # Create router
 router = APIRouter()
 
+# Export files live only under these project folders (see save_and_log_export in route_utils).
+_EXPORT_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_EXPORT_ROOTS = [
+    os.path.realpath(os.path.join(_EXPORT_BASE_DIR, d))
+    for d in ("reports_export", "transaction", os.path.join("files", "exports"))
+]
+
 
 
 
@@ -54,82 +61,46 @@ router = APIRouter()
 # -------------------------------
 # Export logging (Excel/PDF) APIs
 # -------------------------------
-@router.post("/api/exports/log")
-async def log_report_export(request: Request):
-    """Log an export (excel/pdf/word/zip) with title and src for later download listing."""
-    try:
-        from config import get_db_connection
+# POST /api/exports/log was removed: it stored a client-supplied file path ("src") that
+# download/delete later served or removed (arbitrary file read/delete). Exports are logged
+# server-side by save_and_log_export; no client called this endpoint.
 
-        body = await request.json()
-        title = (body.get("title") or "").strip() or "Untitled Report"
-        src = (body.get("src") or "").strip()
-        fmt = (body.get("format") or "").strip().lower() or "unknown"
-        dashboard = (body.get("dashboard") or "").strip() or "general"
+def _resolve_export_path(src):
+    """Absolute path of a stored export, or None if src points outside the export folders."""
+    if not src:
+        return None
+    path = os.path.realpath(os.path.join(_EXPORT_BASE_DIR, src))
+    for root in _EXPORT_ROOTS:
+        if path.startswith(root + os.sep):
+            return path
+    return None
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        try:
-            # Ensure table exists and has created_by column
-            cursor.execute(
-                """
-                IF NOT EXISTS (
-                  SELECT * FROM INFORMATION_SCHEMA.TABLES 
-                  WHERE TABLE_NAME = 'report_exports' AND TABLE_SCHEMA='dbo'
-                )
-                BEGIN
-                  CREATE TABLE dbo.report_exports (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    title NVARCHAR(255) NOT NULL,
-                    src NVARCHAR(1024) NULL,
-                    format NVARCHAR(20) NOT NULL,
-                    dashboard NVARCHAR(100) NULL,
-                    created_by NVARCHAR(255) NULL,
-                    created_at DATETIME2 DEFAULT GETDATE()
-                  )
-                END
-                """
-            )
-            conn.commit()
 
-            # Add created_by column if it doesn't exist (for existing tables)
-            try:
-                cursor.execute(
-                    """
-                    IF NOT EXISTS (
-                      SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
-                      WHERE TABLE_NAME = 'report_exports' AND COLUMN_NAME = 'created_by'
-                    )
-                    BEGIN
-                      ALTER TABLE dbo.report_exports ADD created_by NVARCHAR(255) NULL
-                    END
-                    """
-                )
-                conn.commit()
-            except Exception:
-                pass  # Column might already exist
+def _can_access_export(cursor, request, owner_id):
+    """Same visibility as /api/exports/recent: super admin, the owner, or a user sharing a function with the owner."""
+    user_id, group_name, _ = extract_user_and_function_params(request)
+    owner = str(owner_id).strip() if owner_id else ""
+    if not user_id:
+        return not owner  # legacy rows without an owner
+    user_id = str(user_id).strip()
+    if group_name == 'super_admin_' or owner == user_id:
+        return True
+    if not owner:
+        return False
+    cursor.execute(
+        """
+        SELECT TOP 1 1
+        FROM dbo.UserFunction a
+        JOIN dbo.UserFunction b ON LTRIM(RTRIM(b.functionId)) = LTRIM(RTRIM(a.functionId))
+        JOIN dbo.Functions f ON LTRIM(RTRIM(f.id)) = LTRIM(RTRIM(a.functionId))
+        WHERE a.userId = %s AND b.userId = %s
+          AND a.deletedAt IS NULL AND b.deletedAt IS NULL
+          AND f.isDeleted = 0 AND f.deletedAt IS NULL
+        """,
+        (user_id, owner),
+    )
+    return cursor.fetchone() is not None
 
-            created_by = (body.get("created_by") or "").strip() or "System"
-            # Determine type based on dashboard
-            export_type = "transaction"  # Default
-            if dashboard and dashboard.lower() in ['incidents', 'kris', 'risks', 'controls']:
-                export_type = "dashboard"
-            
-            cursor.execute(
-                """
-                INSERT INTO dbo.report_exports (title, src, format, dashboard, type, created_by)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                """,
-                (title, src, fmt, dashboard, export_type, created_by)
-            )
-            conn.commit()
-
-            new_id = cursor.execute("SELECT @@IDENTITY").fetchone()[0]
-            return {"success": True, "id": int(new_id)}
-        finally:
-            cursor.close()
-            conn.close()
-    except Exception as e:
-        return {"success": False, "error": str(e)}
 
 @router.get("/api/exports/recent")
 async def list_recent_exports(request: Request, limit: int = Query(50), page: int = Query(1), search: str = Query("")):
@@ -382,28 +353,29 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
         return {"success": False, "error": str(e), "exports": [], "pagination": {}}
 
 @router.delete("/api/exports/{export_id}")
-async def delete_export(export_id: int):
+async def delete_export(export_id: int, request: Request):
     """Delete an export row and its file if present"""
     try:
         from config import get_db_connection
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT src FROM dbo.report_exports WHERE id = %s", (export_id,))
+            cursor.execute("SELECT src, created_by_user_id FROM dbo.report_exports WHERE id = %s", (export_id,))
             row = cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Export not found")
+            if not _can_access_export(cursor, request, row[1]):
+                raise HTTPException(status_code=403, detail="Not allowed to delete this export")
             src = row[0]
 
             # Delete DB row
             cursor.execute("DELETE FROM dbo.report_exports WHERE id = %s", (export_id,))
             conn.commit()
 
-            # Delete file if exists
-            if src:
+            # Delete file if exists - only inside the export folders
+            file_path = _resolve_export_path(src)
+            if file_path:
                 try:
-                    import os
-                    file_path = src if os.path.isabs(src) else os.path.join(os.getcwd(), src)
                     if os.path.exists(file_path):
                         os.remove(file_path)
                 except Exception as fe:
@@ -732,19 +704,20 @@ async def delete_dynamic_dashboard_chart(chart_id: int):
 
 
 @router.get("/api/exports/{export_id}/download")
-async def download_export(export_id: int):
+async def download_export(export_id: int, request: Request):
     """Download a saved export file by ID"""
     try:
         from config import get_db_connection
-        import os
         
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT src, format FROM dbo.report_exports WHERE id = %s", (export_id,))
+            cursor.execute("SELECT src, format, created_by_user_id FROM dbo.report_exports WHERE id = %s", (export_id,))
             row = cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Export not found")
+            if not _can_access_export(cursor, request, row[2]):
+                raise HTTPException(status_code=403, detail="Not allowed to download this export")
             
             src = row[0]
             fmt = row[1] or 'pdf'
@@ -752,11 +725,10 @@ async def download_export(export_id: int):
             if not src:
                 raise HTTPException(status_code=404, detail="Export file not found")
             
-            # Build file path
-            base_dir = os.path.dirname(os.path.dirname(__file__))
-            file_path = os.path.join(base_dir, src)
+            # Build file path - only inside the export folders
+            file_path = _resolve_export_path(src)
             
-            if not os.path.exists(file_path):
+            if not file_path or not os.path.exists(file_path):
                 raise HTTPException(status_code=404, detail="Export file not found on disk")
             
             # Determine media type
