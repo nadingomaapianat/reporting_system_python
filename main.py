@@ -1,4 +1,5 @@
 import os
+import re
 # Load .env / environment.env so all links and config come from env
 try:
     from dotenv import load_dotenv
@@ -73,6 +74,21 @@ def create_app() -> FastAPI:
             raise
     
     print("DEBUG: Middleware added")
+
+    # Several services put startDate/endDate into SQL text, and some routes pass them
+    # through unchecked. Reject anything that is not exactly a date (optionally with time).
+    _DATE_QUERY_KEYS = ("startDate", "endDate", "submissionStartDate", "submissionEndDate", "start_date", "end_date")
+    _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d{1,7})?)?(Z|[+-]\d{2}:?\d{2})?)?$")
+
+    @app.middleware("http")
+    async def reject_malformed_dates(request: Request, call_next):
+        for key in _DATE_QUERY_KEYS:
+            for value in request.query_params.getlist(key):
+                # Empty / "undefined" / "null" keep their old meaning (no filter).
+                if value in ("", "undefined", "null") or _DATE_RE.match(value):
+                    continue
+                return JSONResponse(status_code=400, content={"detail": f"Invalid {key}: expected YYYY-MM-DD"})
+        return await call_next(request)
 
     csrf_cookie_secure = os.getenv("CSRF_COOKIE_SECURE", "true").lower() == "true"
 

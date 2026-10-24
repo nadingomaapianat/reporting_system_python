@@ -12,6 +12,9 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 _ISO_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}")
+# Whole value must be a date (optionally with time). The old prefix-only check let
+# anything after a valid date through, and services put these values into SQL text.
+_ISO_DATE_FULL = re.compile(r"^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d{1,7})?)?(Z|[+-]\d{2}:?\d{2})?)?$")
 
 
 def norm_grc_query_string(s: Optional[str]) -> Optional[str]:
@@ -31,7 +34,7 @@ def grc_iso_date_param(s: Optional[str]) -> Optional[str]:
     if not s:
         return None
     t = norm_grc_query_string(s)
-    if not t or len(t) < 10 or not _ISO_PREFIX.match(t):
+    if not t or not _ISO_DATE_FULL.match(t):
         return None
     return t
 
