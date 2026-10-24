@@ -1,0 +1,3 @@
+#!/bin/sh
+# Same check as pre-commit, for merges (a pull that creates a merge commit skips pre-commit).
+exec sh scripts/malware-check.sh --staged
