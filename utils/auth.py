@@ -20,7 +20,10 @@ from utils.jwt_context import set_request_jwt_claims
 # =============================================================================
 # Config
 # =============================================================================
-JWT_SECRET = os.getenv("JWT_SECRET", os.getenv("JWT_SECRET_KEY", "GRC_ADIB_2025"))
+JWT_SECRET = (os.getenv("JWT_SECRET") or os.getenv("JWT_SECRET_KEY") or "").strip()
+if not JWT_SECRET:
+    # No hard-coded fallback: a committed default lets anyone forge tokens.
+    raise RuntimeError("JWT_SECRET (or JWT_SECRET_KEY) must be set in the environment")
 JWT_ALGORITHM = "HS256"
 
 # Cookie names — must match reporting_system_node2 / new_adib_backend.

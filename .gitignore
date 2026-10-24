@@ -19,3 +19,10 @@ venv/
 
 # auto-run editor tasks were used to plant malware - never commit
 .vscode/tasks.json
+
+# Environment / secrets: real values live only on the server (template: .env.bank.example)
+.env
+.env.*
+!.env.example
+!.env.bank.example
+environment.env
