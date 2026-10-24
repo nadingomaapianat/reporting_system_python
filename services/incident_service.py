@@ -109,33 +109,50 @@ class IncidentService:
         ids = ",".join(f"'{self._sql_escape_function_id(fid)}'" for fid in function_ids)
         return f" AND LTRIM(RTRIM({table_alias}.function_id)) IN ({ids})"
 
+    @staticmethod
+    def _valid_date(value: Optional[str]) -> Optional[str]:
+        """Return YYYY-MM-DD when value starts with a real calendar date, else None."""
+        if not value:
+            return None
+        s = str(value).strip()[:10]
+        try:
+            datetime.strptime(s, "%Y-%m-%d")
+        except ValueError:
+            return None
+        return s
+
+    def _date_range_sql(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        field: str = "i.createdAt",
+    ) -> str:
+        """Same as Node dateRangeParts: field >= start AND field < end+1 day (whole end day included)."""
+        parts = []
+        start = self._valid_date(start_date)
+        end = self._valid_date(end_date)
+        if start:
+            parts.append(f"AND {field} >= '{start}'")
+        if end:
+            parts.append(f"AND {field} < DATEADD(day, 1, '{end}')")
+        return (" " + " ".join(parts)) if parts else ""
+
+    def _op_loss_window(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        field: str = "COALESCE(i.occurrence_date, i.createdAt)",
+    ) -> str:
+        """Same as Node opLossWindow: only the dashboard date filter (createdAt); no filter = all data."""
+        return self._date_range_sql(start_date, end_date, "i.createdAt")
+
     def _build_incident_date_filter(
         self,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> str:
-        """
-        Build date filter for incidents to match Node.js buildDateFilter:
-        - start: i.createdAt >= startDate
-        - end: i.createdAt < endDate+1day (exclusive of next day) so full end date is included.
-        """
-        if not start_date and not end_date:
-            return ""
-        parts = []
-        if start_date:
-            parts.append(f"AND i.createdAt >= '{start_date}'")
-        if end_date:
-            try:
-                s = end_date.replace("Z", "+00:00").strip()
-                if "T" not in s:
-                    s = s + "T00:00:00"
-                dt = datetime.fromisoformat(s)
-                next_day = dt + timedelta(days=1)
-                end_exclusive = next_day.strftime("%Y-%m-%dT%H:%M:%S.000Z")
-            except Exception:
-                end_exclusive = end_date
-            parts.append(f"AND i.createdAt < '{end_exclusive}'")
-        return (" " + " ".join(parts)) if parts else ""
+        """Match Node buildDateFilter (createdAt, whole end day included)."""
+        return self._date_range_sql(start_date, end_date, "i.createdAt")
     
     async def execute_query(self, query: str, params: Optional[List] = None) -> List[Dict[str, Any]]:
         """Execute a SQL query and return results"""
@@ -190,9 +207,7 @@ class IncidentService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents list with all columns for Excel export. Uses only tables/columns used elsewhere in this service."""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+        date_filter = self._date_range_sql(start_date, end_date, "i.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -204,10 +219,12 @@ class IncidentService:
             ISNULL(i.title, '') AS title,
             ISNULL(f.name, '') AS function_name,
             CASE 
-                WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-                WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
-                WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-                WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
+                WHEN ISNULL(i.preparerStatus, '') <> 'sent' AND ISNULL(i.checkerStatus, '') IN ('', 'pending') AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Preparer'
+                WHEN ISNULL(i.checkerStatus, '') = 'refused' THEN 'Checker Refused'
+                WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') IN ('', 'pending') AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Checker'
+                WHEN ISNULL(i.acceptanceStatus, '') = 'refused' THEN 'Acceptance Refused'
+                WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Reviewer'
+                WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Acceptance'
                 WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
                 ELSE 'Other'
             END AS status,
@@ -264,10 +281,12 @@ class IncidentService:
             ISNULL(i.code, '') AS code,
             ISNULL(i.title, '') AS title,
             ISNULL(f.name, '') AS function_name,
-            CASE WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-                WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
-                WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-                WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
+            CASE WHEN ISNULL(i.preparerStatus, '') <> 'sent' AND ISNULL(i.checkerStatus, '') IN ('', 'pending') AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Preparer'
+                WHEN ISNULL(i.checkerStatus, '') = 'refused' THEN 'Checker Refused'
+                WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') IN ('', 'pending') AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Checker'
+                WHEN ISNULL(i.acceptanceStatus, '') = 'refused' THEN 'Acceptance Refused'
+                WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Reviewer'
+                WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Acceptance'
                 WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved' ELSE 'Other' END AS status,
             ISNULL(c.name, '') AS categoryName,
             ISNULL(sc.name, '') AS subCategoryName,
@@ -312,10 +331,12 @@ class IncidentService:
             ISNULL(i.code, '') AS code,
             ISNULL(i.title, '') AS title,
             ISNULL(f.name, '') AS function_name,
-            CASE WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-                WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
-                WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-                WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
+            CASE WHEN ISNULL(i.preparerStatus, '') <> 'sent' AND ISNULL(i.checkerStatus, '') IN ('', 'pending') AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Preparer'
+                WHEN ISNULL(i.checkerStatus, '') = 'refused' THEN 'Checker Refused'
+                WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') IN ('', 'pending') AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Checker'
+                WHEN ISNULL(i.acceptanceStatus, '') = 'refused' THEN 'Acceptance Refused'
+                WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Reviewer'
+                WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Acceptance'
                 WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved' ELSE 'Other' END AS status,
             ISNULL(c.name, '') AS categoryName,
             ISNULL(sc.name, '') AS subCategoryName,
@@ -415,10 +436,12 @@ class IncidentService:
           CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
           ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
           CASE
-            WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-            WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
-            WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-            WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
+            WHEN ISNULL(i.preparerStatus, '') <> 'sent' AND ISNULL(i.checkerStatus, '') IN ('', 'pending') AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Preparer'
+            WHEN ISNULL(i.checkerStatus, '') = 'refused' THEN 'Checker Refused'
+            WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') IN ('', 'pending') AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Checker'
+            WHEN ISNULL(i.acceptanceStatus, '') = 'refused' THEN 'Acceptance Refused'
+            WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Reviewer'
+            WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Acceptance'
             WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
             ELSE 'Other'
           END as status,
@@ -455,13 +478,16 @@ class IncidentService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents rows filtered by computed status label (not counts)."""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+        date_filter = self._date_range_sql(start_date, end_date, "i.createdAt")
+        # Approved / Checker Refused / Acceptance Refused cards (same as Node/KRI): direct equality
+        # on the stage status, not the pending waterfall
+        direct = {
+            'approved': "ISNULL(i.acceptanceStatus, '') = 'approved'",
+            'checkerRefused': "ISNULL(i.checkerStatus, '') = 'refused'",
+            'acceptanceRefused': "ISNULL(i.acceptanceStatus, '') = 'refused'",
+        }
+        stage_filter = f"AND {direct[status]}" if status in direct else ""
+        status_where = "1=1" if status in direct else f"status = '{status}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -501,13 +527,15 @@ class IncidentService:
                 ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
                 CASE
                     -- 1) Pending preparer: preparerStatus is anything other than 'sent'
-                    WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'pendingPreparer'
+                    WHEN ISNULL(i.preparerStatus, '') <> 'sent' AND ISNULL(i.checkerStatus, '') IN ('', 'pending') AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'pendingPreparer'
+                    WHEN ISNULL(i.checkerStatus, '') = 'refused' THEN 'checkerRefused'
                     -- 2) Pending checker: preparer sent AND checker not approved AND acceptance not approved
-                    WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'pendingChecker'
+                    WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') IN ('', 'pending') AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'pendingChecker'
+                    WHEN ISNULL(i.acceptanceStatus, '') = 'refused' THEN 'acceptanceRefused'
                     -- 3) Pending reviewer: checker approved AND reviewer not approved AND acceptance not approved
-                    WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'pendingReviewer'
+                    WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'pendingReviewer'
                     -- 4) Pending acceptance: reviewer approved AND acceptance not approved
-                    WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'pendingAcceptance'
+                    WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'pendingAcceptance'
                     -- 5) Fully approved
                     WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
                     ELSE 'Other'
@@ -524,12 +552,12 @@ class IncidentService:
             LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
             LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
             LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
-            WHERE i.isDeleted = 0 AND i.deletedAt IS NULL {date_filter}
+            WHERE i.isDeleted = 0 AND i.deletedAt IS NULL {date_filter} {stage_filter}
             {function_filter}
         )
         SELECT *
         FROM IncidentStatus
-        WHERE status = '{status}'
+        WHERE {status_where}
         ORDER BY createdAt DESC;
         """
 
@@ -549,13 +577,7 @@ class IncidentService:
        
         write_debug(f"[INCIDENTS BY CATEGORY] fetching incidents by category for {start_date} to {end_date}")
         """Return incidents count by category (excludes NULL and deleted categories)"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+        date_filter = self._date_range_sql(start_date, end_date, "i.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -588,13 +610,7 @@ class IncidentService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents count by status (distribution for charts)"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+        date_filter = self._date_range_sql(start_date, end_date, "i.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -604,10 +620,12 @@ class IncidentService:
             SELECT 
                 i.id,
                 CASE 
-                    WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-                    WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
-                    WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-                    WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
+                    WHEN ISNULL(i.preparerStatus, '') <> 'sent' AND ISNULL(i.checkerStatus, '') IN ('', 'pending') AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Preparer'
+                    WHEN ISNULL(i.checkerStatus, '') = 'refused' THEN 'Checker Refused'
+                    WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') IN ('', 'pending') AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Checker'
+                    WHEN ISNULL(i.acceptanceStatus, '') = 'refused' THEN 'Acceptance Refused'
+                    WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Reviewer'
+                    WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Acceptance'
                     WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
                     ELSE 'Other'
                 END AS status
@@ -624,7 +642,9 @@ class IncidentService:
         ),
         AllStatuses AS (
             SELECT 'Pending Preparer' AS status_name
+            UNION ALL SELECT 'Checker Refused'
             UNION ALL SELECT 'Pending Checker'
+            UNION ALL SELECT 'Acceptance Refused'
             UNION ALL SELECT 'Pending Reviewer'
             UNION ALL SELECT 'Pending Acceptance'
             UNION ALL SELECT 'Approved'
@@ -649,13 +669,7 @@ class IncidentService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents monthly trend counts grouped by occurrence_date"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+        date_filter = self._date_range_sql(start_date, end_date, "i.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -685,13 +699,7 @@ class IncidentService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents time series by month (matches grc-incidents.service.ts)"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+        date_filter = self._date_range_sql(start_date, end_date, "i.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -746,13 +754,7 @@ class IncidentService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return top financial impacts grouped by category with total net loss"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+        date_filter = self._date_range_sql(start_date, end_date, "i.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -786,13 +788,7 @@ class IncidentService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return net loss and recovery data for incidents"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+        date_filter = self._date_range_sql(start_date, end_date, "i.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -862,13 +858,7 @@ class IncidentService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents count by event type (excludes NULL and deleted event types)"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+        date_filter = self._date_range_sql(start_date, end_date, "i.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -900,13 +890,7 @@ class IncidentService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents count by financial impact (excludes NULL and deleted financial impacts)"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+        date_filter = self._date_range_sql(start_date, end_date, "i.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -939,13 +923,7 @@ class IncidentService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return new incidents count per month (matches grc-incidents.service.ts)"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+        date_filter = self._date_range_sql(start_date, end_date, "i.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -986,13 +964,7 @@ class IncidentService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents with timeframe values (matches grc-incidents.service.ts)"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+        date_filter = self._date_range_sql(start_date, end_date, "i.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1095,7 +1067,7 @@ class IncidentService:
           i.net_loss AS netLoss,
           i.total_loss AS totalLoss,
           i.recovery_amount AS recoveryAmount,
-          (ISNULL(i.total_loss, 0) + ISNULL(i.recovery_amount, 0)) AS grossAmount,
+          ISNULL(i.total_loss, 0) AS grossAmount,
           ISNULL(fi.name, '') AS financialImpactName,
           ISNULL(cu.name, '') AS currencyName,
           ISNULL(i.exchange_rate, 0) AS exchangeRate,
@@ -1107,10 +1079,12 @@ class IncidentService:
           ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
           FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt,
           CASE
-            WHEN ISNULL(i.preparerStatus, '') <> 'sent' THEN 'Pending Preparer'
-            WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') <> 'approved' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Checker'
-            WHEN ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') <> 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Reviewer'
-            WHEN ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') <> 'approved' THEN 'Pending Acceptance'
+            WHEN ISNULL(i.preparerStatus, '') <> 'sent' AND ISNULL(i.checkerStatus, '') IN ('', 'pending') AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Preparer'
+            WHEN ISNULL(i.checkerStatus, '') = 'refused' THEN 'Checker Refused'
+            WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') IN ('', 'pending') AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Checker'
+            WHEN ISNULL(i.acceptanceStatus, '') = 'refused' THEN 'Acceptance Refused'
+            WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') IN ('', 'pending') AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Reviewer'
+            WHEN ISNULL(i.preparerStatus, '') = 'sent' AND ISNULL(i.checkerStatus, '') = 'approved' AND ISNULL(i.reviewerStatus, '') = 'sent' AND ISNULL(i.acceptanceStatus, '') IN ('', 'pending') THEN 'Pending Acceptance'
             WHEN ISNULL(i.acceptanceStatus, '') = 'approved' THEN 'Approved'
             ELSE 'Other'
           END AS status
@@ -1135,698 +1109,6 @@ class IncidentService:
         """
         return await self.execute_query(query)
 
-    # ===== Operational Loss Metrics =====
-    
-    async def get_atm_theft_incidents(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return ATM theft incidents (last 12 months)"""
-        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
-
-        query = f"""
-        SELECT
-            i.code,
-            ISNULL(i.importance, '') AS importance,
-            ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
-            ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
-            ISNULL(i.timeFrame, '') AS timeFrame,
-            ISNULL(u.name, '') AS owner,
-            ISNULL(f.name, 'Unknown') AS function_name,
-            ISNULL(c.name, '') AS categoryName,
-            sc.name AS subCategoryName,
-            i.title AS name,
-            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
-            ISNULL(i.rootCause, '') AS rootCause,
-            ISNULL(rc.name, '') AS causeName,
-            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
-            ISNULL(kr.kriName, '') AS kriName,
-            ISNULL(dt.name, '') AS discoveredType,
-            ISNULL(i.total_loss, 0) AS totalLoss,
-            i.net_loss,
-            i.recovery_amount,
-            ISNULL(fi.name, '') AS financialImpactName,
-            ISNULL(cu.name, '') AS currencyName,
-            ISNULL(i.exchange_rate, 0) AS exchangeRate,
-            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
-            ISNULL(i.status, '') AS recoveryStatus,
-            ISNULL(ie.name, '') AS eventType,
-            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
-            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
-            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
-            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
-            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
-        FROM Incidents i
-        LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
-        INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
-            AND sc.deletedAt IS NULL
-        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
-        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
-        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
-        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id AND ie.isDeleted = 0 AND ie.deletedAt IS NULL
-        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
-        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
-        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
-        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
-        WHERE i.isDeleted = 0
-            AND i.deletedAt IS NULL
-            {date_filter}
-            {function_filter}
-            AND sc.name = N'ATM issue'
-        ORDER BY i.createdAt DESC
-        """
-        return await self.execute_query(query)
-
-    async def get_internal_fraud_incidents(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return internal fraud incidents (last 12 months)"""
-        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
-
-        query = f"""
-        SELECT
-            i.code,
-            ISNULL(i.importance, '') AS importance,
-            ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
-            ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
-            ISNULL(i.timeFrame, '') AS timeFrame,
-            ISNULL(u.name, '') AS owner,
-            ISNULL(f.name, 'Unknown') AS function_name,
-            ISNULL(c.name, '') AS categoryName,
-            ISNULL(sc.name, '') AS subCategoryName,
-            i.title AS name,
-            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
-            ISNULL(i.rootCause, '') AS rootCause,
-            ISNULL(rc.name, '') AS causeName,
-            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
-            ISNULL(kr.kriName, '') AS kriName,
-            ISNULL(dt.name, '') AS discoveredType,
-            ISNULL(i.total_loss, 0) AS totalLoss,
-            i.net_loss,
-            i.recovery_amount,
-            ISNULL(fi.name, '') AS financialImpactName,
-            ISNULL(cu.name, '') AS currencyName,
-            ISNULL(i.exchange_rate, 0) AS exchangeRate,
-            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
-            ISNULL(i.status, '') AS recoveryStatus,
-            ie.name AS eventType,
-            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
-            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
-            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
-            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
-            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
-        FROM Incidents i
-        LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
-        INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
-            AND ie.deletedAt IS NULL
-        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
-        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
-        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
-        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
-        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
-        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
-        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
-        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
-        WHERE i.isDeleted = 0
-            AND i.deletedAt IS NULL
-            {date_filter}
-            {function_filter}
-            AND ie.name = N'Internal Fraud'
-        ORDER BY i.createdAt DESC
-        """
-        return await self.execute_query(query)
-
-    async def get_external_fraud_incidents(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return external fraud incidents (last 12 months)"""
-        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
-
-        query = f"""
-        SELECT
-            i.code,
-            ISNULL(i.importance, '') AS importance,
-            ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
-            ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
-            ISNULL(i.timeFrame, '') AS timeFrame,
-            ISNULL(u.name, '') AS owner,
-            ISNULL(f.name, 'Unknown') AS function_name,
-            ISNULL(c.name, '') AS categoryName,
-            ISNULL(sc.name, '') AS subCategoryName,
-            i.title AS name,
-            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
-            ISNULL(i.rootCause, '') AS rootCause,
-            ISNULL(rc.name, '') AS causeName,
-            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
-            ISNULL(kr.kriName, '') AS kriName,
-            ISNULL(dt.name, '') AS discoveredType,
-            ISNULL(i.total_loss, 0) AS totalLoss,
-            i.net_loss,
-            i.recovery_amount,
-            ISNULL(fi.name, '') AS financialImpactName,
-            ISNULL(cu.name, '') AS currencyName,
-            ISNULL(i.exchange_rate, 0) AS exchangeRate,
-            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
-            ISNULL(i.status, '') AS recoveryStatus,
-            ie.name AS eventType,
-            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
-            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
-            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
-            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
-            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
-        FROM Incidents i
-        LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
-        INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
-            AND ie.deletedAt IS NULL
-        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
-        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
-        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
-        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
-        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
-        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
-        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
-        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
-        WHERE i.isDeleted = 0
-            AND i.deletedAt IS NULL
-            {date_filter}
-            {function_filter}
-            AND ie.name = N'External Fraud'
-        ORDER BY i.createdAt DESC
-        """
-        return await self.execute_query(query)
-
-    async def get_physical_asset_damage_incidents(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return physical asset damage incidents (last 12 months)"""
-        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
-
-        query = f"""
-        SELECT
-            i.code,
-            ISNULL(i.importance, '') AS importance,
-            ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
-            ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
-            ISNULL(i.timeFrame, '') AS timeFrame,
-            ISNULL(u.name, '') AS owner,
-            ISNULL(f.name, 'Unknown') AS function_name,
-            ISNULL(c.name, '') AS categoryName,
-            ISNULL(sc.name, '') AS subCategoryName,
-            i.title AS name,
-            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
-            ISNULL(i.rootCause, '') AS rootCause,
-            ISNULL(rc.name, '') AS causeName,
-            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
-            ISNULL(kr.kriName, '') AS kriName,
-            ISNULL(dt.name, '') AS discoveredType,
-            ISNULL(i.total_loss, 0) AS totalLoss,
-            i.net_loss,
-            i.recovery_amount,
-            ISNULL(fi.name, '') AS financialImpactName,
-            ISNULL(cu.name, '') AS currencyName,
-            ISNULL(i.exchange_rate, 0) AS exchangeRate,
-            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
-            ISNULL(i.status, '') AS recoveryStatus,
-            ie.name AS eventType,
-            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
-            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
-            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
-            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
-            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
-        FROM Incidents i
-        LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
-        INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
-            AND ie.deletedAt IS NULL
-        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
-        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
-        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
-        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
-        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
-        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
-        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
-        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
-        WHERE i.isDeleted = 0
-            AND i.deletedAt IS NULL
-            {date_filter}
-            {function_filter}
-            AND ie.name = N'Damage to Physical Assets'
-        ORDER BY i.createdAt DESC
-        """
-        return await self.execute_query(query)
-
-    async def get_people_error_incidents(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return people error incidents (last 12 months)"""
-        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
-
-        query = f"""
-        SELECT
-            i.code,
-            ISNULL(i.importance, '') AS importance,
-            ISNULL(CASE WHEN i.reported_date IS NOT NULL THEN FORMAT(i.reported_date, 'yyyy-MM-dd') END, '') AS reportedDate,
-            ISNULL(CASE WHEN i.occurrence_date IS NOT NULL THEN FORMAT(i.occurrence_date, 'yyyy-MM-dd') END, '') AS occurrenceDate,
-            ISNULL(i.timeFrame, '') AS timeFrame,
-            ISNULL(u.name, '') AS owner,
-            ISNULL(f.name, 'Unknown') AS function_name,
-            ISNULL(c.name, '') AS categoryName,
-            sc.name AS subCategoryName,
-            i.title AS name,
-            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
-            ISNULL(i.rootCause, '') AS rootCause,
-            ISNULL(rc.name, '') AS causeName,
-            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
-            ISNULL(kr.kriName, '') AS kriName,
-            ISNULL(dt.name, '') AS discoveredType,
-            ISNULL(i.total_loss, 0) AS totalLoss,
-            i.net_loss,
-            i.recovery_amount,
-            ISNULL(fi.name, '') AS financialImpactName,
-            ISNULL(cu.name, '') AS currencyName,
-            ISNULL(i.exchange_rate, 0) AS exchangeRate,
-            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
-            ISNULL(i.status, '') AS recoveryStatus,
-            ISNULL(ie.name, '') AS eventType,
-            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
-            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
-            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
-            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
-            FORMAT(CONVERT(datetime, i.createdAt), 'yyyy-MM-dd HH:mm:ss') as createdAt
-        FROM Incidents i
-        LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
-        INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
-            AND sc.deletedAt IS NULL
-        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
-        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
-        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
-        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id AND ie.isDeleted = 0 AND ie.deletedAt IS NULL
-        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
-        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
-        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
-        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
-        WHERE i.isDeleted = 0
-            AND i.deletedAt IS NULL
-            {date_filter}
-            {function_filter}
-            AND sc.name = N'Human Mistake'
-        ORDER BY i.createdAt DESC
-        """
-        return await self.execute_query(query)
-
-    async def get_incidents_with_recognition_time(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return incidents with recognition time calculation (last 12 months)"""
-        date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND i.occurrence_date BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.occurrence_date >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.occurrence_date <= '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
-
-        query = f"""
-        SELECT
-            i.code,
-            ISNULL(i.importance, '') AS importance,
-            ISNULL(i.timeFrame, '') AS timeFrame,
-            ISNULL(u.name, '') AS owner,
-            ISNULL(f.name, 'Unknown') AS function_name,
-            ISNULL(c.name, '') AS categoryName,
-            ISNULL(sc.name, '') AS subCategoryName,
-            i.title AS name,
-            ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
-            ISNULL(i.rootCause, '') AS rootCause,
-            ISNULL(rc.name, '') AS causeName,
-            (SELECT STRING_AGG(rsk.name, ' / ') FROM RiskIncidents ri INNER JOIN Risks rsk ON rsk.id = ri.risk_id WHERE ri.incident_id = i.id AND ri.deletedAt IS NULL) AS rcm,
-            ISNULL(kr.kriName, '') AS kriName,
-            ISNULL(dt.name, '') AS discoveredType,
-            ISNULL(i.total_loss, 0) AS totalLoss,
-            ISNULL(i.recovery_amount, 0) AS recoveryAmount,
-            ISNULL(i.net_loss, 0) AS netLoss,
-            ISNULL(fi.name, '') AS financialImpactName,
-            ISNULL(cu.name, '') AS currencyName,
-            ISNULL(i.exchange_rate, 0) AS exchangeRate,
-            (ISNULL(i.net_loss, 0) * ISNULL(i.exchange_rate, 0)) AS financialEquivalent,
-            ISNULL(i.status, '') AS recoveryStatus,
-            ISNULL(ie.name, '') AS eventType,
-            ISNULL(i.preparerStatus, 'draft') AS preparerStatus,
-            CASE WHEN i.reviewerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.reviewerStatus END AS reviewerStatus,
-            CASE WHEN i.checkerStatus IS NULL THEN (CASE WHEN LOWER(i.preparerStart) LIKE '%orm%' THEN 'N/A' ELSE 'pending' END) ELSE i.checkerStatus END AS checkerStatus,
-            ISNULL(i.acceptanceStatus, 'pending') AS acceptanceStatus,
-            FORMAT(i.occurrence_date, 'yyyy-MM-dd') as occurrence_date,
-            FORMAT(i.reported_date, 'yyyy-MM-dd') as reported_date,
-            DATEDIFF(DAY, i.occurrence_date, i.reported_date) AS recognition_days,
-            CAST(DATEDIFF(DAY, i.occurrence_date, i.reported_date) AS FLOAT) / 30.44 AS recognition_months
-        FROM Incidents i
-        LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
-        LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
-        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
-        LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
-        LEFT JOIN FinancialImpacts fi ON i.financial_impact_id = fi.id AND fi.isDeleted = 0 AND fi.deletedAt IS NULL
-        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id AND ie.isDeleted = 0 AND ie.deletedAt IS NULL
-        LEFT JOIN Currencies cu ON i.currency = cu.id AND cu.isDeleted = 0 AND cu.deletedAt IS NULL
-        LEFT JOIN Users u ON i.created_by = u.id AND u.deletedAt IS NULL
-        LEFT JOIN Kris kr ON i.kri = kr.id AND kr.deletedAt IS NULL
-        LEFT JOIN DiscoveredTypes dt ON i.discovered_type_id = dt.id AND dt.isDeleted = 0
-        WHERE i.isDeleted = 0
-            AND i.deletedAt IS NULL
-            {date_filter}
-            {function_filter}
-            AND i.occurrence_date IS NOT NULL
-            AND i.reported_date IS NOT NULL
-            AND i.reported_date >= i.occurrence_date
-        ORDER BY recognition_months DESC
-        """
-        return await self.execute_query(query)
-
-    async def get_operational_loss_value_monthly(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return operational loss value by month (last 12 months)"""
-        date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND i.occurrence_date BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.occurrence_date >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.occurrence_date <= '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
-
-        query = f"""
-        SELECT 
-            YEAR(i.occurrence_date) AS year,
-            MONTH(i.occurrence_date) AS month,
-            CAST(SUM(i.net_loss) AS DECIMAL(18,2)) AS totalLossValue,
-            COUNT(*) AS incidentCount
-        FROM Incidents i
-        WHERE i.isDeleted = 0 
-            AND i.deletedAt IS NULL
-            {date_filter}
-            {function_filter}
-            AND i.net_loss IS NOT NULL
-        GROUP BY YEAR(i.occurrence_date), MONTH(i.occurrence_date)
-        ORDER BY year, month
-        """
-        return await self.execute_query(query)
-
-    async def get_monthly_trend_by_incident_type(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return monthly trend analysis by incident type (last 12 months)"""
-        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
-
-        query = f"""
-        SELECT 
-            FORMAT(COALESCE(i.occurrence_date, i.createdAt), 'yyyy-MM') AS Period,
-            SUM(CASE WHEN ie.name = N'Internal Fraud' THEN 1 ELSE 0 END) AS InternalFrauds,
-            SUM(CASE WHEN ie.name = N'External Fraud' THEN 1 ELSE 0 END) AS ExternalFrauds,
-            SUM(CASE WHEN ie.name = N'Damage to Physical Assets' THEN 1 ELSE 0 END) AS PhysicalAssetDamages,
-            SUM(CASE WHEN sc.name = N'Human Mistake' THEN 1 ELSE 0 END) AS HumanErrors,
-            SUM(CASE WHEN sc.name = N'ATM issue' THEN 1 ELSE 0 END) AS ATMIssues,
-            SUM(CASE WHEN sc.name IN (N'System Error', N'Prime System Issue', N'Transaction system error (TRX BUG)') THEN 1 ELSE 0 END) AS SystemErrors
-        FROM Incidents i
-        LEFT JOIN IncidentEvents ie ON i.event_type_id = ie.id
-            AND ie.deletedAt IS NULL
-        LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
-            AND sc.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
-            AND i.deletedAt IS NULL
-            {date_filter}
-            {function_filter}
-        GROUP BY FORMAT(COALESCE(i.occurrence_date, i.createdAt), 'yyyy-MM')
-        ORDER BY Period
-        """
-        result = await self.execute_query(query)
-        # Transform to match Node.js format (lowercase/camelCase)
-        return [
-            {
-                'period': row.get('Period', ''),
-                'internalFrauds': row.get('InternalFrauds', 0) or 0,
-                'externalFrauds': row.get('ExternalFrauds', 0) or 0,
-                'physicalAssetDamages': row.get('PhysicalAssetDamages', 0) or 0,
-                'humanErrors': row.get('HumanErrors', 0) or 0,
-                'atmIssues': row.get('ATMIssues', 0) or 0,
-                'systemErrors': row.get('SystemErrors', 0) or 0
-            }
-            for row in result
-        ]
-
-    async def get_loss_by_risk_category(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return loss analysis by risk category (last 12 months)"""
-        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
-
-        query = f"""
-        SELECT 
-            c.name AS riskCategory,
-            COUNT(*) AS incidentCount,
-            CAST(SUM(ISNULL(i.net_loss, 0)) AS DECIMAL(18,2)) AS totalLoss,
-            CAST(AVG(NULLIF(i.net_loss, 0)) AS DECIMAL(18,2)) AS averageLoss
-        FROM Incidents i
-        INNER JOIN Categories c ON i.category_id = c.id
-            AND c.deletedAt IS NULL
-        WHERE i.isDeleted = 0 
-            AND i.deletedAt IS NULL
-            {date_filter}
-            {function_filter}
-            AND i.net_loss IS NOT NULL
-        GROUP BY c.name
-        ORDER BY totalLoss DESC
-        """
-        return await self.execute_query(query)
-
-    async def get_comprehensive_operational_loss(
-        self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        user_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        function_id: Optional[str] = None,
-        function_ids: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return comprehensive operational loss dashboard metrics (last 12 months)"""
-        date_filter = "COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
-        elif end_date:
-            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
-
-        access = await self._get_user_function_access(user_id, group_name)
-        function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
-
-        query = f"""
-        SELECT 
-            'Total Operational Loss Incidents' as metric,
-            COUNT(*) as count,
-            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
-        FROM Incidents i
-        WHERE {date_filter}
-            AND i.isDeleted = 0
-            AND i.deletedAt IS NULL
-            {function_filter}
-
-        UNION ALL
-
-        SELECT 
-            'ATM Issues' as metric,
-            COUNT(*) as count,
-            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
-        FROM Incidents i
-        INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
-            AND sc.deletedAt IS NULL
-        WHERE {date_filter}
-            AND i.isDeleted = 0
-            AND i.deletedAt IS NULL
-            {function_filter}
-            AND sc.name = N'ATM issue'
-
-        UNION ALL
-
-        SELECT 
-            'Internal Fraud' as metric,
-            COUNT(*) as count,
-            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
-        FROM Incidents i
-        INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
-            AND ie.deletedAt IS NULL
-        WHERE {date_filter}
-            AND i.isDeleted = 0
-            AND i.deletedAt IS NULL
-            {function_filter}
-            AND ie.name = N'Internal Fraud'
-
-        UNION ALL
-
-        SELECT 
-            'External Fraud' as metric,
-            COUNT(*) as count,
-            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
-        FROM Incidents i
-        INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
-            AND ie.deletedAt IS NULL
-        WHERE {date_filter}
-            AND i.isDeleted = 0
-            AND i.deletedAt IS NULL
-            {function_filter}
-            AND ie.name = N'External Fraud'
-
-        UNION ALL
-
-        SELECT 
-            'Human Mistakes' as metric,
-            COUNT(*) as count,
-            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
-        FROM Incidents i
-        INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
-            AND sc.deletedAt IS NULL
-        WHERE {date_filter}
-            AND i.isDeleted = 0
-            AND i.deletedAt IS NULL
-            {function_filter}
-            AND sc.name = N'Human Mistake'
-
-        UNION ALL
-
-        SELECT 
-            'System Errors' as metric,
-            COUNT(*) as count,
-            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
-        FROM Incidents i
-        INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
-            AND sc.deletedAt IS NULL
-        WHERE {date_filter}
-            AND i.isDeleted = 0
-            AND i.deletedAt IS NULL
-            {function_filter}
-            AND sc.name IN (N'System Error', N'Prime System Issue', N'Transaction system error (TRX BUG)')
-        """
-        return await self.execute_query(query)
-
     async def get_incidents_with_financial_and_function(
         self,
         start_date: Optional[str] = None,
@@ -1837,13 +1119,7 @@ class IncidentService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return incidents with financial impact and function details (matches grc-incidents.service.ts)"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+        date_filter = self._date_range_sql(start_date, end_date, "i.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1914,14 +1190,8 @@ class IncidentService:
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return ATM theft incidents (last 12 months)"""
-        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+        """Return ATM theft incidents"""
+        date_filter = self._op_loss_window(start_date, end_date, "COALESCE(i.occurrence_date, i.createdAt)")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1938,6 +1208,7 @@ class IncidentService:
             ISNULL(c.name, '') AS categoryName,
             sc.name AS subCategoryName,
             i.title AS name,
+            i.title AS title,
             ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
             ISNULL(i.rootCause, '') AS rootCause,
             ISNULL(rc.name, '') AS causeName,
@@ -1947,6 +1218,8 @@ class IncidentService:
             ISNULL(i.total_loss, 0) AS totalLoss,
             i.net_loss,
             i.recovery_amount,
+            i.net_loss AS netLoss,
+            i.recovery_amount AS recoveryAmount,
             ISNULL(fi.name, '') AS financialImpactName,
             ISNULL(cu.name, '') AS currencyName,
             ISNULL(i.exchange_rate, 0) AS exchangeRate,
@@ -1987,15 +1260,14 @@ class IncidentService:
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
+        loss_only: bool = False,
     ) -> List[Dict[str, Any]]:
-        """Return internal fraud incidents (last 12 months)"""
-        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+        """Return internal fraud incidents"""
+        # Same rows as the Node card: count cards on COALESCE(occurrence, created); "Value of losses" cards only incidents with a net loss
+        if loss_only:
+            date_filter = self._op_loss_window(start_date, end_date, "i.occurrence_date") + " AND i.net_loss IS NOT NULL"
+        else:
+            date_filter = self._op_loss_window(start_date, end_date, "COALESCE(i.occurrence_date, i.createdAt)")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -2012,6 +1284,7 @@ class IncidentService:
             ISNULL(c.name, '') AS categoryName,
             ISNULL(sc.name, '') AS subCategoryName,
             i.title AS name,
+            i.title AS title,
             ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
             ISNULL(i.rootCause, '') AS rootCause,
             ISNULL(rc.name, '') AS causeName,
@@ -2021,6 +1294,8 @@ class IncidentService:
             ISNULL(i.total_loss, 0) AS totalLoss,
             i.net_loss,
             i.recovery_amount,
+            i.net_loss AS netLoss,
+            i.recovery_amount AS recoveryAmount,
             ISNULL(fi.name, '') AS financialImpactName,
             ISNULL(cu.name, '') AS currencyName,
             ISNULL(i.exchange_rate, 0) AS exchangeRate,
@@ -2035,7 +1310,7 @@ class IncidentService:
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
         INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
-            AND ie.deletedAt IS NULL
+            AND ie.deletedAt IS NULL AND ie.isDeleted = 0
         LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
         LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
         LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
@@ -2061,15 +1336,14 @@ class IncidentService:
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
+        loss_only: bool = False,
     ) -> List[Dict[str, Any]]:
-        """Return external fraud incidents (last 12 months)"""
-        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+        """Return external fraud incidents"""
+        # Same rows as the Node card: count cards on COALESCE(occurrence, created); "Value of losses" cards only incidents with a net loss
+        if loss_only:
+            date_filter = self._op_loss_window(start_date, end_date, "i.occurrence_date") + " AND i.net_loss IS NOT NULL"
+        else:
+            date_filter = self._op_loss_window(start_date, end_date, "COALESCE(i.occurrence_date, i.createdAt)")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -2086,6 +1360,7 @@ class IncidentService:
             ISNULL(c.name, '') AS categoryName,
             ISNULL(sc.name, '') AS subCategoryName,
             i.title AS name,
+            i.title AS title,
             ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
             ISNULL(i.rootCause, '') AS rootCause,
             ISNULL(rc.name, '') AS causeName,
@@ -2095,6 +1370,8 @@ class IncidentService:
             ISNULL(i.total_loss, 0) AS totalLoss,
             i.net_loss,
             i.recovery_amount,
+            i.net_loss AS netLoss,
+            i.recovery_amount AS recoveryAmount,
             ISNULL(fi.name, '') AS financialImpactName,
             ISNULL(cu.name, '') AS currencyName,
             ISNULL(i.exchange_rate, 0) AS exchangeRate,
@@ -2109,7 +1386,7 @@ class IncidentService:
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
         INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
-            AND ie.deletedAt IS NULL
+            AND ie.deletedAt IS NULL AND ie.isDeleted = 0
         LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
         LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
         LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
@@ -2135,15 +1412,14 @@ class IncidentService:
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
+        loss_only: bool = False,
     ) -> List[Dict[str, Any]]:
-        """Return physical asset damage incidents (last 12 months)"""
-        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+        """Return physical asset damage incidents"""
+        # Same rows as the Node card: count cards on COALESCE(occurrence, created); "Value of losses" cards only incidents with a net loss
+        if loss_only:
+            date_filter = self._op_loss_window(start_date, end_date, "i.occurrence_date") + " AND i.net_loss IS NOT NULL"
+        else:
+            date_filter = self._op_loss_window(start_date, end_date, "COALESCE(i.occurrence_date, i.createdAt)")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -2160,6 +1436,7 @@ class IncidentService:
             ISNULL(c.name, '') AS categoryName,
             ISNULL(sc.name, '') AS subCategoryName,
             i.title AS name,
+            i.title AS title,
             ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
             ISNULL(i.rootCause, '') AS rootCause,
             ISNULL(rc.name, '') AS causeName,
@@ -2169,6 +1446,8 @@ class IncidentService:
             ISNULL(i.total_loss, 0) AS totalLoss,
             i.net_loss,
             i.recovery_amount,
+            i.net_loss AS netLoss,
+            i.recovery_amount AS recoveryAmount,
             ISNULL(fi.name, '') AS financialImpactName,
             ISNULL(cu.name, '') AS currencyName,
             ISNULL(i.exchange_rate, 0) AS exchangeRate,
@@ -2183,7 +1462,7 @@ class IncidentService:
         FROM Incidents i
         LEFT JOIN Functions f ON i.function_id = f.id AND f.isDeleted = 0 AND f.deletedAt IS NULL
         INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
-            AND ie.deletedAt IS NULL
+            AND ie.deletedAt IS NULL AND ie.isDeleted = 0
         LEFT JOIN Categories c ON i.category_id = c.id AND c.isDeleted = 0 AND c.deletedAt IS NULL
         LEFT JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id AND sc.isDeleted = 0 AND sc.deletedAt IS NULL
         LEFT JOIN RootCauses rc ON i.cause_id = rc.id AND rc.isDeleted = 0 AND rc.deletedAt IS NULL
@@ -2209,15 +1488,14 @@ class IncidentService:
         group_name: Optional[str] = None,
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
+        loss_only: bool = False,
     ) -> List[Dict[str, Any]]:
-        """Return people error incidents (last 12 months)"""
-        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+        """Return people error incidents"""
+        # Same rows as the Node card: count cards on COALESCE(occurrence, created); "Value of losses" cards only incidents with a net loss
+        if loss_only:
+            date_filter = self._op_loss_window(start_date, end_date, "COALESCE(i.occurrence_date, i.createdAt)") + " AND i.net_loss IS NOT NULL"
+        else:
+            date_filter = self._op_loss_window(start_date, end_date, "COALESCE(i.occurrence_date, i.createdAt)")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -2234,6 +1512,7 @@ class IncidentService:
             ISNULL(c.name, '') AS categoryName,
             sc.name AS subCategoryName,
             i.title AS name,
+            i.title AS title,
             ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
             ISNULL(i.rootCause, '') AS rootCause,
             ISNULL(rc.name, '') AS causeName,
@@ -2243,6 +1522,8 @@ class IncidentService:
             ISNULL(i.total_loss, 0) AS totalLoss,
             i.net_loss,
             i.recovery_amount,
+            i.net_loss AS netLoss,
+            i.recovery_amount AS recoveryAmount,
             ISNULL(fi.name, '') AS financialImpactName,
             ISNULL(cu.name, '') AS currencyName,
             ISNULL(i.exchange_rate, 0) AS exchangeRate,
@@ -2284,14 +1565,8 @@ class IncidentService:
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return incidents with recognition time calculation (last 12 months)"""
-        date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND i.occurrence_date BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.occurrence_date >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.occurrence_date <= '{end_date}'"
+        """Return incidents with recognition time calculation"""
+        date_filter = self._op_loss_window(start_date, end_date, "i.occurrence_date")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -2306,6 +1581,7 @@ class IncidentService:
             ISNULL(c.name, '') AS categoryName,
             ISNULL(sc.name, '') AS subCategoryName,
             i.title AS name,
+            i.title AS title,
             ISNULL(CAST(i.description AS NVARCHAR(MAX)), '') AS description,
             ISNULL(i.rootCause, '') AS rootCause,
             ISNULL(rc.name, '') AS causeName,
@@ -2360,14 +1636,8 @@ class IncidentService:
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return operational loss value by month (last 12 months)"""
-        date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND i.occurrence_date BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND i.occurrence_date >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND i.occurrence_date <= '{end_date}'"
+        """Return operational loss value by month"""
+        date_filter = self._op_loss_window(start_date, end_date, "i.occurrence_date")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -2376,14 +1646,18 @@ class IncidentService:
         SELECT 
             YEAR(i.occurrence_date) AS year,
             MONTH(i.occurrence_date) AS month,
-            CAST(SUM(i.net_loss) AS DECIMAL(18,2)) AS totalLossValue,
+            -- same amounts as the catalog columns (Total Loss / Recoveries Amount / Net Loss)
+            CAST(SUM(ISNULL(i.total_loss, 0)) AS DECIMAL(18,2)) AS totalLossValue,
+            CAST(SUM(ISNULL(i.recovery_amount, 0)) AS DECIMAL(18,2)) AS recoveryValue,
+            CAST(SUM(ISNULL(i.net_loss, 0)) AS DECIMAL(18,2)) AS netLossValue,
             COUNT(*) AS incidentCount
         FROM Incidents i
         WHERE i.isDeleted = 0 
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
-            AND i.net_loss IS NOT NULL
+            AND i.occurrence_date IS NOT NULL
+            AND (ISNULL(i.total_loss, 0) <> 0 OR ISNULL(i.recovery_amount, 0) <> 0 OR ISNULL(i.net_loss, 0) <> 0)
         GROUP BY YEAR(i.occurrence_date), MONTH(i.occurrence_date)
         ORDER BY year, month
         """
@@ -2398,14 +1672,8 @@ class IncidentService:
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return monthly trend analysis by incident type (last 12 months)"""
-        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+        """Return monthly trend analysis by incident type"""
+        date_filter = self._op_loss_window(start_date, end_date, "COALESCE(i.occurrence_date, i.createdAt)")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -2455,14 +1723,8 @@ class IncidentService:
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return loss analysis by risk category (last 12 months)"""
-        date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+        """Return loss analysis by risk category"""
+        date_filter = self._op_loss_window(start_date, end_date, "COALESCE(i.occurrence_date, i.createdAt)")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -2471,8 +1733,11 @@ class IncidentService:
         SELECT 
             c.name AS riskCategory,
             COUNT(*) AS incidentCount,
-            CAST(SUM(ISNULL(i.net_loss, 0)) AS DECIMAL(18,2)) AS totalLoss,
-            CAST(AVG(NULLIF(i.net_loss, 0)) AS DECIMAL(18,2)) AS averageLoss
+            -- same amounts as the catalog columns (Total Loss / Recoveries Amount / Net Loss)
+            CAST(SUM(ISNULL(i.total_loss, 0)) AS DECIMAL(18,2)) AS totalLoss,
+            CAST(SUM(ISNULL(i.recovery_amount, 0)) AS DECIMAL(18,2)) AS recoveryAmount,
+            CAST(SUM(ISNULL(i.net_loss, 0)) AS DECIMAL(18,2)) AS netLoss,
+            CAST(AVG(CAST(ISNULL(i.total_loss, 0) AS DECIMAL(18,2))) AS DECIMAL(18,2)) AS averageLoss
         FROM Incidents i
         INNER JOIN Categories c ON i.category_id = c.id
             AND c.deletedAt IS NULL
@@ -2480,7 +1745,7 @@ class IncidentService:
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
-            AND i.net_loss IS NOT NULL
+            AND (ISNULL(i.total_loss, 0) <> 0 OR ISNULL(i.recovery_amount, 0) <> 0 OR ISNULL(i.net_loss, 0) <> 0)
         GROUP BY c.name
         ORDER BY totalLoss DESC
         """
@@ -2495,14 +1760,8 @@ class IncidentService:
         function_id: Optional[str] = None,
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return comprehensive operational loss dashboard metrics (last 12 months)"""
-        date_filter = "COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
-        if start_date and end_date:
-            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
-        elif end_date:
-            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+        """Return comprehensive operational loss dashboard metrics"""
+        date_filter = self._op_loss_window(start_date, end_date, "COALESCE(i.occurrence_date, i.createdAt)")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -2511,9 +1770,9 @@ class IncidentService:
         SELECT 
             'Total Operational Loss Incidents' as metric,
             COUNT(*) as count,
-            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+            CAST(SUM(COALESCE(i.total_loss, 0)) AS DECIMAL(18,2)) as totalValue
         FROM Incidents i
-        WHERE {date_filter}
+        WHERE 1=1{date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
             {function_filter}
@@ -2523,11 +1782,11 @@ class IncidentService:
         SELECT 
             'ATM Issues' as metric,
             COUNT(*) as count,
-            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+            CAST(SUM(COALESCE(i.total_loss, 0)) AS DECIMAL(18,2)) as totalValue
         FROM Incidents i
         INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
             AND sc.deletedAt IS NULL
-        WHERE {date_filter}
+        WHERE 1=1{date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
             {function_filter}
@@ -2538,11 +1797,11 @@ class IncidentService:
         SELECT 
             'Internal Fraud' as metric,
             COUNT(*) as count,
-            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+            CAST(SUM(COALESCE(i.total_loss, 0)) AS DECIMAL(18,2)) as totalValue
         FROM Incidents i
         INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
             AND ie.deletedAt IS NULL
-        WHERE {date_filter}
+        WHERE 1=1{date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
             {function_filter}
@@ -2553,11 +1812,11 @@ class IncidentService:
         SELECT 
             'External Fraud' as metric,
             COUNT(*) as count,
-            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+            CAST(SUM(COALESCE(i.total_loss, 0)) AS DECIMAL(18,2)) as totalValue
         FROM Incidents i
         INNER JOIN IncidentEvents ie ON i.event_type_id = ie.id
             AND ie.deletedAt IS NULL
-        WHERE {date_filter}
+        WHERE 1=1{date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
             {function_filter}
@@ -2568,11 +1827,11 @@ class IncidentService:
         SELECT 
             'Human Mistakes' as metric,
             COUNT(*) as count,
-            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+            CAST(SUM(COALESCE(i.total_loss, 0)) AS DECIMAL(18,2)) as totalValue
         FROM Incidents i
         INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
             AND sc.deletedAt IS NULL
-        WHERE {date_filter}
+        WHERE 1=1{date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
             {function_filter}
@@ -2583,14 +1842,14 @@ class IncidentService:
         SELECT 
             'System Errors' as metric,
             COUNT(*) as count,
-            CAST(SUM(COALESCE(i.net_loss, 0)) AS DECIMAL(18,2)) as totalValue
+            CAST(SUM(COALESCE(i.total_loss, 0)) AS DECIMAL(18,2)) as totalValue
         FROM Incidents i
         INNER JOIN IncidentSubCategories sc ON i.sub_category_id = sc.id
             AND sc.deletedAt IS NULL
-        WHERE {date_filter}
+        WHERE 1=1{date_filter}
             AND i.isDeleted = 0
             AND i.deletedAt IS NULL
             {function_filter}
             AND sc.name IN (N'System Error', N'Prime System Issue', N'Transaction system error (TRX BUG)')
         """
-        return await self.execute_query(query)
+        return await self.execute_query(query)

@@ -201,6 +201,12 @@ async def export_incidents_pdf(
             data = await incident_service.get_incidents_by_status('pendingReviewer', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'pendingAcceptance':
             data = await incident_service.get_incidents_by_status('pendingAcceptance', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'approved':
+            data = await incident_service.get_incidents_by_status('approved', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'checkerRefused':
+            data = await incident_service.get_incidents_by_status('checkerRefused', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'acceptanceRefused':
+            data = await incident_service.get_incidents_by_status('acceptanceRefused', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
             
       
         # Charts
@@ -254,13 +260,13 @@ async def export_incidents_pdf(
         elif cardType == 'peopleErrorCount':
             data = await incident_service.get_people_error_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'internalFraudLoss':
-            data = await incident_service.get_internal_fraud_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await incident_service.get_internal_fraud_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, loss_only=True)
         elif cardType == 'externalFraudLoss':
-            data = await incident_service.get_external_fraud_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await incident_service.get_external_fraud_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, loss_only=True)
         elif cardType == 'physicalAssetLoss':
-            data = await incident_service.get_physical_asset_damage_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await incident_service.get_physical_asset_damage_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, loss_only=True)
         elif cardType == 'peopleErrorLoss':
-            data = await incident_service.get_people_error_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await incident_service.get_people_error_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, loss_only=True)
         
         # Operational Loss Metrics - Charts
         elif cardType == 'operationalLossValue':
@@ -301,7 +307,21 @@ async def export_incidents_pdf(
                 incident_action_plan_override,
                 overdue_incidents_override,
             )
-          
+        else:
+            # Same fallback as the Excel route (e.g. incidentActionPlanByStatus): the Node dashboard
+            # payload with the same date/function scope and auth
+            forward_headers = _forward_auth_headers(request)
+            incidents_payload = await api_service.get_incidents_data(
+                startDate,
+                endDate,
+                user_id=user_id,
+                group_name=group_name,
+                function_id=function_id,
+                function_ids=function_ids,
+                headers=forward_headers,
+            )
+            data = (incidents_payload.get(cardType) or []) if isinstance(incidents_payload, dict) else []
+
         """
         elif cardType == 'createdDeletedIncidentsPerQuarter':
             data = await incident_service.get_created_deleted_incidents_per_quarter(startDate, endDate)
@@ -479,6 +499,12 @@ async def export_incidents_excel(
             data = await incident_service.get_incidents_by_status('pendingReviewer', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'pendingAcceptance':
             data = await incident_service.get_incidents_by_status('pendingAcceptance', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'approved':
+            data = await incident_service.get_incidents_by_status('approved', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'checkerRefused':
+            data = await incident_service.get_incidents_by_status('checkerRefused', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+        elif cardType == 'acceptanceRefused':
+            data = await incident_service.get_incidents_by_status('acceptanceRefused', startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
             
       
         # Charts
@@ -525,13 +551,13 @@ async def export_incidents_excel(
         elif cardType == 'peopleErrorCount':
             data = await incident_service.get_people_error_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
         elif cardType == 'internalFraudLoss':
-            data = await incident_service.get_internal_fraud_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await incident_service.get_internal_fraud_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, loss_only=True)
         elif cardType == 'externalFraudLoss':
-            data = await incident_service.get_external_fraud_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await incident_service.get_external_fraud_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, loss_only=True)
         elif cardType == 'physicalAssetLoss':
-            data = await incident_service.get_physical_asset_damage_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await incident_service.get_physical_asset_damage_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, loss_only=True)
         elif cardType == 'peopleErrorLoss':
-            data = await incident_service.get_people_error_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids)
+            data = await incident_service.get_people_error_incidents(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, loss_only=True)
         
         # Operational Loss Metrics - Charts
         elif cardType == 'operationalLossValue':
@@ -551,14 +577,14 @@ async def export_incidents_excel(
                 data = list(incident_action_plan_override) if isinstance(incident_action_plan_override, list) else []
             else:
                 forward_headers = _forward_auth_headers(request)
-                full = await api_service.get_incidents_data(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, headers=forward_headers)
+                full = await api_service.get_incidents_data(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, headers=forward_headers)
                 data = (full.get('incidentActionPlan') or []) if isinstance(full, dict) else []
         elif cardType == 'overdueIncidents':
             if overdue_incidents_override is not None:
                 data = list(overdue_incidents_override) if isinstance(overdue_incidents_override, list) else []
             else:
                 forward_headers = _forward_auth_headers(request)
-                full = await api_service.get_incidents_data(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, headers=forward_headers)
+                full = await api_service.get_incidents_data(startDate, endDate, user_id=user_id, group_name=group_name, function_id=function_id, function_ids=function_ids, headers=forward_headers)
                 data = (full.get('overdueIncidents') or []) if isinstance(full, dict) else []
 
        
@@ -582,7 +608,8 @@ async def export_incidents_excel(
                 function_ids=function_ids,
                 headers=forward_headers,
             )
-            data = incidents_data.get(cardType) or incidents_data.get('statusOverview') or []
+            # Export exactly the requested widget; an empty filtered result stays empty
+            data = incidents_data.get(cardType) or []
 
         incidents_data_wrapped = {cardType or 'overallStatuses': data}
         if order_by_function_from_request(request):

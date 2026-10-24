@@ -34,6 +34,14 @@ DATETIME_KEYS = frozenset({
 })
 DATETIME_KEYS_LOWER = frozenset(k.lower() for k in DATETIME_KEYS)
 
+# Incident loss amounts: exported exactly as the dashboard / catalog display them
+# (thousands separators, 2 decimals) instead of raw floats like 9407733.219999999.
+AMOUNT_KEYS_LOWER = frozenset(k.lower() for k in (
+    'totalLoss', 'total_loss', 'recoveryAmount', 'recovery_amount', 'netLoss', 'net_loss',
+    'financialEquivalent', 'grossAmount', 'totalLossValue', 'recoveryValue', 'netLossValue',
+    'averageLoss', 'totalValue', 'gross_loss',
+))
+
 
 def _try_format_date(value, include_time: bool = False) -> str:
     """Try to format value as DD/MM/YYYY (or DD/MM/YYYY HH:MM if include_time); return None if not a date."""
@@ -205,6 +213,11 @@ def format_cell_value_for_export(key: str, value, _from_bytes: int = 0) -> str:
             return formatted
     if _value_is_uuid_like(value):
         return ''
+    if key_lower in AMOUNT_KEYS_LOWER:
+        try:
+            return f"{float(value):,.2f}"
+        except (TypeError, ValueError):
+            pass
     return str(value)
 
 
@@ -519,10 +532,11 @@ INCIDENT_TABLE_COLUMN_ORDERS = {
     ],
     'lossByRiskCategory': [
         ('riskCategory', 'Risk Category'), ('incidentCount', 'Incident Count'),
-        ('totalLoss', 'Total loss'), ('averageLoss', 'Average Loss'),
+        ('totalLoss', 'Total loss'), ('recoveryAmount', 'Recoveries Amount'), ('netLoss', 'Net Loss'),
+        ('averageLoss', 'Average Loss'),
     ],
     'comprehensiveOperationalLoss': [
-        ('metric', 'Metric'), ('count', 'Count'), ('totalValue', 'Total Value'),
+        ('metric', 'Metric'), ('count', 'Count'), ('totalValue', 'Total Loss'),
     ],
     'netLossAndRecovery': [
         ('code', 'Code'), ('occurrenceDate', 'Occurance Date'), ('reportedDate', 'Reported Date'),
@@ -575,10 +589,11 @@ INCIDENT_TABLE_COLUMN_ORDERS_PDF = {
     ],
     'lossByRiskCategory': [
         ('riskCategory', 'Risk Category'), ('incidentCount', 'Incident Count'),
-        ('totalLoss', 'Total loss'), ('averageLoss', 'Average Loss'),
+        ('totalLoss', 'Total loss'), ('recoveryAmount', 'Recoveries Amount'), ('netLoss', 'Net Loss'),
+        ('averageLoss', 'Average Loss'),
     ],
     'comprehensiveOperationalLoss': [
-        ('metric', 'Metric'), ('count', 'Count'), ('totalValue', 'Total Value'),
+        ('metric', 'Metric'), ('count', 'Count'), ('totalValue', 'Total Loss'),
     ],
     'netLossAndRecovery': [
         ('incident_title', 'Incident'), ('function_name', 'Function'),
@@ -637,17 +652,26 @@ def derive_incident_status(row: dict) -> str:
     CASE and the dashboard UI), so the exported Status column is consistent everywhere
     and never blank/N/A. Different queries emit 'status' differently (e.g. 'pendingChecker'
     vs 'Pending Checker'); deriving from the raw approval fields normalizes them all."""
+    def stage(value) -> str:
+        # Queries show NULL stages as 'pending' / 'N/A'; the SQL treats NULL, '' and 'pending' alike.
+        s = str(value or '').lower()
+        return '' if s in ('pending', 'n/a') else s
+
     preparer = str(row.get('preparerStatus') or '').lower()
-    checker = str(row.get('checkerStatus') or '').lower()
-    reviewer = str(row.get('reviewerStatus') or '').lower()
-    acceptance = str(row.get('acceptanceStatus') or '').lower()
-    if preparer != 'sent':
+    checker = stage(row.get('checkerStatus'))
+    reviewer = stage(row.get('reviewerStatus'))
+    acceptance = stage(row.get('acceptanceStatus'))
+    if preparer != 'sent' and not checker and not reviewer and not acceptance:
         return 'Pending Preparer'
-    if checker != 'approved' and acceptance != 'approved':
+    if checker == 'refused':
+        return 'Checker Refused'
+    if preparer == 'sent' and not checker and not reviewer and not acceptance:
         return 'Pending Checker'
-    if checker == 'approved' and reviewer != 'sent' and acceptance != 'approved':
+    if acceptance == 'refused':
+        return 'Acceptance Refused'
+    if preparer == 'sent' and checker == 'approved' and not reviewer and not acceptance:
         return 'Pending Reviewer'
-    if reviewer == 'sent' and acceptance != 'approved':
+    if preparer == 'sent' and checker == 'approved' and reviewer == 'sent' and not acceptance:
         return 'Pending Acceptance'
     if acceptance == 'approved':
         return 'Approved'
