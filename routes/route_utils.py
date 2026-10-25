@@ -8,6 +8,7 @@ are centralized here.
 """
 from typing import Dict, Any, Optional, List
 import json
+import re
 import sys
 from datetime import datetime
 
