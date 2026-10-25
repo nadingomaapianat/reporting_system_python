@@ -72,13 +72,22 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=exc.status_code, content={"detail": GENERIC_ERROR}, headers=getattr(exc, "headers", None))
         return await http_exception_handler(request, exc)
     
+    # Query values whose name looks like a credential are masked before logging.
+    _SECRET_PARAM_RE = re.compile(r"token|password|passwd|secret|key|auth|session|cookie|signature", re.IGNORECASE)
+
+    def _loggable_params(request: Request) -> str:
+        return "&".join(
+            f"{k}={'***' if _SECRET_PARAM_RE.search(k) else v}" for k, v in request.query_params.multi_items()
+        )
+
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
-        logger.error(f"REQUEST: {request.method} {request.url.path}")
-        logger.error(f"PARAMS: {request.query_params}")
+        logger.info(f"REQUEST: {request.method} {request.url.path}")
+        if request.query_params:
+            logger.debug(f"PARAMS: {_loggable_params(request)}")
         try:
             response = await call_next(request)
-            logger.error(f"RESPONSE: {response.status_code}")
+            logger.info(f"RESPONSE: {response.status_code}")
             return response
         except Exception as e:
             logger.error(f"ERROR in middleware: {e}")

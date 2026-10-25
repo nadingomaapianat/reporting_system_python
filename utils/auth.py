@@ -36,9 +36,9 @@ MAIN_COOKIE_PREFIX = "d_c_c_t_p"
 # Maximum number of split-cookie parts to attempt to reconstruct (matches Node).
 _MAX_SPLIT_PARTS = 64
 
-# Set REPORTING_ALLOW_QUERY_TOKEN_AUTH=false in production to disable ?token= / ?access_token=
-# (avoids leaks in logs).
-_ALLOW_QUERY_TOKEN_GET = os.getenv("REPORTING_ALLOW_QUERY_TOKEN_AUTH", "true").lower() in (
+# ?token= / ?access_token= on GET: off unless REPORTING_ALLOW_QUERY_TOKEN_AUTH=true. A token in the
+# URL ends up in access logs, proxy logs and browser history. No client uses it (cookies are sent).
+_ALLOW_QUERY_TOKEN_GET = os.getenv("REPORTING_ALLOW_QUERY_TOKEN_AUTH", "false").lower() in (
     "true", "1", "yes",
 )
 
