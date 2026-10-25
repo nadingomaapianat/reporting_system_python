@@ -2,6 +2,7 @@
 Bank-grade security middleware: headers, trust proxy, rate limiting.
 Aligns with new_adib_backend and reporting_system_node2.
 """
+import ipaddress
 import os
 import time
 import logging
@@ -13,20 +14,38 @@ logger = logging.getLogger(__name__)
 
 # --- Trust proxy: use X-Forwarded-For when behind reverse proxy ---
 TRUST_PROXY = os.getenv("TRUST_PROXY", "1").strip().lower() in ("1", "true", "yes")
+# Number of reverse proxies in front of the app that append to X-Forwarded-For (nginx = 1).
+try:
+    TRUSTED_PROXY_HOPS = max(1, int(os.getenv("TRUSTED_PROXY_HOPS", "1")))
+except ValueError:
+    TRUSTED_PROXY_HOPS = 1
+
+
+def _is_proxy_peer(host: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return addr.is_private or addr.is_loopback
 
 
 def get_client_ip(request: Request) -> str:
-    """Real client IP when behind proxy (R-WAPT / rate limit)."""
-    if not TRUST_PROXY:
-        if request.client:
-            return request.client.host
-        return "0.0.0.0"
+    """Real client IP when behind proxy (R-WAPT / rate limit).
+
+    The left-most X-Forwarded-For entries are whatever the client sent, so rotating them used to
+    dodge the limit. Only a request whose direct peer is a proxy (private/loopback address) is
+    trusted, and the IP is the entry the trusted proxies appended, counted from the right.
+    """
+    peer = request.client.host if request.client else "0.0.0.0"
+    if not TRUST_PROXY or not _is_proxy_peer(peer):
+        return peer
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client:
-        return request.client.host
-    return "0.0.0.0"
+    if not forwarded:
+        return peer
+    hops = [part.strip() for part in forwarded.split(",") if part.strip()]
+    if not hops:
+        return peer
+    return hops[max(0, len(hops) - TRUSTED_PROXY_HOPS)]
 
 
 # --- Rate limiting: 40 requests per minute per IP (same as Node) ---

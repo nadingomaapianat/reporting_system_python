@@ -7,6 +7,7 @@ from datetime import datetime
 import os
 import httpx
 from fastapi import APIRouter, Query, HTTPException, Request, UploadFile, File, Form
+from utils.upload_limits import read_upload
 from fastapi.responses import Response, FileResponse, StreamingResponse
 from typing import Optional
 
@@ -54,7 +55,7 @@ async def create_bank_check_report(
     format: str = Form("excel")
 ):
     try:
-        content = await file.read()
+        content = await read_upload(file)
         excel_bytes, word_bytes = bank_check_service.process(content, {
             "bankName": bankName,
             "cost": cost,
@@ -101,7 +102,7 @@ async def debug_bank_check(
     file: UploadFile = File(...)
 ):
     try:
-        content = await file.read()
+        content = await read_upload(file)
         webhook_url = os.getenv('OCR_WEBHOOK_URL')
         if webhook_url:
             async with httpx.AsyncClient(timeout=60, verify=get_httpx_verify()) as client:
@@ -164,7 +165,7 @@ async def create_enhanced_bank_check_report(
             if not file:
                 raise HTTPException(status_code=400, detail="No file provided")
             
-            content = await file.read()
+            content = await read_upload(file)
             excel_bytes, word_bytes, data = await enhanced_bank_check_service.process_check(content, file.filename or 'check.pdf')
             
             # Create ZIP with both files
@@ -415,7 +416,7 @@ async def preview_enhanced_bank_check(
 ):
     """Preview extracted data from bank check without generating files"""
     try:
-        content = await file.read()
+        content = await read_upload(file)
         data = await enhanced_bank_check_service.extract_check_data(content, file.filename or 'check.pdf')
         return {
             "success": True,
@@ -436,7 +437,7 @@ async def extract_excel_headers(
 ):
     """Extract headers from Excel template file"""
     try:
-        content = await file.read()
+        content = await read_upload(file)
         headers = await enhanced_bank_check_service.extract_excel_headers(content, file.filename or 'template.xlsx')
         return {
             "success": True,

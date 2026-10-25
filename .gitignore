@@ -26,3 +26,9 @@ venv/
 !.env.example
 !.env.bank.example
 environment.env
+
+# Generated report output and local wheel cache (not source; may contain real data)
+files/exports/
+reports_export/
+exports/
+python-packages-offline/

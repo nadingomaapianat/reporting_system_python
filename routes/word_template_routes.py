@@ -1,4 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, Form, Body, HTTPException
+from utils.upload_limits import read_upload
 from fastapi.responses import Response, JSONResponse
 from io import BytesIO
 import logging
@@ -373,7 +374,7 @@ async def analyze_template(template: UploadFile = File(...)):
 			)
 		
 		# Read uploaded file
-		file_content = await template.read()
+		file_content = await read_upload(template)
 		
 		if len(file_content) == 0:
 			return JSONResponse(
@@ -1731,7 +1732,7 @@ async def get_excel_columns(file: UploadFile = File(...), sheet: str = Form(None
 	"""Get column names from Excel file"""
 	try:
 		# Read Excel file
-		file_content = await file.read()
+		file_content = await read_upload(file)
 		file_stream = BytesIO(file_content)
 		
 		# Try to read with openpyxl first (for .xlsx)
@@ -1788,7 +1789,7 @@ async def get_excel_data(file: UploadFile = File(...), sheet: str = Form(None), 
 		selected_columns = json.loads(columns) if columns else []
 		
 		# Read Excel file
-		file_content = await file.read()
+		file_content = await read_upload(file)
 		file_stream = BytesIO(file_content)
 		
 		# Read Excel with pandas
@@ -1880,7 +1881,7 @@ async def get_excel_data(file: UploadFile = File(...), sheet: str = Form(None), 
 async def get_xbrl_concepts(file: UploadFile = File(...)):
 	"""Get XBRL taxonomy concepts from XBRL file"""
 	try:
-		file_content = await file.read()
+		file_content = await read_upload(file)
 		
 		# Parse XBRL XML
 		try:
@@ -1960,7 +1961,7 @@ async def get_xbrl_data(
 	try:
 		# Save uploaded file temporarily
 		with tempfile.NamedTemporaryFile(delete=False, suffix='.xml') as tmp_file:
-			content = await file.read()
+			content = await read_upload(file)
 			tmp_file.write(content)
 			tmp_path = tmp_file.name
 		

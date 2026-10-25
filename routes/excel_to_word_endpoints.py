@@ -1,5 +1,6 @@
 # Top-level imports
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
+from utils.upload_limits import read_upload
 from fastapi.responses import FileResponse
 from typing import Optional
 import os
@@ -41,7 +42,7 @@ async def excel_to_word_preview(
     sheet: Optional[str] = Form(None)
 ):
     try:
-        excel_bytes = await excel.read()
+        excel_bytes = await read_upload(excel)
         wb = load_workbook(filename=BytesIO(excel_bytes), data_only=True)
         sheet_names = wb.sheetnames
         selected = sheet if sheet and sheet in sheet_names else wb.active.title
@@ -175,7 +176,7 @@ async def excel_to_word_debug(
 ):
     """Debug endpoint to analyze Word template and show all text content."""
     try:
-        template_bytes = await template.read()
+        template_bytes = await read_upload(template)
         doc = Document(BytesIO(template_bytes))
         
         # Save uploaded template to 'template' folder (debug endpoint) once per day using original name + date
@@ -294,8 +295,8 @@ async def excel_to_word(
     """
 
     try:
-        excel_bytes = await excel.read()
-        template_bytes = await template.read()
+        excel_bytes = await read_upload(excel)
+        template_bytes = await read_upload(template)
 
         wb = load_workbook(filename=BytesIO(excel_bytes), data_only=True)
         doc = Document(BytesIO(template_bytes))

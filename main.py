@@ -193,6 +193,8 @@ def create_app() -> FastAPI:
             }
 
     # Serve exported files statically under /exports
+    # The folder is generated output (not in git); StaticFiles refuses to start if it is missing.
+    os.makedirs("exports", exist_ok=True)
     app.mount("/exports", StaticFiles(directory="exports"), name="exports")
 
     @app.on_event("startup")
