@@ -24,7 +24,12 @@ class APIService:
     def __init__(self):
         self.node_api_url = API_CONFIG['node_api_url']
         self.timeout = API_CONFIG['timeout']
-        self._connector = _make_connector()
+
+    @property
+    def _connector(self):
+        # A new connector for each session: aiohttp only creates one inside a running event
+        # loop, and a session closes the connector it was given when it exits.
+        return _make_connector()
 
     @staticmethod
     def _node_grc_filter_params(

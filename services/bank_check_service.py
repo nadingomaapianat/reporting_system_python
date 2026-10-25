@@ -8,7 +8,7 @@ import unicodedata
 import httpx
 import pandas as pd
 from utils.https_cert import get_httpx_verify
-from PyPDF2 import PdfReader
+from pypdf import PdfReader
 from docx import Document
 from pdf2image import convert_from_bytes
 import pytesseract
