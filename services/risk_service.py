@@ -40,9 +40,9 @@ class RiskService:
         Mirror Node UserFunctionAccessService.getUserFunctionAccess for Risks.
 
         Behaviour:
-        - Admin (same as Node): super_admin_ group, REPORTING_SUPER_ADMIN_USER_IDS,
-          JWT role=admin, or JWT isAdmin=true → no function filter.
-        - If user_id is None: treat as unrestricted (backward compatibility).
+        - Admin (same as Node): super_admin_ group or REPORTING_SUPER_ADMIN_USER_IDS
+          → no function filter.
+        - If user_id is None: no access (no function filter would mean everything).
         - Otherwise: fetch functionIds from UserFunction + Functions.
         """
         claims = get_request_jwt_claims()
@@ -58,7 +58,8 @@ class RiskService:
 
         # Backwards compatibility: if we don't know the user, don't restrict data
         if not user_id:
-            return {"is_super_admin": True, "function_ids": []}
+            # No verified user: no function access (was: unrestricted).
+            return {"is_super_admin": False, "function_ids": []}
 
         query = f"""
         SELECT LTRIM(RTRIM(uf.functionId)) AS id
@@ -83,17 +84,6 @@ class RiskService:
             )
         except Exception:
             pass
-
-        # UAT / migration only: if user has no UserFunction rows, treat like super-admin (same spirit as Node when table is missing + REPORTS_EMPTY_FUNCTIONS_SEE_ALL).
-        if (
-            not function_ids
-            and os.getenv("REPORTING_ALLOW_ALL_WHEN_NO_USER_FUNCTIONS", "").lower() in ("1", "true", "yes")
-        ):
-            try:
-                write_debug("[RiskService] access: REPORTING_ALLOW_ALL_WHEN_NO_USER_FUNCTIONS → no function filter")
-            except Exception:
-                pass
-            return {"is_super_admin": True, "function_ids": []}
 
         return {"is_super_admin": False, "function_ids": function_ids}
 

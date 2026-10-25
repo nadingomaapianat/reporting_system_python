@@ -20,8 +20,8 @@ def is_token_blocked(token: Optional[str]) -> bool:
     """
     True if the JWT was revoked (present in `blocked_tokens`) and still within its TTL.
 
-    Fail-open on DB error: a transient DB outage should not lock everyone out.
-    Flip to fail-closed (return True) only if the deployment requires it.
+    Fail-closed: if the check cannot run (DB error / no DB name) the token is treated as
+    blocked, so logged-out or force-logged-out tokens never work during a DB problem.
     """
     if not token or not str(token).strip():
         return False
@@ -32,8 +32,8 @@ def is_token_blocked(token: Optional[str]) -> bool:
 
         db_name = (DATABASE_CONFIG.get("database") or "").strip()
         if not db_name:
-            logger.warning("[Python Auth][Blocklist] DB_NAME empty; skipping blocklist check")
-            return False
+            logger.warning("[Python Auth][Blocklist] DB_NAME empty; treating token as blocked")
+            return True
 
         conn = get_db_connection()
         try:
@@ -54,6 +54,6 @@ def is_token_blocked(token: Optional[str]) -> bool:
                 pass
     except Exception as e:
         logger.warning(
-            "[Python Auth][Blocklist] DB query failed (allowing token through): %s", e
+            "[Python Auth][Blocklist] DB query failed (treating token as blocked): %s", e
         )
-        return False
+        return True

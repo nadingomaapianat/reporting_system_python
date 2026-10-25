@@ -61,8 +61,7 @@ def is_reporting_admin(
 
     - groupName / group / group_name → super admin (see _group_matches_super_admin)
     - user id in REPORTING_SUPER_ADMIN_USER_IDS (comma-separated)
-    - role == 'admin' (case-insensitive; JWT claim from Node: `role`)
-    - isAdmin truthy (bool or string; JWT claim from Node: `isAdmin`)
+    role / isAdmin token claims are NOT trusted: no real token carries them.
     - optional REPORTING_EXTRA_SUPER_ADMIN_GROUP_NAMES=comma-separated exact strings
     """
     c = claims or {}
@@ -84,18 +83,6 @@ def is_reporting_admin(
     allowed = [x.strip() for x in allowed if x.strip()]
     uid = _norm_str(user_id)
     if uid and uid in allowed:
-        return True
-
-    role = c.get("role")
-    if role is not None:
-        r = str(role).strip().lower()
-        if r == "admin":
-            return True
-
-    is_admin = c.get("isAdmin")
-    if is_admin is None:
-        is_admin = c.get("is_admin")
-    if _truthy(is_admin):
         return True
 
     return False

@@ -36,8 +36,8 @@ class KriService:
     async def _get_user_function_access(self, user_id: Optional[str], group_name: Optional[str]):
         """
         Mirror Node UserFunctionAccessService.getUserFunctionAccess for KRIs.
-        - Admin: super_admin_, REPORTING_SUPER_ADMIN_USER_IDS, JWT role=admin, isAdmin=true.
-        - If user_id is None: treat as unrestricted (backward compatibility).
+        - Admin: super_admin_ group or REPORTING_SUPER_ADMIN_USER_IDS.
+        - If user_id is None: no access (no function filter would mean everything).
         - Otherwise: fetch functionIds from UserFunction + Functions.
         """
         claims = get_request_jwt_claims()
@@ -45,7 +45,8 @@ class KriService:
             return {"is_super_admin": True, "function_ids": []}
 
         if not user_id:
-            return {"is_super_admin": True, "function_ids": []}
+            # No verified user: no function access (was: unrestricted).
+            return {"is_super_admin": False, "function_ids": []}
 
         query = f"""
         SELECT LTRIM(RTRIM(uf.functionId)) AS id
@@ -61,11 +62,6 @@ class KriService:
         # Trim function IDs to handle spaces
         function_ids = [str(r.get('id')).strip() if r.get('id') else None for r in rows]
         function_ids = [fid for fid in function_ids if fid]  # Remove None values
-        if (
-            not function_ids
-            and os.getenv("REPORTING_ALLOW_ALL_WHEN_NO_USER_FUNCTIONS", "").lower() in ("1", "true", "yes")
-        ):
-            return {"is_super_admin": True, "function_ids": []}
         return {"is_super_admin": False, "function_ids": function_ids}
 
     def _sql_escape_function_id(self, fid: str) -> str:

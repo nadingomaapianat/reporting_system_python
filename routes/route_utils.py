@@ -70,7 +70,8 @@ def extract_user_and_function_params(request: Any) -> tuple[Optional[str], Optio
     """
     Extract user_id, group_name, and function_id from request.
     Returns: (user_id, group_name, function_id)
-    Sources: request.state.user (JWT), or X-User-Id / X-Group-Name headers (when Node proxies with auth).
+    Source: request.state.user (the verified JWT) only. X-User-Id / X-Group-Name headers are
+    NOT trusted any more: anyone can send them.
     """
     user_id = None
     group_name = None
@@ -87,10 +88,6 @@ def extract_user_and_function_params(request: Any) -> tuple[Optional[str], Optio
         user_id = str(_uid).strip() if _uid is not None and str(_uid).strip() else None
         group_name = user.get('group') or user.get('groupName') or None
 
-    # When export is proxied through Node, user context is sent via headers (no JWT on Python)
-    if not user_id and hasattr(request, 'headers'):
-        user_id = request.headers.get('X-User-Id') or request.headers.get('x-user-id')
-        group_name = group_name or request.headers.get('X-Group-Name') or request.headers.get('x-group-name')
     if user_id and isinstance(user_id, str):
         user_id = user_id.strip() or None
     if group_name and isinstance(group_name, str):
