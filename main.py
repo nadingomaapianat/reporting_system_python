@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 import os
 import re
 # Load .env / environment.env so all links and config come from env
@@ -197,7 +198,6 @@ def create_app() -> FastAPI:
     os.makedirs("exports", exist_ok=True)
     app.mount("/exports", StaticFiles(directory="exports"), name="exports")
 
-    @app.on_event("startup")
     async def startup_event():
         """Verify fonts and test database connection at startup"""
         print("\n" + "="*70)
@@ -304,6 +304,14 @@ def create_app() -> FastAPI:
     @app.get("/")
     async def health_root():
         return {"status": "ok", "service": "python-api"}
+
+    # Starlette 1.x removed on_event; the lifespan runs the same startup checks.
+    @asynccontextmanager
+    async def lifespan(_app):
+        await startup_event()
+        yield
+
+    app.router.lifespan_context = lifespan
 
     return app
 

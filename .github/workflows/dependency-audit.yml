@@ -1,0 +1,21 @@
+name: Dependency audit
+
+# Blocks a push / pull request when a package pinned in requirements.txt has a known advisory that
+# is not in .audit-allowlist.json. The weekly run catches advisories published after the last push.
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 6 * * 1'
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pip-audit==2.9.0
+      - name: Known advisories in requirements.txt
+        run: python scripts/audit_check.py
