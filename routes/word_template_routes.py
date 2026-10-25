@@ -14,6 +14,12 @@ import base64
 import openpyxl
 import pandas as pd
 from lxml import etree
+from utils.error_sanitizer import client_error
+
+
+def _safe_xml_parser():
+	"""Parser for uploaded XBRL/XML: no entity expansion, no DTD loading, no network (XXE)."""
+	return etree.XMLParser(resolve_entities=False, load_dtd=False, no_network=True, huge_tree=False)
 from config import get_db_connection
 
 router = APIRouter(prefix="/word-template", tags=["word-template"])
@@ -896,7 +902,7 @@ async def get_users():
 		return JSONResponse({
 			"success": False,
 			"users": [],
-			"error": str(e)
+			"error": client_error(e)
 		})
 
 
@@ -1878,7 +1884,7 @@ async def get_xbrl_concepts(file: UploadFile = File(...)):
 		
 		# Parse XBRL XML
 		try:
-			root = etree.fromstring(file_content)
+			root = etree.fromstring(file_content, parser=_safe_xml_parser())
 			
 			# Get namespace map
 			nsmap = root.nsmap
@@ -1960,7 +1966,7 @@ async def get_xbrl_data(
 		
 		try:
 			# Parse XML/XBRL file
-			tree = etree.parse(tmp_path)
+			tree = etree.parse(tmp_path, parser=_safe_xml_parser())
 			root = tree.getroot()
 			
 			# Parse concepts list
@@ -2037,5 +2043,5 @@ async def get_xbrl_data(
 				
 	except Exception as e:
 		logger.error(f"Error reading XBRL file: {e}", exc_info=True)
-		return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+		return JSONResponse(content={"success": False, "error": client_error(e)}, status_code=500)
 

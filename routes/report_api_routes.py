@@ -8,6 +8,7 @@ import os
 import httpx
 from fastapi import APIRouter, Query, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import Response, FileResponse, StreamingResponse
+from utils.error_sanitizer import client_error
 from typing import Optional
 
 from services import APIService, PDFService, ExcelService, ControlService, IncidentService
@@ -350,7 +351,7 @@ async def list_recent_exports(request: Request, limit: int = Query(50), page: in
             cursor.close()
             conn.close()
     except Exception as e:
-        return {"success": False, "error": str(e), "exports": [], "pagination": {}}
+        return {"success": False, "error": client_error(e), "exports": [], "pagination": {}}
 
 @router.delete("/api/exports/{export_id}")
 async def delete_export(export_id: int, request: Request):
@@ -379,7 +380,7 @@ async def delete_export(export_id: int, request: Request):
                     if os.path.exists(file_path):
                         os.remove(file_path)
                 except Exception as fe:
-                    return {"success": True, "deleted": True, "fileDeleted": False, "warning": str(fe)}
+                    return {"success": True, "deleted": True, "fileDeleted": False, "warning": client_error(fe)}
 
             return {"success": True, "deleted": True, "fileDeleted": True}
         finally:
@@ -388,7 +389,7 @@ async def delete_export(export_id: int, request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": client_error(e)}
 
 @router.post("/api/reports/dynamic")
 async def generate_dynamic_report(request: Request):
@@ -681,7 +682,7 @@ async def get_dynamic_dashboard_charts():
             cursor.close()
             conn.close()
     except Exception as e:
-        return {"success": False, "error": str(e), "charts": []}
+        return {"success": False, "error": client_error(e), "charts": []}
 
 
 @router.delete("/api/reports/dynamic-dashboard/charts/{chart_id}")
@@ -703,7 +704,7 @@ async def delete_dynamic_dashboard_chart(chart_id: int):
             cursor.close()
             conn.close()
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": client_error(e)}
 
 
 @router.get("/api/exports/{export_id}/download")

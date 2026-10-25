@@ -2,8 +2,12 @@
 Error sanitization (CWE-209 remediation).
 Never expose stack traces, DB details, or file paths to clients.
 """
+import logging
 import os
 import re
+
+GENERIC_ERROR = "An error occurred while processing your request. Please try again later."
+_error_logger = logging.getLogger("reporting.errors")
 
 
 def is_production() -> bool:
@@ -35,5 +39,14 @@ def sanitize_error_message(message: str, production: bool | None = None) -> str:
         msg = re.sub(r"\s+", " ", msg).strip()
 
     if not msg or len(msg) < 5:
-        return "An error occurred while processing your request. Please try again later."
+        return GENERIC_ERROR
     return msg
+
+
+def client_error(exc: BaseException) -> str:
+    """Message to put in a response for an unexpected exception.
+
+    Production gets a generic text (the real error is logged); development keeps str(exc).
+    """
+    _error_logger.error("%s: %s", type(exc).__name__, exc, exc_info=exc)
+    return GENERIC_ERROR if is_production() else str(exc)

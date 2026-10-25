@@ -19,6 +19,7 @@ from utils.export_utils import get_default_header_config
 from models import ExportRequest, ExportResponse
 from routes.route_utils import write_debug, parse_header_config, merge_header_config, convert_to_boolean
 from utils.https_cert import get_httpx_verify
+from utils.error_sanitizer import client_error
 
 # Initialize services
 api_service = APIService()
@@ -127,7 +128,6 @@ async def debug_bank_check(
                         'fields': mapped_fields,
                         'diagnostics': {
                             'source': 'webhook',
-                            'webhookUrl': webhook_url,
                             'status': resp.status_code
                         }
                     }
@@ -601,7 +601,7 @@ async def insert_check_record(
         print(f"[EnhancedBankCheck] Insert error: {e}")
         return {
             "success": False,
-            "error": f"Database insertion failed: {str(e)}"
+            "error": f"Database insertion failed: {client_error(e)}"
         }
 
 @router.get("/api/reports/enhanced-bank-check/tables")
@@ -704,44 +704,11 @@ async def get_database_tables():
             "tables": sample_tables,
             "count": len(sample_tables),
             "note": "Using fallback data - SQL Server connection failed",
-            "error": str(e)
+            "error": client_error(e)
         }
 
-@router.get("/api/reports/enhanced-bank-check/test-db")
-async def test_database_connection():
-    """Test SQL Server database connection"""
-    try:
-        from config import get_db_connection
-        
-        print(f"[DB Test] Attempting SQL Server connection...")
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Test query
-        cursor.execute("SELECT @@VERSION")
-        result = cursor.fetchone()[0]
-        
-        # Get table count
-        cursor.execute("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'")
-        table_count = cursor.fetchone()[0]
-        
-        cursor.close()
-        conn.close()
-        
-        return {
-            "success": True,
-            "message": "SQL Server connection successful",
-            "version": result,
-            "table_count": table_count,
-            "database": "NEWDCC-V4-UAT"
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "database": "NEWDCC-V4-UAT"
-        }
+# GET /api/reports/enhanced-bank-check/test-db was removed: it returned the SQL Server
+# version string and table count to any logged-in user.
 
 @router.post("/api/reports/enhanced-bank-check/check-table")
 async def check_table_exists(request: Request):
@@ -816,7 +783,7 @@ async def check_table_exists(request: Request):
     except Exception as e:
         return {
             "success": False,
-            "error": str(e)
+            "error": client_error(e)
         }
 
 # POST /api/reports/enhanced-bank-check/create-table was removed: it built CREATE TABLE

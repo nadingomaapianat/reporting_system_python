@@ -47,13 +47,14 @@ PUBLIC_PATHS: List[str] = [
     "/csrf/token",
     "/api/auth/validate-token",
     "/api/auth/logout",
-    "/docs",
-    "/redoc",
-    "/openapi.json",
     "/health",
 ]
-if os.getenv("REPORTING_DEBUG_COOKIES_ENDPOINT", "").lower() in ("1", "true", "yes"):
-    PUBLIC_PATHS.append("/debug/cookies")
+# Outside production the API docs and the cookie debug endpoint are open; in production the
+# docs need a login (and are off unless ENABLE_API_DOCS=true) and /debug/cookies does not exist.
+if os.getenv("NODE_ENV") and os.getenv("NODE_ENV") != "production":
+    PUBLIC_PATHS += ["/docs", "/redoc", "/openapi.json"]
+    if os.getenv("REPORTING_DEBUG_COOKIES_ENDPOINT", "").lower() in ("1", "true", "yes"):
+        PUBLIC_PATHS.append("/debug/cookies")
 
 # HTTPBearer dependency for `get_current_user` (auto_error=False so we can return
 # a uniform 401 from middleware/dependency without FastAPI's default plain-text 403).

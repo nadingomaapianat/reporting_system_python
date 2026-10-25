@@ -8,6 +8,8 @@ try:
 except ImportError:
     pass
 from fastapi import FastAPI, Request, Response
+from fastapi.exception_handlers import http_exception_handler
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import JSONResponse
@@ -19,7 +21,7 @@ from utils import api_routes
 from utils.csrf import CSRFMiddleware, create_csrf_token, set_csrf_cookie
 from utils.auth import JWTAuthMiddleware
 from utils.security_middleware import RateLimitMiddleware, SecurityHeadersMiddleware
-from utils.error_sanitizer import sanitize_error_message, is_production
+from utils.error_sanitizer import GENERIC_ERROR, is_production
 api_router = api_routes.router
 print("DEBUG: main.py - All routers imported (consolidated in api_router)")
 
@@ -30,19 +32,21 @@ def create_app() -> FastAPI:
     # Setup logging
     import logging
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=os.getenv("LOG_LEVEL", "INFO" if is_production() else "DEBUG").upper(),
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.StreamHandler(),
         ]
     )
     
+    # API docs list every route and parameter: off in production unless ENABLE_API_DOCS=true.
+    docs_on = not is_production() or os.getenv("ENABLE_API_DOCS", "").lower() in ("1", "true", "yes")
     app = FastAPI(
         title="Reporting System Python API",
         version="1.0.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
+        docs_url="/docs" if docs_on else None,
+        redoc_url="/redoc" if docs_on else None,
+        openapi_url="/openapi.json" if docs_on else None,
     )
     
     print("DEBUG: FastAPI app created, adding middleware...")
@@ -53,11 +57,20 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         logger.error("GLOBAL EXCEPTION: %s: %s", type(exc).__name__, exc, exc_info=True)
-        safe_message = sanitize_error_message(str(exc), is_production())
         return JSONResponse(
             status_code=500,
-            content={"detail": safe_message},
+            content={"detail": GENERIC_ERROR if is_production() else str(exc)},
         )
+
+    # Many routes raise HTTPException(500, detail=f"...{str(e)}"), which would send SQL / driver /
+    # path details to the browser. In production replace 5xx details with a generic message;
+    # 4xx details (validation messages) are unchanged.
+    @app.exception_handler(StarletteHTTPException)
+    async def hide_server_error_details(request: Request, exc: StarletteHTTPException):
+        if exc.status_code >= 500 and is_production():
+            logger.error("HTTP %s on %s %s: %s", exc.status_code, request.method, request.url.path, exc.detail)
+            return JSONResponse(status_code=exc.status_code, content={"detail": GENERIC_ERROR}, headers=getattr(exc, "headers", None))
+        return await http_exception_handler(request, exc)
     
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
@@ -155,8 +168,8 @@ def create_app() -> FastAPI:
         set_csrf_cookie(response, token, secure=csrf_cookie_secure)
         return {"csrfToken": token}
 
-    # Optional: echo cookies for debugging cross-origin auth (enable REPORTING_DEBUG_COOKIES_ENDPOINT=true)
-    if os.getenv("REPORTING_DEBUG_COOKIES_ENDPOINT", "").lower() in ("1", "true", "yes"):
+    # Optional: echo cookies for debugging cross-origin auth (REPORTING_DEBUG_COOKIES_ENDPOINT=true, never in production)
+    if not is_production() and os.getenv("REPORTING_DEBUG_COOKIES_ENDPOINT", "").lower() in ("1", "true", "yes"):
 
         @app.get("/debug/cookies")
         async def debug_cookies(request: Request):
@@ -291,7 +304,7 @@ if __name__ == "__main__":
     import uvicorn
     print("DEBUG: About to start uvicorn server...")
     port = int(os.getenv("PORT", "8000"))
-    use_reload = os.getenv("RELOAD", "1").strip().lower() in ("1", "true", "yes")
+    use_reload = os.getenv("RELOAD", "0").strip().lower() in ("1", "true", "yes")
     print(f"DEBUG: Starting server on port {port}... (reload={use_reload})")
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=use_reload)
 
