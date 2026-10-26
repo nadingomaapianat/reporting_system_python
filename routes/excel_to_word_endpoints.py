@@ -1,6 +1,6 @@
 # Top-level imports
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
-from utils.upload_limits import read_upload
+from utils.upload_limits import read_upload, EXCEL, WORD
 from fastapi.responses import FileResponse
 from typing import Optional
 import os
@@ -42,7 +42,7 @@ async def excel_to_word_preview(
     sheet: Optional[str] = Form(None)
 ):
     try:
-        excel_bytes = await read_upload(excel)
+        excel_bytes = await read_upload(excel, EXCEL)
         wb = load_workbook(filename=BytesIO(excel_bytes), data_only=True)
         sheet_names = wb.sheetnames
         selected = sheet if sheet and sheet in sheet_names else wb.active.title
@@ -122,6 +122,8 @@ async def excel_to_word_preview(
             "selectedSheet": selected,
             "sheetPreview": {"size": sel_size}
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"Excel preview analysis failed: {exc}", exc_info=True)
         raise HTTPException(status_code=400, detail="Failed to analyze Excel file")
@@ -176,7 +178,7 @@ async def excel_to_word_debug(
 ):
     """Debug endpoint to analyze Word template and show all text content."""
     try:
-        template_bytes = await read_upload(template)
+        template_bytes = await read_upload(template, WORD)
         doc = Document(BytesIO(template_bytes))
         
         # Save uploaded template to 'template' folder (debug endpoint) once per day using original name + date
@@ -268,6 +270,8 @@ async def excel_to_word_debug(
         
         return debug_info
         
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"Debug analysis failed: {exc}", exc_info=True)
         error_detail = {
@@ -295,8 +299,8 @@ async def excel_to_word(
     """
 
     try:
-        excel_bytes = await read_upload(excel)
-        template_bytes = await read_upload(template)
+        excel_bytes = await read_upload(excel, EXCEL)
+        template_bytes = await read_upload(template, WORD)
 
         wb = load_workbook(filename=BytesIO(excel_bytes), data_only=True)
         doc = Document(BytesIO(template_bytes))
@@ -552,6 +556,8 @@ async def excel_to_word(
         logger.info(f"Successfully generated Word document: {filename}")
         return FileResponse(filepath, filename=filename)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Excel to Word conversion failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error generating Word file: {str(e)}")

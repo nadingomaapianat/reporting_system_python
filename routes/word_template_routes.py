@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, Form, Body, HTTPException
-from utils.upload_limits import read_upload
+from utils.upload_limits import read_upload, EXCEL, XML
 from fastapi.responses import Response, JSONResponse
 from io import BytesIO
 import logging
@@ -374,7 +374,7 @@ async def analyze_template(template: UploadFile = File(...)):
 			)
 		
 		# Read uploaded file
-		file_content = await read_upload(template)
+		file_content = await read_upload(template, (".docx", ".doc"))
 		
 		if len(file_content) == 0:
 			return JSONResponse(
@@ -434,6 +434,8 @@ async def analyze_template(template: UploadFile = File(...)):
 			}
 		)
 		
+	except HTTPException:
+		raise
 	except Exception as e:
 		error_msg = str(e)
 		traceback_str = traceback.format_exc()
@@ -1732,7 +1734,7 @@ async def get_excel_columns(file: UploadFile = File(...), sheet: str = Form(None
 	"""Get column names from Excel file"""
 	try:
 		# Read Excel file
-		file_content = await read_upload(file)
+		file_content = await read_upload(file, EXCEL)
 		file_stream = BytesIO(file_content)
 		
 		# Try to read with openpyxl first (for .xlsx)
@@ -1773,6 +1775,8 @@ async def get_excel_columns(file: UploadFile = File(...), sheet: str = Form(None
 				logger.error(f"Error reading Excel: {e1}, {e2}")
 				raise HTTPException(status_code=400, detail=f"Failed to read Excel file: {str(e2)}")
 		
+	except HTTPException:
+		raise
 	except Exception as e:
 		error_msg = str(e)
 		traceback_str = traceback.format_exc()
@@ -1789,7 +1793,7 @@ async def get_excel_data(file: UploadFile = File(...), sheet: str = Form(None), 
 		selected_columns = json.loads(columns) if columns else []
 		
 		# Read Excel file
-		file_content = await read_upload(file)
+		file_content = await read_upload(file, EXCEL)
 		file_stream = BytesIO(file_content)
 		
 		# Read Excel with pandas
@@ -1869,6 +1873,8 @@ async def get_excel_data(file: UploadFile = File(...), sheet: str = Form(None), 
 			logger.error(f"Error reading Excel data: {e1}")
 			raise HTTPException(status_code=400, detail=f"Failed to read Excel data: {str(e1)}")
 		
+	except HTTPException:
+		raise
 	except Exception as e:
 		error_msg = str(e)
 		traceback_str = traceback.format_exc()
@@ -1881,7 +1887,7 @@ async def get_excel_data(file: UploadFile = File(...), sheet: str = Form(None), 
 async def get_xbrl_concepts(file: UploadFile = File(...)):
 	"""Get XBRL taxonomy concepts from XBRL file"""
 	try:
-		file_content = await read_upload(file)
+		file_content = await read_upload(file, XML)
 		
 		# Parse XBRL XML
 		try:
@@ -1938,6 +1944,8 @@ async def get_xbrl_concepts(file: UploadFile = File(...)):
 			logger.error(f"XML parsing error: {e}")
 			raise HTTPException(status_code=400, detail=f"Invalid XBRL/XML file: {str(e)}")
 		
+	except HTTPException:
+		raise
 	except Exception as e:
 		error_msg = str(e)
 		traceback_str = traceback.format_exc()
@@ -1961,7 +1969,7 @@ async def get_xbrl_data(
 	try:
 		# Save uploaded file temporarily
 		with tempfile.NamedTemporaryFile(delete=False, suffix='.xml') as tmp_file:
-			content = await read_upload(file)
+			content = await read_upload(file, XML)
 			tmp_file.write(content)
 			tmp_path = tmp_file.name
 		
@@ -2042,6 +2050,8 @@ async def get_xbrl_data(
 			if os.path.exists(tmp_path):
 				os.unlink(tmp_path)
 				
+	except HTTPException:
+		raise
 	except Exception as e:
 		logger.error(f"Error reading XBRL file: {e}", exc_info=True)
 		return JSONResponse(content={"success": False, "error": client_error(e)}, status_code=500)

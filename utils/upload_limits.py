@@ -22,7 +22,19 @@ def _mb_setting(name: str, default_mb: float) -> int:
     return int((mb if mb > 0 else default_mb) * _MB)
 
 
-async def read_upload(upload: UploadFile) -> bytes:
+EXCEL = (".xlsx", ".xlsm", ".xls")
+WORD = (".docx",)
+XML = (".xml", ".xbrl", ".xsd")
+PDF = (".pdf",)
+CHECK_SCAN = (".pdf", ".png", ".jpg", ".jpeg")
+
+
+async def read_upload(upload: UploadFile, allowed: tuple = None) -> bytes:
+    """allowed: accepted file extensions (e.g. EXCEL); anything else is refused with 400 (WAPT06)."""
+    if allowed is not None:
+        name = (upload.filename or "").lower()
+        if not name.endswith(tuple(allowed)):
+            raise HTTPException(status_code=400, detail="Unsupported file type. Allowed: " + ", ".join(allowed))
     max_bytes = _mb_setting("UPLOAD_MAX_FILE_MB", 50)
     content = await upload.read(max_bytes + 1)
     if len(content) > max_bytes:

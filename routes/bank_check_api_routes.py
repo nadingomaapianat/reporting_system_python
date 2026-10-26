@@ -7,7 +7,7 @@ from datetime import datetime
 import os
 import httpx
 from fastapi import APIRouter, Query, HTTPException, Request, UploadFile, File, Form
-from utils.upload_limits import read_upload
+from utils.upload_limits import read_upload, CHECK_SCAN, EXCEL, PDF
 from fastapi.responses import Response, FileResponse, StreamingResponse
 from typing import Optional
 
@@ -55,7 +55,7 @@ async def create_bank_check_report(
     format: str = Form("excel")
 ):
     try:
-        content = await read_upload(file)
+        content = await read_upload(file, PDF)
         excel_bytes, word_bytes = bank_check_service.process(content, {
             "bankName": bankName,
             "cost": cost,
@@ -93,6 +93,8 @@ async def create_bank_check_report(
             buffer.seek(0)
             filename = f"bank_check_{ts}.zip"
             return Response(content=buffer.getvalue(), media_type='application/zip', headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create bank check report: {str(e)}")
 
@@ -102,7 +104,7 @@ async def debug_bank_check(
     file: UploadFile = File(...)
 ):
     try:
-        content = await read_upload(file)
+        content = await read_upload(file, PDF)
         webhook_url = os.getenv('OCR_WEBHOOK_URL')
         if webhook_url:
             async with httpx.AsyncClient(timeout=60, verify=get_httpx_verify()) as client:
@@ -145,6 +147,8 @@ async def debug_bank_check(
             "fields": fields,
             "diagnostics": diag
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Debug extraction failed: {str(e)}")
 
@@ -165,7 +169,7 @@ async def create_enhanced_bank_check_report(
             if not file:
                 raise HTTPException(status_code=400, detail="No file provided")
             
-            content = await read_upload(file)
+            content = await read_upload(file, CHECK_SCAN)
             excel_bytes, word_bytes, data = await enhanced_bank_check_service.process_check(content, file.filename or 'check.pdf')
             
             # Create ZIP with both files
@@ -407,6 +411,8 @@ async def create_enhanced_bank_check_report(
                     }
                 )
                 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Enhanced bank check processing failed: {str(e)}")
 
@@ -416,7 +422,7 @@ async def preview_enhanced_bank_check(
 ):
     """Preview extracted data from bank check without generating files"""
     try:
-        content = await read_upload(file)
+        content = await read_upload(file, CHECK_SCAN)
         data = await enhanced_bank_check_service.extract_check_data(content, file.filename or 'check.pdf')
         return {
             "success": True,
@@ -428,6 +434,8 @@ async def preview_enhanced_bank_check(
                 "success_rate": f"{(sum(1 for v in data.values() if v and v != '') / 10 * 100):.1f}%"
             }
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Preview failed: {str(e)}")
 
@@ -437,13 +445,15 @@ async def extract_excel_headers(
 ):
     """Extract headers from Excel template file"""
     try:
-        content = await read_upload(file)
+        content = await read_upload(file, EXCEL)
         headers = await enhanced_bank_check_service.extract_excel_headers(content, file.filename or 'template.xlsx')
         return {
             "success": True,
             "headers": headers,
             "count": len(headers)
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Header extraction failed: {str(e)}")
 

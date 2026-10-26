@@ -46,7 +46,6 @@ _ALLOW_QUERY_TOKEN_GET = os.getenv("REPORTING_ALLOW_QUERY_TOKEN_AUTH", "false").
 # Public paths: allowed without a JWT. Extended for debug below.
 PUBLIC_PATHS: List[str] = [
     "/csrf/token",
-    "/api/auth/validate-token",
     "/api/auth/logout",
     "/health",
 ]
@@ -371,26 +370,3 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-# =============================================================================
-# Used by /api/auth/validate-token endpoint
-# =============================================================================
-def validate_token(token: str) -> Dict[str, Any]:
-    """Validate a token and return the decoded payload — matches v2_backend response shape."""
-    if not token:
-        return {"success": False, "message": "Token is required"}
-
-    try:
-        payload = verify_token(token)
-        return {
-            "success": True,
-            "data": {
-                "group": payload.get("group"),
-                "title": payload.get("title"),
-                "name": payload.get("name"),
-                "id": payload.get("id"),
-            },
-        }
-    except HTTPException as e:
-        return {"success": False, "message": e.detail}
-    except Exception:
-        return {"success": False, "message": "Invalid or expired token"}
