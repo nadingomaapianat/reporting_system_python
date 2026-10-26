@@ -1640,8 +1640,8 @@ class IncidentService:
 
         query = f"""
         SELECT 
-            YEAR(i.occurrence_date) AS year,
-            MONTH(i.occurrence_date) AS month,
+            YEAR(i.createdAt) AS year,
+            MONTH(i.createdAt) AS month,
             -- same amounts as the catalog columns (Total Loss / Recoveries Amount / Net Loss)
             CAST(SUM(ISNULL(i.total_loss, 0)) AS DECIMAL(18,2)) AS totalLossValue,
             CAST(SUM(ISNULL(i.recovery_amount, 0)) AS DECIMAL(18,2)) AS recoveryValue,
@@ -1652,9 +1652,8 @@ class IncidentService:
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
-            AND i.occurrence_date IS NOT NULL
             AND (ISNULL(i.total_loss, 0) <> 0 OR ISNULL(i.recovery_amount, 0) <> 0 OR ISNULL(i.net_loss, 0) <> 0)
-        GROUP BY YEAR(i.occurrence_date), MONTH(i.occurrence_date)
+        GROUP BY YEAR(i.createdAt), MONTH(i.createdAt)
         ORDER BY year, month
         """
         return await self.execute_query(query)
@@ -1676,7 +1675,7 @@ class IncidentService:
 
         query = f"""
         SELECT 
-            FORMAT(COALESCE(i.occurrence_date, i.createdAt), 'yyyy-MM') AS Period,
+            FORMAT(i.createdAt, 'yyyy-MM') AS Period,
             SUM(CASE WHEN ie.name = N'Internal Fraud' THEN 1 ELSE 0 END) AS InternalFrauds,
             SUM(CASE WHEN ie.name = N'External Fraud' THEN 1 ELSE 0 END) AS ExternalFrauds,
             SUM(CASE WHEN ie.name = N'Damage to Physical Assets' THEN 1 ELSE 0 END) AS PhysicalAssetDamages,
@@ -1692,7 +1691,7 @@ class IncidentService:
             AND i.deletedAt IS NULL
             {date_filter}
             {function_filter}
-        GROUP BY FORMAT(COALESCE(i.occurrence_date, i.createdAt), 'yyyy-MM')
+        GROUP BY FORMAT(i.createdAt, 'yyyy-MM')
         ORDER BY Period
         """
         result = await self.execute_query(query)
@@ -1848,4 +1847,4 @@ class IncidentService:
             {function_filter}
             AND sc.name IN (N'System Error', N'Prime System Issue', N'Transaction system error (TRX BUG)')
         """
-        return await self.execute_query(query)
+        return await self.execute_query(query)

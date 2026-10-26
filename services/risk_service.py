@@ -26,6 +26,29 @@ class RiskService:
 
     """Service for risk operations"""
     
+    @staticmethod
+    def _valid_date(value):
+        """YYYY-MM-DD when value starts with a real calendar date, else None."""
+        from datetime import datetime as _dt
+        if not value:
+            return None
+        d = str(value).strip()[:10]
+        try:
+            _dt.strptime(d, "%Y-%m-%d")
+        except ValueError:
+            return None
+        return d
+
+    def _risk_date_sql(self, start_date=None, end_date=None, field="r.createdAt"):
+        """Same rule as the Node dashboard: field >= start AND field < end + 1 day."""
+        parts = []
+        start, end = self._valid_date(start_date), self._valid_date(end_date)
+        if start:
+            parts.append(f"AND {field} >= '{start}'")
+        if end:
+            parts.append(f"AND {field} < DATEADD(day, 1, '{end}')")
+        return (" " + " ".join(parts)) if parts else ""
+
     def __init__(self):
         pass  # connection via get_db_connection() when needed
 
@@ -219,13 +242,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get risks grouped by category"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.created_at BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.created_at >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.created_at <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -256,13 +273,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get risks grouped by event type"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -293,13 +304,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get list of risks filtered by inherent_value level (e.g., 'High', 'Medium', 'Low')."""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -330,13 +335,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get list of all risks (filtered by date if provided)."""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -368,13 +367,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get total risks count"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -400,13 +393,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get high risks count"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -433,13 +420,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get medium risks count"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -466,13 +447,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get low risks count"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -554,13 +529,15 @@ class RiskService:
 
         residual_date_filter = ""
         params = []
-        if start_date and end_date:
-            import re
-            if re.match(r"^\d{4}-\d{2}-\d{2}", str(start_date).strip()) and re.match(r"^\d{4}-\d{2}-\d{2}", str(end_date).strip()):
-                start = str(start_date).strip()[:10]
-                end = str(end_date).strip()[:10]
-                residual_date_filter = " AND rr.createdAt >= %s AND rr.createdAt <= %s"
-                params = [f"{start}", f"{end} 23:59:59"]
+        # Same as the screen: each bound on its own, whole end day included
+        start = self._valid_date(start_date)
+        end = self._valid_date(end_date)
+        if start:
+            residual_date_filter += " AND rr.createdAt >= %s"
+            params.append(start)
+        if end:
+            residual_date_filter += " AND rr.createdAt < DATEADD(day, 1, %s)"
+            params.append(end)
 
         risks_t = self.get_fully_qualified_table_name("Risks")
         # Match Node: table name is Residualrisks (lowercase 'r' in risks)
@@ -601,13 +578,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get new risks this month count"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -641,13 +612,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get risks grouped by category"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -655,7 +620,7 @@ class RiskService:
         query = f"""
         SELECT 
             ISNULL(c.name, 'Uncategorized') as name,
-            COUNT(r.id) as value
+            COUNT(DISTINCT r.id) as value
         FROM {self.get_fully_qualified_table_name('Risks')} r
         LEFT JOIN dbo.RiskCategories rc ON r.id = rc.risk_id AND rc.isDeleted = 0
         LEFT JOIN dbo.Categories c ON rc.category_id = c.id AND c.isDeleted = 0
@@ -677,13 +642,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get risks by event type for charts"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -712,13 +671,8 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get created and deleted risks per quarter"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")
+        deleted_date_filter = self._risk_date_sql(start_date, end_date, "r.deletedAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -727,31 +681,33 @@ class RiskService:
         current_year = datetime.now().year
         
         query = f"""
-        WITH AllQuarters AS (
-        SELECT 1 AS quarter_num, 'Q1 {current_year}' AS quarter_label
-        UNION ALL SELECT 2, 'Q2 {current_year}'
-        UNION ALL SELECT 3, 'Q3 {current_year}' 
-        UNION ALL SELECT 4, 'Q4 {current_year}'
+        WITH CreatedInQuarter AS (
+          SELECT YEAR(r.createdAt) AS yr, DATEPART(quarter, r.createdAt) AS quarter_num, COUNT(*) AS created
+          FROM {self.get_fully_qualified_table_name('Risks')} r
+          WHERE 1 = 1 {date_filter}
+          {function_filter}
+          GROUP BY YEAR(r.createdAt), DATEPART(quarter, r.createdAt)
         ),
-        QuarterData AS (
-        SELECT 
-            DATEPART(quarter, r.createdAt) AS quarter_num,
-            'Q' + CAST(DATEPART(quarter, r.createdAt) AS VARCHAR(1)) + ' {current_year}' AS quarter_label,
-            COUNT(CASE WHEN r.isDeleted = 0 THEN 1 END) AS created,
-            COUNT(CASE WHEN r.isDeleted = 1 THEN 1 END) AS deleted
-        FROM {self.get_fully_qualified_table_name('Risks')} r
-        WHERE YEAR(r.createdAt) = {current_year} {date_filter}
-        {function_filter}
-        GROUP BY DATEPART(quarter, r.createdAt), 
-                'Q' + CAST(DATEPART(quarter, r.createdAt) AS VARCHAR(1)) + ' {current_year}'
+        DeletedInQuarter AS (
+          SELECT YEAR(r.deletedAt) AS yr, DATEPART(quarter, r.deletedAt) AS quarter_num, COUNT(*) AS deleted
+          FROM {self.get_fully_qualified_table_name('Risks')} r
+          WHERE r.deletedAt IS NOT NULL {deleted_date_filter}
+          {function_filter}
+          GROUP BY YEAR(r.deletedAt), DATEPART(quarter, r.deletedAt)
+        ),
+        AllQuarters AS (
+          SELECT yr, quarter_num FROM CreatedInQuarter
+          UNION
+          SELECT yr, quarter_num FROM DeletedInQuarter
         )
-        SELECT 
-        q.quarter_label AS name,
-        ISNULL(qd.created, 0) AS created,
-        ISNULL(qd.deleted, 0) AS deleted
+        SELECT
+          CONCAT('Q', q.quarter_num, ' ', q.yr) AS name,
+          CAST(ISNULL(c.created, 0) AS INT) AS created,
+          CAST(ISNULL(d.deleted, 0) AS INT) AS deleted
         FROM AllQuarters q
-        LEFT JOIN QuarterData qd ON q.quarter_num = qd.quarter_num
-        ORDER BY q.quarter_num ASC
+        LEFT JOIN CreatedInQuarter c ON c.yr = q.yr AND c.quarter_num = q.quarter_num
+        LEFT JOIN DeletedInQuarter d ON d.yr = q.yr AND d.quarter_num = q.quarter_num
+        ORDER BY q.yr, q.quarter_num
         """
         
         write_debug(query)
@@ -767,13 +723,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get quarterly risk creation trends"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -807,33 +757,29 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get risk approval status distribution"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT 
-          CASE 
-            WHEN rr.preparerResidualStatus = 'sent' AND rr.acceptanceResidualStatus = 'approved' THEN 'Approved'
-            ELSE 'Not Approved'
-          END AS approve,
-          COUNT(*) AS count
-        FROM {self.get_fully_qualified_table_name('Risks')} r
-        INNER JOIN dbo.[ResidualRisks] rr ON r.id = rr.riskId
-        WHERE r.isDeleted = 0 {date_filter}
-        {function_filter}
-        GROUP BY 
-          CASE 
-            WHEN rr.preparerResidualStatus = 'sent' AND rr.acceptanceResidualStatus = 'approved' THEN 'Approved'
-            ELSE 'Not Approved'
-          END
+        SELECT approve, COUNT(*) AS count
+        FROM (
+          SELECT
+            CASE
+              WHEN EXISTS (
+                SELECT 1 FROM dbo.[ResidualRisks] rra
+                WHERE rra.riskId = r.id AND rra.isDeleted = 0
+                  AND rra.preparerResidualStatus = 'sent' AND rra.acceptanceResidualStatus = 'approved'
+              ) THEN 'Approved'
+              ELSE 'Not Approved'
+            END AS approve
+          FROM {self.get_fully_qualified_table_name('Risks')} r
+          WHERE r.isDeleted = 0 {date_filter}
+            {function_filter}
+            AND EXISTS (SELECT 1 FROM dbo.[ResidualRisks] rr WHERE rr.riskId = r.id AND rr.isDeleted = 0)
+        ) per_risk
+        GROUP BY approve
         ORDER BY approve ASC
         """
         
@@ -849,35 +795,30 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get risk distribution by financial impact level"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "rr.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT 
-          CASE 
-            WHEN r.inherent_financial_value <= 2 THEN 'Low' 
-            WHEN r.inherent_financial_value = 3 THEN 'Medium' 
-            WHEN r.inherent_financial_value >= 4 THEN 'High' 
-            ELSE 'Unknown' 
+        SELECT
+          CASE
+            WHEN rr.residual_financial_value <= 2 THEN 'Low'
+            WHEN rr.residual_financial_value = 3 THEN 'Medium'
+            WHEN rr.residual_financial_value >= 4 THEN 'High'
+            ELSE 'Unknown'
           END AS [Financial Status],
-          COUNT(*) AS count
+          COUNT(DISTINCT r.id) AS count
         FROM {self.get_fully_qualified_table_name('Risks')} r
+        INNER JOIN dbo.[ResidualRisks] rr ON rr.riskId = r.id AND rr.isDeleted = 0
         WHERE r.isDeleted = 0 {date_filter}
         {function_filter}
-        GROUP BY 
-          CASE 
-            WHEN r.inherent_financial_value <= 2 THEN 'Low' 
-            WHEN r.inherent_financial_value = 3 THEN 'Medium' 
-            WHEN r.inherent_financial_value >= 4 THEN 'High' 
-            ELSE 'Unknown' 
+        GROUP BY
+          CASE
+            WHEN rr.residual_financial_value <= 2 THEN 'Low'
+            WHEN rr.residual_financial_value = 3 THEN 'Medium'
+            WHEN rr.residual_financial_value >= 4 THEN 'High'
+            ELSE 'Unknown'
           END
         ORDER BY [Financial Status] ASC
         """
@@ -895,28 +836,22 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get total number of risks per department, filtered by function access"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
 
         query = f"""
         SELECT
-          f.name AS [Functions__name], 
-          COUNT(*) AS [count] 
+          ISNULL(f.name, 'Unknown') AS [Functions__name],
+          COUNT(DISTINCT r.id) AS [count]
         FROM {self.get_fully_qualified_table_name('Risks')} r
-        LEFT JOIN dbo.[RiskFunctions] rf ON r.id = rf.risk_id
-        LEFT JOIN dbo.[Functions] f ON rf.function_id = f.id
+        LEFT JOIN dbo.[RiskFunctions] rf ON rf.risk_id = r.id AND rf.deletedAt IS NULL
+        LEFT JOIN dbo.[Functions] f ON f.id = rf.function_id AND f.isDeleted = 0 AND f.deletedAt IS NULL
         WHERE r.isDeleted = 0 {date_filter}
         {function_filter}
-        GROUP BY f.name
-        ORDER BY [count] DESC, f.name ASC
+        GROUP BY ISNULL(f.name, 'Unknown')
+        ORDER BY [count] DESC, ISNULL(f.name, 'Unknown') ASC
         """
         
         return await self.execute_query(query)
@@ -931,27 +866,21 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get number of risks per business process"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT 
-          p.name AS process_name, 
-          COUNT(rp.risk_id) AS risk_count 
-        FROM dbo.[RiskProcesses] rp 
-        JOIN dbo.[Processes] p ON rp.process_id = p.id 
+        SELECT
+          p.name AS process_name,
+          COUNT(DISTINCT r.id) AS risk_count
+        FROM dbo.[RiskProcesses] rp
+        JOIN dbo.[Processes] p ON rp.process_id = p.id
         JOIN {self.get_fully_qualified_table_name('Risks')} r ON rp.risk_id = r.id
         WHERE r.isDeleted = 0 {date_filter}
         {function_filter}
-        GROUP BY p.name 
+        GROUP BY p.name
         ORDER BY risk_count DESC, p.name ASC
         """
         
@@ -967,13 +896,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get inherent risk & residual risk comparison"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -1004,13 +927,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get high residual risk overview"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -1095,13 +1012,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get risks and their controls count"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -1132,13 +1043,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get controls and risk count"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")  # risk dashboard: dates are the risk's
 
         # Note: This query is about Controls, but we filter by Risks that are linked
         # So we still need to filter the Risks side
@@ -1146,16 +1051,18 @@ class RiskService:
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
         
         query = f"""
-        SELECT 
-          c.name AS [Controls__name], 
+        -- Same rows as the dashboard table: live controls linked to at least one live risk
+        -- matching the filters (date = the risk's createdAt), with the number of such risks.
+        SELECT
+          c.name AS [Controls__name],
           (SELECT STRING_AGG(f.name, ', ') WITHIN GROUP (ORDER BY f.name) FROM dbo.[ControlFunctions] cf INNER JOIN dbo.[Functions] f ON f.id = cf.function_id WHERE cf.control_id = c.id AND cf.deletedAt IS NULL) AS function_name,
-          COUNT(DISTINCT rc.risk_id) AS [count] 
+          COUNT(DISTINCT r.id) AS [count]
         FROM dbo.[Controls] c
-        LEFT JOIN dbo.[RiskControls] rc ON c.id = rc.control_id 
-        LEFT JOIN {self.get_fully_qualified_table_name('Risks')} r ON rc.risk_id = r.id AND r.isDeleted = 0
-        WHERE c.isDeleted = 0 {date_filter}
+        INNER JOIN dbo.[RiskControls] rc ON c.id = rc.control_id
+        INNER JOIN {self.get_fully_qualified_table_name('Risks')} r ON rc.risk_id = r.id AND r.isDeleted = 0 AND r.deletedAt IS NULL {date_filter}
         {function_filter}
-        GROUP BY c.id, c.name 
+        WHERE c.isDeleted = 0 AND c.deletedAt IS NULL
+        GROUP BY c.id, c.name
         ORDER BY [count] DESC, c.name ASC
         """
         
@@ -1171,13 +1078,7 @@ class RiskService:
         function_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get all risks details - matches frontend allRisks table structure, filtered by function"""
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
-        elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
-        elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+        date_filter = self._risk_date_sql(start_date, end_date, "r.createdAt")
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
