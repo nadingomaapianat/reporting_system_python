@@ -21,7 +21,7 @@ print("DEBUG: main.py - About to import routers...")
 from utils import api_routes
 from utils.csrf import CSRFMiddleware, create_csrf_token, set_csrf_cookie
 from utils.auth import JWTAuthMiddleware
-from utils.security_middleware import RateLimitMiddleware, SecurityHeadersMiddleware
+from utils.security_middleware import RateLimitMiddleware, SecurityHeadersMiddleware, UploadLimitMiddleware
 from utils.error_sanitizer import GENERIC_ERROR, is_production
 api_router = api_routes.router
 print("DEBUG: main.py - All routers imported (consolidated in api_router)")
@@ -159,6 +159,7 @@ def create_app() -> FastAPI:
 
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(UploadLimitMiddleware)
 
     app.add_middleware(
         CORSMiddleware,
@@ -325,6 +326,6 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
     use_reload = os.getenv("RELOAD", "0").strip().lower() in ("1", "true", "yes")
     print(f"DEBUG: Starting server on port {port}... (reload={use_reload})")
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=use_reload)
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=use_reload, server_header=False)
 
 
