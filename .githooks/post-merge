@@ -1,0 +1,4 @@
+#!/bin/sh
+# After every pull, including fast-forward pulls that skip pre-merge-commit: scan what just arrived.
+# It cannot undo the pull, so it warns loudly instead.
+exec sh scripts/malware-check.sh --changed ORIG_HEAD HEAD
