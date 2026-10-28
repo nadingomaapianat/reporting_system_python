@@ -23,13 +23,16 @@ from utils.csrf import CSRFMiddleware, create_csrf_token, set_csrf_cookie
 from utils.auth import JWTAuthMiddleware
 from utils.security_middleware import RateLimitMiddleware, SecurityHeadersMiddleware, UploadLimitMiddleware
 from utils.error_sanitizer import GENERIC_ERROR, is_production
+from config.env import assert_required_env, env, require_env
 api_router = api_routes.router
 print("DEBUG: main.py - All routers imported (consolidated in api_router)")
 
 
 def create_app() -> FastAPI:
     print("DEBUG: create_app() called")
-    
+    # .env / environment.env are loaded above; refuse to start on missing config (names only).
+    assert_required_env()
+
     # Setup logging
     import logging
     logging.basicConfig(
@@ -134,23 +137,10 @@ def create_app() -> FastAPI:
 
     # CORS: last add_middleware = outermost in Starlette — runs first on the request (preflight before auth).
     # Direct browser calls: allow_credentials=True + explicit origins (no "*") so cookies are sent cross-origin.
-    _cors_env = os.getenv("CORS_ORIGINS", "").strip()
-    if _cors_env:
-        allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
-    else:
-        _fe = os.getenv("FRONTEND_ORIGIN", "https://grc-reporting-uat.adib.co.eg").strip()
-        allowed_origins = list(
-            dict.fromkeys(
-                [
-                    "https://grc-reporting-uat.adib.co.eg",
-                    "https://grc-dcc-uat.adib.co.eg",
-                    _fe,
-                    "http://127.0.0.1:3000",
-                    "https://grc-reporting-node-uat.adib.co.eg",
-                ]
-            )
-        )
-    _extra = os.getenv("FRONTEND_ORIGIN")
+    # Origins from env only: CORS_ORIGINS (comma-separated) plus FRONTEND_ORIGIN. The UAT hosts and
+    # 127.0.0.1 that used to be added from the source on every deployment are gone.
+    allowed_origins = [o.strip() for o in env("CORS_ORIGINS").split(",") if o.strip()]
+    _extra = env("FRONTEND_ORIGIN")
     if _extra and _extra not in allowed_origins and _extra != "*":
         allowed_origins.append(_extra)
     # Never allow "*" in production
@@ -323,7 +313,7 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
     print("DEBUG: About to start uvicorn server...")
-    port = int(os.getenv("PORT", "8000"))
+    port = int(require_env("PORT"))
     use_reload = os.getenv("RELOAD", "0").strip().lower() in ("1", "true", "yes")
     print(f"DEBUG: Starting server on port {port}... (reload={use_reload})")
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=use_reload, server_header=False)

@@ -24,12 +24,15 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 class EnhancedBankCheckService:
     def __init__(self):
         import os
-        self.webhook_url = os.getenv("OCR_WEBHOOK_URL", "https://n8nio.pianat.ai/webhook/ocr-check")
+        # From env only (the vendor's n8n URL used to be the fallback); checked when OCR is used.
+        self.webhook_url = (os.getenv("OCR_WEBHOOK_URL") or "").strip()
         self.exports_dir = Path("exports")
         self.exports_dir.mkdir(exist_ok=True)
 
     async def extract_check_data(self, file_bytes: bytes, filename: str) -> Dict[str, Any]:
         """Extract data from check image using webhook"""
+        if not self.webhook_url:
+            raise RuntimeError("Missing required environment variable OCR_WEBHOOK_URL. Set it in .env.")
         try:
             async with httpx.AsyncClient(timeout=60, verify=get_httpx_verify()) as client:
                 files = {

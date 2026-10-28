@@ -149,11 +149,12 @@ def main():
     for chart in charts:
         print(f"   - {chart['name']} ({chart['type']})")
 
-    print("""
+    node_api = (os.getenv("NODE_API_URL") or "<NODE_API_URL>").rstrip("/")
+    print(f"""
 🚀 Next steps:
 1. Start your backend: python main.py
-2. Visit: https://grc-reporting-node-uat.adib.co.eg/api/charts/dashboard
-3. Or use the frontend: https://grc-reporting-node-uat.adib.co.eg/auto-dashboard
+2. Visit: {node_api}/api/charts/dashboard
+3. Or use the frontend: {node_api}/auto-dashboard
     """)
 
 if __name__ == "__main__":

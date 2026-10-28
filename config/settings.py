@@ -6,10 +6,11 @@ Supports Windows auth: Trusted_Connection (pyodbc only, DB_BACKEND=odbc) or NTLM
 import os
 from typing import Dict, Any, Tuple
 from dotenv import load_dotenv
+from .env import env
 
 # Database: read from env (same vars as Node). DB_SERVER used if DB_HOST not set (e.g. Windows auth .env).
 _db_host = (os.getenv('DB_HOST') or os.getenv('DB_SERVER') or '').strip()
-_db_port = os.getenv('DB_PORT', '1433')
+_db_port = env('DB_PORT')
 _db_name = os.getenv('DB_NAME', '')
 # DB_Domain (adib_backend) and DB_DOMAIN (this project)
 _db_domain = (os.getenv('DB_DOMAIN') or os.getenv('DB_Domain') or '').strip()
@@ -22,10 +23,11 @@ _db_backend = (os.getenv('DB_BACKEND', 'pymssql') or 'pymssql').strip().lower()
 _db_connect_timeout = max(5, min(120, int(os.getenv('DB_CONNECT_TIMEOUT', '10'))))
 
 # database: MUST match reporting_system_node DB_NAME for GRC exports; otherwise UI (Node) and exports (Python) read different DBs.
-# No hard-coded fallbacks: DB_HOST / DB_NAME / DB_USERNAME / DB_PASSWORD must come from the environment.
+# No hard-coded fallbacks: DB_HOST / DB_PORT / DB_NAME / DB_USERNAME / DB_PASSWORD must come from the
+# environment (DB_HOST, DB_PORT and DB_NAME are checked at startup, see config/env.py).
 DATABASE_CONFIG = {
     'server': _db_host,
-    'port': _db_port or '1433',
+    'port': _db_port,
     'database': _db_name,
     'domain': _db_domain,
     'username': _db_username,
@@ -36,11 +38,21 @@ DATABASE_CONFIG = {
     'trust_server_certificate': 'yes',
 }
 
-# API Configuration (from .env: NODE_API_URL, PYTHON_API_URL, API_TIMEOUT)
+# API Configuration (from .env only: NODE_API_URL, PYTHON_API_URL, API_TIMEOUT). The UAT hosts that
+# used to be the fallback are gone; NODE_API_URL is checked at startup.
 API_CONFIG = {
-    'node_api_url': os.getenv('NODE_API_URL', os.getenv('NODE_BACKEND_URL', 'https://grc-reporting-node-uat.adib.co.eg')),
-    'python_api_url': os.getenv('PYTHON_API_URL', os.getenv('PYTHON_API_BASE', 'https://grc-reporting-py-uat.adib.co.eg')),
+    'node_api_url': env('NODE_API_URL', 'NODE_BACKEND_URL'),
+    'python_api_url': env('PYTHON_API_URL', 'PYTHON_API_BASE'),
     'timeout': int(os.getenv('API_TIMEOUT', '60')),
+}
+
+# Bank shown on exported reports, from env only (REPORT_BANK_*). Empty when unset, so no other
+# bank's (or the vendor's) name, address or website is ever printed on a report.
+BANK_INFO = {
+    'name': env('REPORT_BANK_NAME'),
+    'address': env('REPORT_BANK_ADDRESS'),
+    'phone': env('REPORT_BANK_PHONE'),
+    'website': env('REPORT_BANK_WEBSITE'),
 }
 
 # Export Configuration
@@ -71,10 +83,10 @@ DEFAULT_HEADER_CONFIGS = {
         'subtitle': 'Comprehensive Analysis Report',
         'showLogo': True,
         'logoSize': 'medium',
-        'bankName': 'PIANAT.AI',
-        'bankAddress': 'Bank address',
-        'bankPhone': 'Bank phone',
-        'bankUrl': 'www.website.com',
+        'bankName': BANK_INFO['name'],
+        'bankAddress': BANK_INFO['address'],
+        'bankPhone': BANK_INFO['phone'],
+        'bankUrl': BANK_INFO['website'],
         'watermarkEnabled': True,
         'watermarkText': 'CONFIDENTIAL',
         'fontColor': '#1F4E79',
@@ -86,10 +98,10 @@ DEFAULT_HEADER_CONFIGS = {
         'subtitle': 'Comprehensive Analysis Report',
         'showLogo': True,
         'logoSize': 'medium',
-        'bankName': 'PIANAT.AI',
-        'bankAddress': 'Bank address',
-        'bankPhone': 'Bank phone',
-        'bankUrl': 'www.website.com',
+        'bankName': BANK_INFO['name'],
+        'bankAddress': BANK_INFO['address'],
+        'bankPhone': BANK_INFO['phone'],
+        'bankUrl': BANK_INFO['website'],
         'watermarkEnabled': True,
         'watermarkText': 'CONFIDENTIAL',
         'fontColor': '#1F4E79',
@@ -102,10 +114,10 @@ DEFAULT_HEADER_CONFIGS = {
         'subtitle': 'Comprehensive Analysis Report',
         'showLogo': True,
         'logoSize': 'medium',
-        'bankName': 'PIANAT.AI',
-        'bankAddress': 'Bank address',
-        'bankPhone': 'Bank phone',
-        'bankUrl': 'www.website.com',
+        'bankName': BANK_INFO['name'],
+        'bankAddress': BANK_INFO['address'],
+        'bankPhone': BANK_INFO['phone'],
+        'bankUrl': BANK_INFO['website'],
         'watermarkEnabled': True,
         'watermarkText': 'CONFIDENTIAL',
         'fontColor': '#1F4E79',
@@ -117,10 +129,10 @@ DEFAULT_HEADER_CONFIGS = {
         'subtitle': 'Comprehensive Analysis Report',
         'showLogo': True,
         'logoSize': 'medium',
-        'bankName': 'PIANAT.AI',
-        'bankAddress': 'Bank address',
-        'bankPhone': 'Bank phone',
-        'bankUrl': 'www.website.com',
+        'bankName': BANK_INFO['name'],
+        'bankAddress': BANK_INFO['address'],
+        'bankPhone': BANK_INFO['phone'],
+        'bankUrl': BANK_INFO['website'],
         'watermarkEnabled': True,
         'watermarkText': 'CONFIDENTIAL',
         'fontColor': '#1F4E79',
@@ -133,10 +145,10 @@ DEFAULT_HEADER_CONFIGS = {
         'subtitle': 'Comprehensive Analysis Report',
         'showLogo': True,
         'logoSize': 'medium',
-        'bankName': 'PIANAT.AI',
-        'bankAddress': 'Bank address',
-        'bankPhone': 'Bank phone',
-        'bankUrl': 'www.website.com',
+        'bankName': BANK_INFO['name'],
+        'bankAddress': BANK_INFO['address'],
+        'bankPhone': BANK_INFO['phone'],
+        'bankUrl': BANK_INFO['website'],
         'watermarkEnabled': True,
         'watermarkText': 'CONFIDENTIAL',
         'fontColor': '#1F4E79',
@@ -149,10 +161,10 @@ DEFAULT_HEADER_CONFIGS = {
         'subtitle': 'Dynamic report from selected tables and columns',
         'showLogo': True,
         'logoSize': 'medium',
-        'bankName': 'PIANAT.AI',
-        'bankAddress': 'Bank address',
-        'bankPhone': 'Bank phone',
-        'bankUrl': 'www.website.com',
+        'bankName': BANK_INFO['name'],
+        'bankAddress': BANK_INFO['address'],
+        'bankPhone': BANK_INFO['phone'],
+        'bankUrl': BANK_INFO['website'],
         'watermarkEnabled': True,
         'watermarkText': 'CONFIDENTIAL',
         'fontColor': '#1F4E79',

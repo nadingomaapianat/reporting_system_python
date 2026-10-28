@@ -4,6 +4,8 @@ import json
 import logging
 import traceback
 from config import get_db_connection
+from config.env import env
+from config.settings import BANK_INFO
 from utils.export_utils import get_default_header_config, filter_export_columns_rows
 from routes.route_utils import build_dynamic_sql_query, is_report_table_allowed, is_report_column_allowed
 
@@ -323,17 +325,19 @@ async def generate_dynamic_report(request: Request):
 # build_dynamic_sql_query now lives in routes.route_utils (hardened, parameterized)
 # and is imported at the top of this module.
 
+# Bank identity comes from env (REPORT_TITLE, REPORT_BANK_*). It was written here as ADIB's, so
+# every bank's dynamic reports were printed under "Abu Dhabi Islamic Bank Egypt".
 default_header_config = {
     "includeHeader": True,
-    "title": "ADIB GRC - Risk & Control Report",
+    "title": env("REPORT_TITLE"),
     "subtitle": "Confidential Internal Report",
     "fontColor": "#1F4E79",
     "showDate": True,
     "showBankInfo": True,
-    "bankName": "Abu Dhabi Islamic Bank Egypt",
-    "bankAddress": "Head Office: Corniche El Nil, Cairo, Egypt",
-    "bankPhone": "+20 2 1234 5678",
-    "bankWebsite": "https://www.adib.eg",
+    "bankName": BANK_INFO["name"],
+    "bankAddress": BANK_INFO["address"],
+    "bankPhone": BANK_INFO["phone"],
+    "bankWebsite": BANK_INFO["website"],
     "tableHeaderBgColor": "#1F4E79",
     "tableBodyBgColor": "#FFFFFF",
     "excelZebraStripes": True,

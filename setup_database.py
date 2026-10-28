@@ -7,23 +7,27 @@ This script helps you configure the database connection
 import os
 import asyncio
 import asyncpg
+from config.env import require_env
 
 def create_env_file():
-    """Create .env file with database configuration"""
+    """Create a blank .env skeleton (never overwrites an existing one; values come from you, not the source)."""
+    if os.path.exists('.env'):
+        print("⚠️  .env already exists; not overwriting it")
+        return
     env_content = """# Database Configuration
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=reporting_system
-DB_USER=postgres
-DB_PASSWORD=your_password_here
+DB_HOST=
+DB_PORT=
+DB_NAME=
+DB_USER=
+DB_PASSWORD=
 
 # API Configuration
-PYTHON_API_BASE=https://grc-reporting-py-uat.adib.co.eg
+PYTHON_API_BASE=
 
 # OCR Configuration
-OCR_WEBHOOK_URL=https://n8nio.pianat.ai/webhook/ocr-check
+OCR_WEBHOOK_URL=
 """
-    
+
     with open('.env', 'w') as f:
         f.write(env_content)
     
@@ -37,11 +41,12 @@ async def test_connection():
         from dotenv import load_dotenv
         load_dotenv()
         
-        db_host = os.getenv('DB_HOST', 'localhost')
-        db_port = int(os.getenv('DB_PORT', '5432'))
-        db_name = os.getenv('DB_NAME', 'reporting_system')
-        db_user = os.getenv('DB_USER', 'postgres')
-        db_password = os.getenv('DB_PASSWORD', 'password')
+        # From env only (was localhost / postgres / 'password' in the source).
+        db_host = require_env('DB_HOST')
+        db_port = int(require_env('DB_PORT'))
+        db_name = require_env('DB_NAME')
+        db_user = require_env('DB_USER')
+        db_password = require_env('DB_PASSWORD')
         
         print(f"🔌 Testing connection to {db_host}:{db_port}/{db_name} as {db_user}")
         
@@ -80,11 +85,12 @@ async def list_tables():
         from dotenv import load_dotenv
         load_dotenv()
         
-        db_host = os.getenv('DB_HOST', 'localhost')
-        db_port = int(os.getenv('DB_PORT', '5432'))
-        db_name = os.getenv('DB_NAME', 'reporting_system')
-        db_user = os.getenv('DB_USER', 'postgres')
-        db_password = os.getenv('DB_PASSWORD', 'password')
+        # From env only (was localhost / postgres / 'password' in the source).
+        db_host = require_env('DB_HOST')
+        db_port = int(require_env('DB_PORT'))
+        db_name = require_env('DB_NAME')
+        db_user = require_env('DB_USER')
+        db_password = require_env('DB_PASSWORD')
         
         conn = await asyncpg.connect(
             host=db_host,
