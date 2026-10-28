@@ -21,6 +21,7 @@ print("DEBUG: main.py - About to import routers...")
 from utils import api_routes
 from utils.csrf import CSRFMiddleware, create_csrf_token, set_csrf_cookie
 from utils.auth import JWTAuthMiddleware
+from utils.activity_log import ActivityLogMiddleware
 from utils.page_permissions import PagePermissionMiddleware
 from utils.security_middleware import RateLimitMiddleware, SecurityHeadersMiddleware, UploadLimitMiddleware
 from utils.error_sanitizer import GENERIC_ERROR, is_production
@@ -170,6 +171,10 @@ def create_app() -> FastAPI:
         ],
         expose_headers=["X-Export-Src"],
     )
+
+    # Added last = outermost: sees the final status of every request, including the refusals of
+    # CORS, the rate/upload limits, CSRF, JWT and page permissions (utils/activity_log.py).
+    app.add_middleware(ActivityLogMiddleware)
 
     # Include consolidated API router (contains all sub-routers)
     app.include_router(api_router)
