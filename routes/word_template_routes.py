@@ -15,7 +15,7 @@ import base64
 import openpyxl
 import pandas as pd
 from lxml import etree
-from utils.error_sanitizer import client_error
+from utils.error_sanitizer import GENERIC_ERROR, client_error
 
 
 def _safe_xml_parser():
@@ -403,13 +403,12 @@ async def analyze_template(template: UploadFile = File(...)):
 			sections = extract_sections_from_docx(doc)
 		except Exception as extract_error:
 			logger.error(f"Error extracting sections: {extract_error}")
-			traceback_str = traceback.format_exc()
+			# No traceback in the response (pen test: info disclosure); it is in the server log.
 			return JSONResponse(
 				status_code=500,
 				content={
 					'success': False,
-					'error': f'Failed to extract sections: {str(extract_error)}',
-					'traceback': traceback_str
+					'error': f'Failed to extract sections: {client_error(extract_error)}',
 				}
 			)
 		
@@ -437,16 +436,13 @@ async def analyze_template(template: UploadFile = File(...)):
 	except HTTPException:
 		raise
 	except Exception as e:
-		error_msg = str(e)
-		traceback_str = traceback.format_exc()
-		logger.error(f"ERROR analyzing template: {error_msg}")
-		logger.error(traceback_str)
+		logger.error(f"ERROR analyzing template: {e}")
+		logger.error(traceback.format_exc())
 		return JSONResponse(
 			status_code=500,
 			content={
 				'success': False,
-				'error': f'Unexpected error: {error_msg}',
-				'traceback': traceback_str
+				'error': f'Unexpected error: {client_error(e)}',
 			}
 		)
 
@@ -1047,39 +1043,11 @@ async def generate_report(payload: dict = Body(...)):
 					source_config = source.get('config', {})
 					
 					if source_type == 'database':
-						# Fetch from database
-						from config import get_db_connection
-						
-						try:
-							table_name = source_config.get('table', '')
-							columns = source_config.get('columns', [])
-							where_clause = source_config.get('where', '')
-							
-							if table_name:
-								conn = get_db_connection()
-								cursor = conn.cursor()
-								
-								query = f"SELECT {', '.join(columns) if columns else '*'} FROM {table_name}"
-								if where_clause:
-									query += f" WHERE {where_clause}"
-								
-								cursor.execute(query)
-								rows = cursor.fetchall()
-								col_names = [desc[0] for desc in cursor.description] if cursor.description else []
-								
-								conn.close()
-								
-								# Convert to dict format for easy access
-								if rows and col_names:
-									# Take first row as variables
-									first_row = rows[0]
-									data_cache[source_id] = {col_names[i]: str(first_row[i]) for i in range(len(col_names))}
-								else:
-									data_cache[source_id] = {}
-						except Exception as e:
-							logger.error(f"Error fetching database data: {e}")
-							data_cache[source_id] = {}
-					
+						# Removed: this ran f"SELECT {columns} FROM {table} WHERE {where}" straight from the
+						# request body (any signed-in user could read or, with stacked statements, change any
+						# table). No frontend sends database sources, so the request is refused.
+						raise HTTPException(status_code=400, detail="Database data sources are not supported")
+
 					elif source_type == 'xbrl':
 						# TODO: Parse XBRL file
 						data_cache[source_id] = {}
@@ -1644,16 +1612,13 @@ async def generate_report(payload: dict = Body(...)):
 			raise Exception(f"Failed to save document: {str(save_error)}")
 		
 	except Exception as e:
-		error_msg = str(e)
-		traceback_str = traceback.format_exc()
-		logger.error(f"ERROR generating report: {error_msg}")
-		logger.error(traceback_str)
-		# Return JSON error response for better frontend handling
+		logger.error(f"ERROR generating report: {e}")
+		logger.error(traceback.format_exc())
+		# Return JSON error response for better frontend handling (no traceback: info disclosure)
 		return JSONResponse(
 			content={
 				"success": False,
-				"error": error_msg,
-				"traceback": traceback_str.split('\n')[:10]  # First 10 lines of traceback
+				"error": client_error(e),
 			},
 			status_code=500
 		)
@@ -1667,34 +1632,12 @@ async def fetch_data_from_source(payload: dict = Body(...)):
 		source_config = payload.get('config', {})
 		
 		if source_type == 'database':
-			# Fetch from database table
-			from config import get_db_connection
-			
-			table_name = source_config.get('table')
-			columns = source_config.get('columns', [])
-			where_clause = source_config.get('where', '')
-			
-			conn = get_db_connection()
-			cursor = conn.cursor()
-			
-			query = f"SELECT {', '.join(columns) if columns else '*'} FROM {table_name}"
-			if where_clause:
-				query += f" WHERE {where_clause}"
-			
-			cursor.execute(query)
-			rows = cursor.fetchall()
-			columns = [desc[0] for desc in cursor.description]
-			
-			conn.close()
-			
-			return {
-				'success': True,
-				'data': {
-					'columns': columns,
-					'rows': [list(row) for row in rows]
-				}
-			}
-		
+			# Removed: this ran f"SELECT {columns} FROM {table} WHERE {where}" straight from the request
+			# body, so any signed-in user could read (or, with stacked statements, change) any table.
+			# No frontend calls it; database data for reports goes through the allow-listed dynamic
+			# report endpoints (routes/dynamic_report_endpoints.py) instead.
+			raise HTTPException(status_code=400, detail="Database source is not supported on this endpoint")
+
 		elif source_type == 'xbrl':
 			# Parse XBRL file
 			# TODO: Implement XBRL parsing
@@ -1717,15 +1660,15 @@ async def fetch_data_from_source(payload: dict = Body(...)):
 				'error': f'Unknown source type: {source_type}'
 			}
 			
+	except HTTPException:
+		raise
 	except Exception as e:
-		error_msg = str(e)
-		traceback_str = traceback.format_exc()
-		logger.error(f"ERROR fetching data: {error_msg}")
-		logger.error(traceback_str)
+		logger.error(f"ERROR fetching data: {e}")
+		logger.error(traceback.format_exc())
+		# Details stay in the server log; the client gets a generic message (no traceback).
 		return {
 			'success': False,
-			'error': error_msg,
-			'traceback': traceback_str
+			'error': GENERIC_ERROR,
 		}
 
 

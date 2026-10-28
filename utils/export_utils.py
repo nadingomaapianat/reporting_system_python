@@ -694,6 +694,21 @@ def get_incident_cell_value(row: dict, key: str, empty_placeholder: str = 'N/A')
     return format_cell_value_for_export(key, v)
 
 
+def neutralize_formulas(wb) -> None:
+    """Store every formula-looking cell as plain text before the workbook is saved.
+
+    openpyxl turns any string starting with "=" into a live formula, so a risk/control/incident
+    text such as =HYPERLINK("https://evil","click") or a DDE payload ran when the export was
+    opened in Excel (pen-test item C33, formula injection). No export writes formulas on purpose,
+    so every formula cell is user/DB text: keep its text, drop the formula type.
+    """
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.data_type == "f":
+                    cell.data_type = "s"
+
+
 __all__ = [
     'get_default_header_config',
     'merge_header_config',
@@ -727,4 +742,5 @@ __all__ = [
     'get_overdue_incidents_ordered_keys',
     'get_overdue_incidents_label',
     'get_overdue_incidents_cell_value',
+    'neutralize_formulas',
 ]

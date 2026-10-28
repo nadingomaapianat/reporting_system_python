@@ -1,6 +1,8 @@
 # Top-level imports
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
 from utils.upload_limits import read_upload, EXCEL, WORD
+from utils.error_sanitizer import is_production
+from utils.reporting_access import is_reporting_admin
 from fastapi.responses import FileResponse
 from typing import Optional
 import os
@@ -177,6 +179,10 @@ async def excel_to_word_debug(
     table_tag: Optional[str] = Form("{{TABLE}}"),
 ):
     """Debug endpoint to analyze Word template and show all text content."""
+    # Debug tool (it also writes the upload to ./template/): not available in production
+    # (pen-test item A2). No frontend screen calls it.
+    if is_production():
+        raise HTTPException(status_code=404, detail="Not Found")
     try:
         template_bytes = await read_upload(template, WORD)
         doc = Document(BytesIO(template_bytes))
@@ -2178,9 +2184,23 @@ async def download_disclosure_file(filename: str):
         logger.error(f"Error downloading disclosure file {filename}: {e}")
         raise HTTPException(status_code=500, detail="Failed to download file")
 
+def _require_reporting_admin(request: Request) -> None:
+    """403 unless the signed-in user is a reporting super admin.
+
+    The shared file stores below (all users' report exports, the shared templates and disclosures)
+    were open to every signed-in user: anyone could list, download or delete other users' exported
+    reports (pen-test items B15/B17/B18). No frontend screen calls these endpoints.
+    """
+    claims = getattr(request.state, "user", None) or {}
+    user_id = claims.get("id") or claims.get("sub") or claims.get("userId")
+    if not is_reporting_admin(user_id, None, claims):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
 @router.delete("/api/reports/files/templates/delete/{filename}")
-async def delete_template_file(filename: str):
+async def delete_template_file(filename: str, request: Request):
     """Delete a template file."""
+    _require_reporting_admin(request)
     try:
         file_path = _safe_word_file(os.path.join(get_project_root(), "files", "template"), filename)
         if not file_path:
@@ -2197,8 +2217,9 @@ async def delete_template_file(filename: str):
         raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
 
 @router.delete("/api/reports/files/disclosures/delete/{filename}")
-async def delete_disclosure_file(filename: str):
+async def delete_disclosure_file(filename: str, request: Request):
     """Delete a disclosure file."""
+    _require_reporting_admin(request)
     try:
         file_path = _safe_word_file(os.path.join(get_project_root(), "files", "disclosures"), filename)
         if not file_path:
@@ -2215,8 +2236,9 @@ async def delete_disclosure_file(filename: str):
         raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
 
 @router.get("/api/reports/files/reports-export")
-async def list_reports_export_files():
+async def list_reports_export_files(request: Request):
     """List all files in the reports_export directory and its subdirectories."""
+    _require_reporting_admin(request)
     project_root = get_project_root()
     reports_export_dir = os.path.join(project_root, "reports_export")
     if not os.path.isdir(reports_export_dir):
@@ -2244,8 +2266,9 @@ async def list_reports_export_files():
     return {"files": files}
 
 @router.get("/api/reports/files/reports-export/download/{filename}")
-async def download_reports_export_file(filename: str):
+async def download_reports_export_file(filename: str, request: Request):
     """Download a reports export file."""
+    _require_reporting_admin(request)
     try:
         # URL decode the filename to handle spaces and special characters
         decoded_filename = urllib.parse.unquote(filename)
@@ -2268,8 +2291,9 @@ async def download_reports_export_file(filename: str):
         raise HTTPException(status_code=500, detail="Failed to download file")
 
 @router.delete("/api/reports/files/reports-export/delete/{filename}")
-async def delete_reports_export_file(filename: str):
+async def delete_reports_export_file(filename: str, request: Request):
     """Delete a reports export file."""
+    _require_reporting_admin(request)
     try:
         # URL decode the filename to handle spaces and special characters
         decoded_filename = urllib.parse.unquote(filename)

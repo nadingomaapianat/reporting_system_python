@@ -20,7 +20,8 @@ from utils.export_utils import get_default_header_config
 from models import ExportRequest, ExportResponse
 from routes.route_utils import write_debug, parse_header_config, merge_header_config, convert_to_boolean
 from utils.https_cert import get_httpx_verify
-from utils.error_sanitizer import client_error
+from utils.error_sanitizer import client_error, is_production
+from utils.export_utils import neutralize_formulas
 
 # Initialize services
 api_service = APIService()
@@ -103,6 +104,9 @@ async def create_bank_check_report(
 async def debug_bank_check(
     file: UploadFile = File(...)
 ):
+    # Debug tool: not available in production (pen-test item A2). No frontend screen calls it.
+    if is_production():
+        raise HTTPException(status_code=404, detail="Not Found")
     try:
         content = await read_upload(file, PDF)
         webhook_url = os.getenv('OCR_WEBHOOK_URL')
@@ -388,6 +392,7 @@ async def create_enhanced_bank_check_report(
                     ws.column_dimensions[get_column_letter(i)].width = min(max(12, max_len + 2), 40)
 
                 buf = BytesIO()
+                neutralize_formulas(wb)  # formula injection (C33)
                 wb.save(buf)
                 buf.seek(0)
                 

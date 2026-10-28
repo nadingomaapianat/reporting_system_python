@@ -6,6 +6,7 @@ from datetime import datetime
 
 from utils.xbrl_utils import make_minimal_instance, make_ixbrl_html
 from utils.pdf_utils import generate_pdf_report
+from utils.error_sanitizer import client_error  # no traceback/details to the client
 from routes.route_utils import generate_excel_report
 
 
@@ -219,7 +220,7 @@ async def generate_xbrl_pdf(payload: dict = Body(...)):
 		print(f"ERROR in generate_xbrl_pdf: {error_msg}")
 		print(traceback_str)
 		return Response(
-			f'Error generating PDF: {error_msg}\n\nTraceback:\n{traceback_str}',
+			f'Error generating PDF: {client_error(e)}',
 			status_code=500,
 			media_type='text/plain'
 		)
@@ -347,7 +348,7 @@ async def generate_xbrl_excel(payload: dict = Body(...)):
 		print(f"ERROR in generate_xbrl_excel: {error_msg}")
 		print(traceback_str)
 		return Response(
-			f'Error generating Excel: {error_msg}\n\nTraceback:\n{traceback_str}',
+			f'Error generating Excel: {client_error(e)}',
 			status_code=500,
 			media_type='text/plain'
 		)
@@ -626,7 +627,7 @@ async def generate_xbrl_from_grc(payload: dict = Body(...)):
 		print(f"ERROR in generate_xbrl_from_grc: {error_msg}")
 		print(traceback_str)
 		return Response(
-			f'Error generating GRC report: {error_msg}\n\nTraceback:\n{traceback_str}',
+			f'Error generating GRC report: {client_error(e)}',
 			status_code=500,
 			media_type='text/plain'
 		)
@@ -755,7 +756,7 @@ async def generate_xbrl_word(payload: dict = Body(...)):
 		print(f"ERROR in generate_xbrl_word: {error_msg}")
 		print(traceback_str)
 		return Response(
-			f'Error generating Word: {error_msg}\n\nTraceback:\n{traceback_str}',
+			f'Error generating Word: {client_error(e)}',
 			status_code=500,
 			media_type='text/plain'
 		)
@@ -885,7 +886,7 @@ async def generate_word_from_grc(payload: dict = Body(...)):
 		print(f"ERROR in generate_word_from_grc: {error_msg}")
 		print(traceback_str)
 		return Response(
-			f'Error generating Word: {error_msg}\n\nTraceback:\n{traceback_str}',
+			f'Error generating Word: {client_error(e)}',
 			status_code=500,
 			media_type='text/plain'
 		)

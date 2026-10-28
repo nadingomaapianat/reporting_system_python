@@ -35,7 +35,9 @@ DATABASE_CONFIG = {
     'driver': os.getenv('DB_DRIVER', 'ODBC Driver 18 for SQL Server'),
     'trusted_connection': 'yes' if _use_windows_auth else 'no',
     'encrypt': 'yes',
-    'trust_server_certificate': 'yes',
+    # Was hardcoded 'yes' (any SQL Server certificate accepted, pen-test item F6). Now from env:
+    # install the bank CA and set DB_TRUST_SERVER_CERT=false. Unset keeps today's behaviour.
+    'trust_server_certificate': 'no' if env('DB_TRUST_SERVER_CERT').lower() in ('false', '0', 'no') else 'yes',
 }
 
 # API Configuration (from .env only: NODE_API_URL, PYTHON_API_URL, API_TIMEOUT). The UAT hosts that

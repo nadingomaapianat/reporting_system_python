@@ -19,6 +19,7 @@ from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
+from utils.export_utils import neutralize_formulas
 
 
 class EnhancedBankCheckService:
@@ -248,6 +249,7 @@ class EnhancedBankCheckService:
 
         # Save to bytes
         buffer = BytesIO()
+        neutralize_formulas(wb)  # formula injection (C33)
         wb.save(buffer)
         return buffer.getvalue()
 

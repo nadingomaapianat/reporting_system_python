@@ -320,7 +320,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
 
         log_incoming_auth_headers(request)
 
-        if any(request.url.path.startswith(path) for path in PUBLIC_PATHS):
+        # Exact paths (a trailing slash is ignored): a prefix match also opened e.g. /healthx.
+        if (request.url.path.rstrip("/") or "/") in PUBLIC_PATHS:
             return await call_next(request)
 
         token_str, payload = resolve_jwt_token_and_payload(request)

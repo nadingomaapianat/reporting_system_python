@@ -8,15 +8,23 @@ are centralized here.
 """
 from typing import Dict, Any, Optional, List
 import json
+import os
 import re
 import sys
 from datetime import datetime
 
 from utils.jwt_context import set_request_jwt_claims
+from utils.export_utils import neutralize_formulas
 
 
 def write_debug(msg: str) -> None:
-    """Write debug message to file with timestamp"""
+    """Debug trace with timestamp, only when REPORTING_DEBUG_LOG=true.
+
+    It used to append every message (query details, user ids, header configs) to debug_log.txt
+    and stderr on every request in production too (pen-test item F2, debug output).
+    """
+    if (os.getenv("REPORTING_DEBUG_LOG") or "").strip().lower() not in ("1", "true", "yes"):
+        return
     from datetime import datetime
     timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
     msg_with_time = f"[{timestamp}] {msg}"
@@ -988,7 +996,7 @@ def generate_excel_report(columns, data_rows, header_config=None):
     logo_base64 = header_config.get("logoBase64", "")
     logo_position = header_config.get("logoPosition", "left")
     logo_height = header_config.get("logoHeight", 36)
-    logo_file = header_config.get("logoFile", None)
+    logo_file = None  # client paths are not trusted (file probe); logos come as logoBase64
     
     # Color and styling settings
     font_color = header_config.get("fontColor", "#1F4E79")
@@ -1461,6 +1469,7 @@ def generate_excel_report(columns, data_rows, header_config=None):
     output = BytesIO()
     try:
         # Save workbook (keep_vba parameter is not available in all openpyxl versions)
+        neutralize_formulas(wb)  # formula injection (C33)
         wb.save(output)
     except Exception as e:
         write_debug(f"Error saving workbook: {e}")
@@ -1519,7 +1528,7 @@ def generate_word_report(columns, data_rows, header_config=None):
     logo_base64 = header_config.get("logoBase64", "")
     logo_position = header_config.get("logoPosition", "left")
     logo_height = header_config.get("logoHeight", 36)
-    logo_file = header_config.get("logoFile", None)
+    logo_file = None  # client paths are not trusted (file probe); logos come as logoBase64
     
     # Color and styling settings
     font_color = header_config.get("fontColor", "#1F4E79")
@@ -2866,7 +2875,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     logo_base64 = header_config.get("logoBase64", "")
     logo_position = header_config.get("logoPosition", "left")
     logo_height = header_config.get("logoHeight", 36)
-    logo_file = header_config.get("logoFile", None)
+    logo_file = None  # client paths are not trusted (file probe); logos come as logoBase64
     
     # Color and styling settings
     font_color = header_config.get("fontColor", "#1F4E79")
@@ -3018,24 +3027,24 @@ def generate_pdf_report(columns, data_rows, header_config=None):
                 pass
         # Add bank information at top if configured
         if show_bank_info and bank_name and bank_info_location == "top":
-            story.append(Paragraph(f"🏦 {bank_name}", bank_style))
+            story.append(Paragraph(f"🏦 {paragraph_cell_text(bank_name)}", bank_style))
             if bank_address:
-                story.append(Paragraph(bank_address, bank_style))
+                story.append(Paragraph(paragraph_cell_text(bank_address), bank_style))
             if bank_phone or bank_website:
                 contact_info = []
                 if bank_phone:
-                    contact_info.append(f"Tel: {bank_phone}")
+                    contact_info.append(f"Tel: {paragraph_cell_text(bank_phone)}")
                 if bank_website:
-                    contact_info.append(f"Web: {bank_website}")
+                    contact_info.append(f"Web: {paragraph_cell_text(bank_website)}")
                 story.append(Paragraph(" | ".join(contact_info), bank_style))
             story.append(Spacer(1, 12))
         
         # Add title
-        story.append(Paragraph(title, title_style))
+        story.append(Paragraph(paragraph_cell_text(title), title_style))
         
         # Add subtitle
         if subtitle:
-            story.append(Paragraph(subtitle, subtitle_style))
+            story.append(Paragraph(paragraph_cell_text(subtitle), subtitle_style))
         
         # Add generation date
         if show_date:
@@ -3199,15 +3208,15 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     # Add bank information at bottom if configured
     if show_bank_info and bank_name and bank_info_location == "bottom":
         story.append(Spacer(1, 20))
-        story.append(Paragraph(f"🏦 {bank_name}", bank_style))
+        story.append(Paragraph(f"🏦 {paragraph_cell_text(bank_name)}", bank_style))
         if bank_address:
-            story.append(Paragraph(bank_address, bank_style))
+            story.append(Paragraph(paragraph_cell_text(bank_address), bank_style))
         if bank_phone or bank_website:
             contact_info = []
             if bank_phone:
-                contact_info.append(f"Tel: {bank_phone}")
+                contact_info.append(f"Tel: {paragraph_cell_text(bank_phone)}")
             if bank_website:
-                contact_info.append(f"Web: {bank_website}")
+                contact_info.append(f"Web: {paragraph_cell_text(bank_website)}")
             story.append(Paragraph(" | ".join(contact_info), bank_style))
 
     # Add footer elements

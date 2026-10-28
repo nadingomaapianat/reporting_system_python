@@ -11,6 +11,7 @@ import matplotlib
 matplotlib.use('Agg')
 
 from utils.export_utils import format_cell_value_for_export, is_hidden_export_column_key
+from utils.export_utils import neutralize_formulas
 
 class ExcelService:
     def __init__(self):
@@ -213,6 +214,7 @@ class ExcelService:
                 
                 from io import BytesIO
                 output = BytesIO()
+                neutralize_formulas(wb)  # formula injection (C33)
                 wb.save(output)
                 return output.getvalue()
         except Exception as e:
@@ -456,6 +458,7 @@ class ExcelService:
                 ws['A2'] = 'Generated Successfully'
                 from io import BytesIO
                 output = BytesIO()
+                neutralize_formulas(wb)  # formula injection (C33)
                 wb.save(output)
                 return output.getvalue()
 
@@ -948,6 +951,7 @@ class ExcelService:
                 ws['A2'] = 'Generated Successfully'
                 from io import BytesIO
                 output = BytesIO()
+                neutralize_formulas(wb)  # formula injection (C33)
                 wb.save(output)
                 return output.getvalue()
                 
@@ -1165,6 +1169,7 @@ class ExcelService:
                 ws['A2'] = 'Generated Successfully'
                 from io import BytesIO
                 output = BytesIO()
+                neutralize_formulas(wb)  # formula injection (C33)
                 wb.save(output)
                 return output.getvalue()
                 
@@ -1351,6 +1356,7 @@ class ExcelService:
             ws["A1"] = "Comply Dashboard Report"
             ws["A2"] = "Generated Successfully"
             output = BytesIO()
+            neutralize_formulas(wb)  # formula injection (C33)
             wb.save(output)
             return output.getvalue()
         except Exception as e:

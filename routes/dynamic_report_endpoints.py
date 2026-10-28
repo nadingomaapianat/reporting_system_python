@@ -6,8 +6,10 @@ import traceback
 from config import get_db_connection
 from config.env import env
 from config.settings import BANK_INFO
+from utils.pdf_utils import paragraph_cell_text  # escapes ReportLab markup in header text
 from utils.export_utils import get_default_header_config, filter_export_columns_rows
 from routes.route_utils import build_dynamic_sql_query, is_report_table_allowed, is_report_column_allowed
+from utils.export_utils import neutralize_formulas
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -413,6 +415,7 @@ def generate_excel_report(columns, data, header_config=None):
         ws.column_dimensions[col[0].column_letter].width = max_len + 3
 
     stream = BytesIO()
+    neutralize_formulas(wb)  # formula injection (C33)
     wb.save(stream)
     stream.seek(0)
     return stream
@@ -551,7 +554,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
         if header_config and header_config.get('includeHeader', True):
             # Add title
             title_text = header_config.get('title', 'Dynamic Report')
-            title = Paragraph(title_text, title_style)
+            title = Paragraph(paragraph_cell_text(title_text), title_style)
             story.append(title)
             
             # Add subtitle
@@ -563,7 +566,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
                 spaceAfter=20,
                 alignment=1  # Center alignment
             )
-            subtitle = Paragraph(subtitle_text, subtitle_style)
+            subtitle = Paragraph(paragraph_cell_text(subtitle_text), subtitle_style)
             story.append(subtitle)
             
             # Add report info

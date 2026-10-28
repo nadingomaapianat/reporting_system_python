@@ -21,6 +21,7 @@ print("DEBUG: main.py - About to import routers...")
 from utils import api_routes
 from utils.csrf import CSRFMiddleware, create_csrf_token, set_csrf_cookie
 from utils.auth import JWTAuthMiddleware
+from utils.page_permissions import PagePermissionMiddleware
 from utils.security_middleware import RateLimitMiddleware, SecurityHeadersMiddleware, UploadLimitMiddleware
 from utils.error_sanitizer import GENERIC_ERROR, is_production
 from config.env import assert_required_env, env, require_env
@@ -128,6 +129,12 @@ def create_app() -> FastAPI:
         "/api/auth/logout",
     )
 
+    # Added before JWTAuthMiddleware so it sits inside it: every request reaching the page check
+    # has already passed login. Routes used to need only a valid JWT (pen-test items B9/B17, D2);
+    # now each one needs the same DCC page rights the UI and reporting Node require, and an
+    # unmapped route is refused (utils/page_permissions.py).
+    app.add_middleware(PagePermissionMiddleware)
+
     app.add_middleware(JWTAuthMiddleware)
 
     app.add_middleware(
@@ -155,8 +162,12 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=allowed_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        # Explicit lists instead of "*" (with credentials, "*" admits any method/header).
+        allow_methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With",
+            "X-CSRF-Token", "X-Control-Name",
+        ],
         expose_headers=["X-Export-Src"],
     )
 
@@ -184,10 +195,10 @@ def create_app() -> FastAPI:
                 "referer": request.headers.get("referer"),
             }
 
-    # Serve exported files statically under /exports
-    # The folder is generated output (not in git); StaticFiles refuses to start if it is missing.
+    # Exported files are NOT served statically: a /exports mount let any signed-in user download any
+    # user's export by guessing its (timestamped) name, skipping the owner/function check that
+    # /api/exports/{id}/download enforces. Downloads go only through that endpoint.
     os.makedirs("exports", exist_ok=True)
-    app.mount("/exports", StaticFiles(directory="exports"), name="exports")
 
     async def startup_event():
         """Verify fonts and test database connection at startup"""
