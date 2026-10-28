@@ -77,57 +77,84 @@ _TRIED = {
 _ACTION_FOR_METHOD = {"GET": "VIEW", "POST": "CREATE", "PUT": "UPDATE", "PATCH": "UPDATE", "DELETE": "DELETE"}
 
 
-# Raw database / driver errors never reach the SIEM row: a plain-language reason replaces them
-# (same rules as adib_backend src/SIEM/log-text.ts). The technical text stays in the server log.
-_GENERIC_DB = "a database error occurred"
-# (pattern, reason, only when the text also looks like database text)
-_KNOWN_DB = [
-    (re.compile(r"unique ?constraint|violation of (unique|primary) key|duplicate key|already exists", re.I),
-     "a record with the same value already exists", True),
-    (re.compile(r"foreign ?key|conflicted with the (reference|foreign key)|REFERENCE constraint", re.I),
-     "the record is linked to other data (missing or still in use)", True),
-    (re.compile(r"cannot insert the value null|notnull violation|cannot be null|does not allow nulls", re.I),
-     "a required field is missing", True),
-    (re.compile(r"would be truncated|string or binary data|value too long", re.I), "a value is too long", True),
-    (re.compile(r"conversion failed|error converting|invalid input syntax|out-of-range|arithmetic overflow|"
-                r"not a valid uuid|uniqueidentifier", re.I), "a value has the wrong format", False),
-    (re.compile(r"timeout|timed out|ETIMEOUT|ECONNREFUSED|ECONNRESET|connection (is )?closed|failed to connect|"
-                r"login failed|adaptive server", re.I), "the database could not be reached", False),
-    (re.compile(r"deadlock", re.I), "the database was busy, please retry", False),
-]
+# Raw database / driver errors and code stack traces never reach the SIEM row: a plain-language
+# reason replaces them (same rules as adib_backend src/SIEM/log-text.ts). The technical text
+# stays in the server log.
+# Text that only a database / ORM / driver produces.
 _DB_TEXT = re.compile(
-    r"pymssql|pyodbc|OperationalError|ProgrammingError|IntegrityError|DatabaseError|\bSQL\b|"
-    r"invalid (column|object) name|incorrect syntax|ambiguous column|the (insert|update|delete|merge) statement|"
-    r"statement has been terminated|constraint|\bdbo\.|Traceback \(most recent call last\)",
+    r"sequelize|notNull Violation|Validation error:|tedious|mssql|pymssql|pyodbc|RequestError|ConnectionError|"
+    r"OperationalError|ProgrammingError|IntegrityError|DatabaseError|\bSQL\b|invalid (column|object) name|"
+    r"incorrect syntax|ambiguous column|the (insert|update|delete|merge) statement|statement has been terminated|"
+    r"constraint|\bdbo\.|uniqueidentifier|conversion failed when converting|:1433\b",
     re.I,
 )
+# (pattern, reason). First match wins, and only on text that is database text, so an ordinary
+# message ("Risk code already exists", "Session timeout") is never rewritten.
+_KNOWN_DB = [
+    (re.compile(r"unique ?constraint|violation of (unique|primary) key|duplicate key", re.I),
+     "a record with the same value already exists"),
+    (re.compile(r"foreign ?key|conflicted with the (reference|foreign key)|REFERENCE constraint", re.I),
+     "the record is linked to other data (missing or still in use)"),
+    (re.compile(r"cannot insert the value null|notnull violation|cannot be null|does not allow nulls", re.I),
+     "a required field is missing"),
+    (re.compile(r"would be truncated|string or binary data|value too long", re.I), "a value is too long"),
+    (re.compile(r"conversion failed|error converting|invalid input syntax|out-of-range|arithmetic overflow|"
+                r"uniqueidentifier", re.I), "a value has the wrong format"),
+    (re.compile(r"timeout|timed out|ETIMEOUT|ECONNREFUSED|ECONNRESET|ESOCKET|connection (is )?closed|"
+                r"failed to connect|login failed|adaptive server", re.I), "the database could not be reached"),
+    (re.compile(r"deadlock", re.I), "the database was busy, please retry"),
+]
+_GENERIC_DB = "a database error occurred"
+# Sequelize reports a unique-constraint violation as just "Validation error".
+_SEQUELIZE_UNIQUE = re.compile(r"(^|:\s*)Validation error\.?\s*$")
+# One frame of a code stack trace (JS "at f (x.js:1:2)", Python 'File "x.py", line 3', the
+# "Traceback (most recent call last):" header, a bare "https://host/chunk.js:1:2345").
+_STACK_LINE = re.compile(
+    r'^\s*at\s+\S.*(\(.*:\d+:\d+\)|:\d+:\d+|\(native\)|\(<anonymous>\))\s*$|^\s*File ".*", line \d+|'
+    r"^\s*Traceback \(most recent call last\):?\s*$|^\s*\S+:\d+:\d+\s*$"
+)
+_TECH_REMOVED = "(technical details removed \u2014 see the server log)"
 
 
 def _friendly_db_error(text: str) -> Optional[str]:
-    for pattern, reason, needs_db_text in _KNOWN_DB:
-        if pattern.search(text) and (not needs_db_text or _DB_TEXT.search(text)):
+    if _SEQUELIZE_UNIQUE.search(text):
+        return "a record with the same value already exists"
+    if not _DB_TEXT.search(text):
+        return None
+    for pattern, reason in _KNOWN_DB:
+        if pattern.search(text):
             return reason
-    return _GENERIC_DB if _DB_TEXT.search(text) else None
+    return _GENERIC_DB
+
+
+def _clean_line(line: str) -> str:
+    # The request line is a URL, never an error.
+    if line.startswith("Request: "):
+        return line
+    reason = _friendly_db_error(line)
+    if not reason:
+        return line
+    matches = [_DB_TEXT.search(line), _SEQUELIZE_UNIQUE.search(line)] + [p.search(line) for p, _ in _KNOWN_DB]
+    hits = [m.start() for m in matches if m]
+    cut = line.rfind(": ", 0, min(hits) + 2) if hits else -1  # +2: same as JS lastIndexOf(s, i)
+    if cut > 0:
+        return f"{line[:cut]}: {reason}"
+    if reason == _GENERIC_DB:
+        return "A database error occurred (details in the server log)"
+    return f"Database error: {reason}"
 
 
 def clean_log_text(description: str) -> str:
-    """The description with any raw database error replaced by a plain-language reason."""
+    """The description with raw database errors replaced and stack traces dropped."""
     out = []
+    removed_stack = False
     for line in description.split("\n"):
-        # The request line is a URL, never an error.
-        reason = None if line.startswith("Request: ") else _friendly_db_error(line)
-        if not reason:
-            out.append(line)
+        if _STACK_LINE.search(line):
+            if not removed_stack:
+                out.append(_TECH_REMOVED)
+            removed_stack = True
             continue
-        matches = [_DB_TEXT.search(line)] + [p.search(line) for p, _, _ in _KNOWN_DB]
-        hits = [m.start() for m in matches if m]
-        cut = line.rfind(": ", 0, min(hits)) if hits else -1
-        if cut > 0:
-            out.append(f"{line[:cut]}: {reason}")
-        elif reason == _GENERIC_DB:
-            out.append("A database error occurred (details in the server log)")
-        else:
-            out.append(f"Database error: {reason}")
+        out.append(_clean_line(line))
     return "\n".join(out)
 
 
