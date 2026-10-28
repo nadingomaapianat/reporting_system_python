@@ -77,9 +77,11 @@ _TRIED = {
 _ACTION_FOR_METHOD = {"GET": "VIEW", "POST": "CREATE", "PUT": "UPDATE", "PATCH": "UPDATE", "DELETE": "DELETE"}
 
 
-# Raw database / driver errors and code stack traces never reach the SIEM row: a plain-language
-# reason replaces them (same rules as adib_backend src/SIEM/log-text.ts). The technical text
-# stays in the server log.
+# Raw technical text never reaches the SIEM row: database / driver errors, code stack traces,
+# script errors, network error codes and Python exceptions get a plain-language reason (same
+# rules as adib_backend src/SIEM/log-text.ts). The technical text stays in the server log.
+# Only text that clearly comes from code is rewritten; ordinary messages are left as written.
+
 # Text that only a database / ORM / driver produces.
 _DB_TEXT = re.compile(
     r"sequelize|notNull Violation|Validation error:|tedious|mssql|pymssql|pyodbc|RequestError|ConnectionError|"
@@ -88,9 +90,8 @@ _DB_TEXT = re.compile(
     r"constraint|\bdbo\.|uniqueidentifier|conversion failed when converting|:1433\b",
     re.I,
 )
-# (pattern, reason). First match wins, and only on text that is database text, so an ordinary
-# message ("Risk code already exists", "Session timeout") is never rewritten.
-_KNOWN_DB = [
+# (pattern, reason) for database text. First match wins.
+_DB_KNOWN = [
     (re.compile(r"unique ?constraint|violation of (unique|primary) key|duplicate key", re.I),
      "a record with the same value already exists"),
     (re.compile(r"foreign ?key|conflicted with the (reference|foreign key)|REFERENCE constraint", re.I),
@@ -101,51 +102,86 @@ _KNOWN_DB = [
     (re.compile(r"conversion failed|error converting|invalid input syntax|out-of-range|arithmetic overflow|"
                 r"uniqueidentifier", re.I), "a value has the wrong format"),
     (re.compile(r"timeout|timed out|ETIMEOUT|ECONNREFUSED|ECONNRESET|ESOCKET|connection (is )?closed|"
-                r"failed to connect|login failed|adaptive server", re.I), "the database could not be reached"),
+                r"failed to connect|login failed", re.I), "the database could not be reached"),
     (re.compile(r"deadlock", re.I), "the database was busy, please retry"),
 ]
-_GENERIC_DB = "a database error occurred"
+_DB_GENERIC = "a database error occurred"
 # Sequelize reports a unique-constraint violation as just "Validation error".
 _SEQUELIZE_UNIQUE = re.compile(r"(^|:\s*)Validation error\.?\s*$")
+# Technical text that is not from the database. (pattern, reason); first match wins.
+_TECH_KNOWN = [
+    # Directory (LDAP) service.
+    (re.compile(r"InvalidCredentialsError|LDAP_INVALID_CREDENTIALS|data 52e\b", re.I),
+     "the username or password is not correct"),
+    (re.compile(r"\bLDAP\w*Error\b|ldaps?://\S+", re.I), "the directory (LDAP) service could not be reached"),
+    # Network / other services.
+    (re.compile(r"\b(ECONNREFUSED|ETIMEDOUT|ENOTFOUND|ECONNRESET|EHOSTUNREACH|ENETUNREACH|EAI_AGAIN|EPIPE)\b|"
+                r"socket hang up|getaddrinfo|self[- ]signed certificate|unable to verify the first certificate|"
+                r"\bCERT_[A-Z_]+|ERR_TLS\w*", re.I), "a connected service could not be reached"),
+    (re.compile(r"\bFailed to fetch\b|NetworkError when attempting to fetch|\bLoad failed\b|ERR_NETWORK|Network Error\b"),
+     "the server could not be reached from the browser"),
+    # Browser script errors.
+    (re.compile(r"Loading (CSS )?chunk \S+ failed|ChunkLoadError", re.I), "part of the page failed to load (refresh the page)"),
+    # Script errors (browser or server): the sentence around it already says where.
+    (re.compile(r"Cannot read propert(y|ies) of (undefined|null)|Cannot set propert(y|ies) of (undefined|null)|"
+                r"is not a function\b|is not defined\b|is not iterable\b|Maximum call stack|Minified React error|"
+                r"Hydration failed|^Script error\.?$|Unexpected token .* in JSON|JSON\.parse|is not valid JSON", re.I),
+     "an unexpected error occurred"),
+    # Python exceptions (reporting service).
+    (re.compile(r"\b(AttributeError|KeyError|IndexError|NameError|ValueError|ZeroDivisionError|RuntimeError|"
+                r"UnboundLocalError|ModuleNotFoundError|ImportError)\b:|'NoneType' object"),
+     "an unexpected server error occurred"),
+    # Node / JS runtime errors on the server.
+    (re.compile(r"\b(TypeError|ReferenceError|RangeError|SyntaxError)\b:"), "an unexpected error occurred"),
+]
 # One frame of a code stack trace (JS "at f (x.js:1:2)", Python 'File "x.py", line 3', the
 # "Traceback (most recent call last):" header, a bare "https://host/chunk.js:1:2345").
 _STACK_LINE = re.compile(
     r'^\s*at\s+\S.*(\(.*:\d+:\d+\)|:\d+:\d+|\(native\)|\(<anonymous>\))\s*$|^\s*File ".*", line \d+|'
     r"^\s*Traceback \(most recent call last\):?\s*$|^\s*\S+:\d+:\d+\s*$"
 )
-_TECH_REMOVED = "(technical details removed \u2014 see the server log)"
+_TECH_REMOVED = "(technical details removed — see the server log)"
+_TRAILING_ERROR_CLASS = re.compile(r"(^|:\s*)(Uncaught\s+)?\w*(Error|Exception)$")
 
 
-def _friendly_db_error(text: str) -> Optional[str]:
-    if _SEQUELIZE_UNIQUE.search(text):
-        return "a record with the same value already exists"
-    if not _DB_TEXT.search(text):
-        return None
-    for pattern, reason in _KNOWN_DB:
-        if pattern.search(text):
-            return reason
-    return _GENERIC_DB
+def _find_technical(line: str):
+    """(reason, start of the technical text) for technical text in `line`, or None."""
+    m = _SEQUELIZE_UNIQUE.search(line)
+    if m:
+        return "a record with the same value already exists", m.start()
+    if _DB_TEXT.search(line):
+        reason = next((r for p, r in _DB_KNOWN if p.search(line)), _DB_GENERIC)
+        hits = [x.start() for x in [_DB_TEXT.search(line)] + [p.search(line) for p, _ in _DB_KNOWN] if x]
+        return reason, min(hits)
+    for pattern, reason in _TECH_KNOWN:
+        m = pattern.search(line)
+        if m:
+            return reason, m.start()
+    return None
 
 
 def _clean_line(line: str) -> str:
     # The request line is a URL, never an error.
     if line.startswith("Request: "):
         return line
-    reason = _friendly_db_error(line)
-    if not reason:
+    found = _find_technical(line)
+    if not found:
         return line
-    matches = [_DB_TEXT.search(line), _SEQUELIZE_UNIQUE.search(line)] + [p.search(line) for p, _ in _KNOWN_DB]
-    hits = [m.start() for m in matches if m]
-    cut = line.rfind(": ", 0, min(hits) + 2) if hits else -1  # +2: same as JS lastIndexOf(s, i)
-    if cut > 0:
-        return f"{line[:cut]}: {reason}"
-    if reason == _GENERIC_DB:
+    reason, at = found
+    # "<sentence>: <technical text>" keeps the sentence and swaps the technical part. An error
+    # class left just before it ("...: TypeError: Cannot read ...") goes too.
+    cut = line.rfind(": ", 0, at + 2)  # +2: same as JS lastIndexOf(s, i)
+    sentence = _TRAILING_ERROR_CLASS.sub("", line[:cut]) if cut > 0 else ""
+    if sentence.strip():
+        return f"{sentence}: {reason}"
+    if reason == _DB_GENERIC:
         return "A database error occurred (details in the server log)"
-    return f"Database error: {reason}"
+    return f"Error: {reason}"
 
 
 def clean_log_text(description: str) -> str:
-    """The description with raw database errors replaced and stack traces dropped."""
+    """The description with technical text replaced by a plain-language reason and stack traces
+    dropped; the same cleaned line twice in a row is written once."""
     out = []
     removed_stack = False
     for line in description.split("\n"):
@@ -154,7 +190,10 @@ def clean_log_text(description: str) -> str:
                 out.append(_TECH_REMOVED)
             removed_stack = True
             continue
-        out.append(_clean_line(line))
+        cleaned = _clean_line(line)
+        if cleaned != line and out and out[-1] == cleaned:
+            continue
+        out.append(cleaned)
     return "\n".join(out)
 
 
