@@ -106,6 +106,20 @@ def _apply(contents: str) -> None:
             os.environ[key] = value
 
 
+def _has_plain(path: str) -> bool:
+    # A bind-mounted file cannot be deleted, only emptied, so an empty file counts as absent.
+    return os.path.exists(path) and open(path, encoding="utf-8").read().strip() != ""
+
+
+def _remove_plain(path: str) -> None:
+    # Docker bind mounts (-v host/environment.env:/app/environment.env) refuse removal with EBUSY.
+    try:
+        os.remove(path)
+    except OSError:
+        with open(path, "w", encoding="utf-8"):
+            pass
+
+
 def _ask(question: str) -> str:
     sys.stdout.write(question)
     sys.stdout.flush()
@@ -131,7 +145,7 @@ def _unlock(root: str) -> None:
         (os.path.join(root, name), os.path.join(root, name + ".enc"))
         for name in ENV_FILES
     ]
-    files = [(plain, enc) for plain, enc in files if os.path.exists(plain) or os.path.exists(enc)]
+    files = [(plain, enc) for plain, enc in files if _has_plain(plain) or os.path.exists(enc)]
     if not files:
         return  # settings come from the server environment
 
@@ -140,7 +154,7 @@ def _unlock(root: str) -> None:
 
     if not from_env and not interactive:
         for plain, enc in files:
-            if os.path.exists(plain):
+            if _has_plain(plain):
                 print(f"[env] {os.path.basename(plain)} is NOT encrypted: start interactively or set ENV_PASSCODE.",
                       file=sys.stderr)
                 _apply(open(plain, encoding="utf-8").read())
@@ -151,7 +165,7 @@ def _unlock(root: str) -> None:
     passcode: Optional[str] = from_env
     opened = []  # (enc path, plain text) of files decrypted from .enc, for a passcode change
     for plain, enc in files:
-        if os.path.exists(plain):
+        if _has_plain(plain):
             text = open(plain, encoding="utf-8").read()
             if not os.path.exists(pass_path):
                 passcode = passcode or _ask("Set an initial passcode to encrypt environment variables: ")
@@ -165,7 +179,7 @@ def _unlock(root: str) -> None:
                     raise RuntimeError("Passcode does not match.")
             with open(enc, "w", encoding="utf-8") as fh:
                 fh.write(encrypt(text, passcode))
-            os.remove(plain)
+            _remove_plain(plain)
             _apply(text)
             continue
 
