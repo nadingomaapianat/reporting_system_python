@@ -41,12 +41,14 @@ class RiskService:
 
     def _risk_date_sql(self, start_date=None, end_date=None, field="r.createdAt"):
         """Same rule as the Node dashboard: field >= start AND field < end + 1 day."""
+        # 'YYYYMMDD' literals: SQL Server reads 'YYYY-MM-DD' as year-day-month for datetime under a
+        # British/Arabic login language (2026-10-29 -> error, 2026-03-04 -> 3 April); YYYYMMDD never
         parts = []
         start, end = self._valid_date(start_date), self._valid_date(end_date)
         if start:
-            parts.append(f"AND {field} >= '{start}'")
+            parts.append(f"AND {field} >= '{start.replace('-', '')}'")
         if end:
-            parts.append(f"AND {field} < DATEADD(day, 1, '{end}')")
+            parts.append(f"AND {field} < DATEADD(day, 1, '{end.replace('-', '')}')")
         return (" " + " ".join(parts)) if parts else ""
 
     def __init__(self):

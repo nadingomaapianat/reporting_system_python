@@ -1,6 +1,7 @@
 """
 Incident service for incident operations
 """
+import logging
 import asyncio
 import os
 from datetime import datetime, timedelta
@@ -124,13 +125,15 @@ class IncidentService:
         field: str = "i.createdAt",
     ) -> str:
         """Same as Node dateRangeParts: field >= start AND field < end+1 day (whole end day included)."""
+        # 'YYYYMMDD' literals: SQL Server reads 'YYYY-MM-DD' as year-day-month for datetime under a
+        # British/Arabic login language (2026-10-29 -> error, 2026-03-04 -> 3 April); YYYYMMDD never
         parts = []
         start = self._valid_date(start_date)
         end = self._valid_date(end_date)
         if start:
-            parts.append(f"AND {field} >= '{start}'")
+            parts.append(f"AND {field} >= '{start.replace('-', '')}'")
         if end:
-            parts.append(f"AND {field} < DATEADD(day, 1, '{end}')")
+            parts.append(f"AND {field} < DATEADD(day, 1, '{end.replace('-', '')}')")
         return (" " + " ".join(parts)) if parts else ""
 
     def _op_loss_window(
@@ -189,6 +192,8 @@ class IncidentService:
             finally:
                 conn.close()
         except Exception as e:
+            # without this a failing query (bad date filter, timeout...) just showed "No data available"
+            logging.getLogger(__name__).error("Report query failed: %s", e)
             return []
 
        # ===== Incidents fallbacks =====
