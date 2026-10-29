@@ -1,4 +1,5 @@
 from lxml import etree
+from utils.report_time import report_now
 
 
 NS = {
@@ -239,7 +240,7 @@ def make_ixbrl_html(entity_lei: str, entity_name: str, entity_name_ar: str, star
 			<p><strong>Reporting Period:</strong> {start} to {end}</p>
 			<p><strong>Currency:</strong> {currency} ({currency_symbol})</p>
 			<p><strong>LEI:</strong> {entity_lei}</p>
-			<p><strong>Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+			<p><strong>Generated:</strong> {report_now().strftime('%Y-%m-%d %H:%M:%S')}</p>
 		</div>
 		
 		<!-- Hidden XBRL Contexts and Units -->

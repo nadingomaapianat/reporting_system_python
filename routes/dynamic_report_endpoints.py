@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request
+from utils.report_time import report_now
 from fastapi.responses import FileResponse
 import json
 import logging
@@ -388,7 +389,7 @@ def generate_excel_report(columns, data, header_config=None):
         info_row += 1
     if show_date:
         ws.merge_cells(start_row=info_row, start_column=1, end_row=info_row, end_column=len(columns))
-        ws[f"A{info_row}"] = f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        ws[f"A{info_row}"] = f"Generated on: {report_now().strftime('%Y-%m-%d %H:%M:%S')}"
         ws[f"A{info_row}"].alignment = Alignment(horizontal="center")
         info_row += 1
 
@@ -457,7 +458,7 @@ def generate_word_report(columns, data_rows, header_config=None):
             
             # Add report info
             info_para = doc.add_paragraph()
-            info_para.add_run(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            info_para.add_run(f"Generated on: {report_now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             info_para.add_run(f"Total Records: {len(data_rows)}\n")
             info_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         else:
@@ -467,7 +468,7 @@ def generate_word_report(columns, data_rows, header_config=None):
             
             # Add report info
             info_para = doc.add_paragraph()
-            info_para.add_run(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            info_para.add_run(f"Generated on: {report_now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             info_para.add_run(f"Total Records: {len(data_rows)}\n")
             info_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
@@ -570,7 +571,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
             story.append(subtitle)
             
             # Add report info
-            info_text = f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}<br/>Total Records: {len(data_rows)}"
+            info_text = f"Generated on: {report_now().strftime('%Y-%m-%d %H:%M:%S')}<br/>Total Records: {len(data_rows)}"
             info = Paragraph(info_text, styles['Normal'])
             story.append(info)
             story.append(Spacer(1, 20))
@@ -580,7 +581,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
             story.append(title)
             
             # Add report info
-            info_text = f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}<br/>Total Records: {len(data_rows)}"
+            info_text = f"Generated on: {report_now().strftime('%Y-%m-%d %H:%M:%S')}<br/>Total Records: {len(data_rows)}"
             info = Paragraph(info_text, styles['Normal'])
             story.append(info)
             story.append(Spacer(1, 20))

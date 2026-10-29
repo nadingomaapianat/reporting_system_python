@@ -8,6 +8,7 @@ import base64
 import re
 from xml.sax.saxutils import escape as _xml_escape_rl
 from datetime import datetime
+from utils.report_time import report_now
 from io import BytesIO
 from typing import Dict, Any, Optional, List
 from pathlib import Path
@@ -397,7 +398,7 @@ def generate_pdf_report(
                 alignment=TA_CENTER,
                 spaceAfter=12
             )
-            current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            current_date = report_now().strftime('%Y-%m-%d %H:%M:%S')
             story.append(Paragraph(f"Generated on: {current_date}", date_style))
         
         story.append(Spacer(1, 20))
@@ -674,7 +675,7 @@ def generate_pdf_report(
     
     footer_items = []
     if header_config.get('footerShowDate', True):
-        footer_items.append(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        footer_items.append(f"Generated on: {report_now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     if header_config.get('footerShowConfidentiality', True):
         footer_items.append(header_config.get('footerConfidentialityText', 'Confidential Report - Internal Use Only'))

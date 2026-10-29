@@ -4,6 +4,7 @@ API routes for the reporting system
 import asyncio
 import json
 from datetime import datetime
+from utils.report_time import report_now
 import os
 import httpx
 from fastapi import APIRouter, Query, HTTPException, Request, UploadFile, File, Form
@@ -248,7 +249,7 @@ async def create_enhanced_bank_check_report(
 
                     # Meta
                     meta = doc.add_paragraph()
-                    meta.add_run(f"Report Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n").font.size = Pt(10)
+                    meta.add_run(f"Report Date: {report_now().strftime('%Y-%m-%d %H:%M:%S')}\n").font.size = Pt(10)
                     meta.add_run(f"Number of Records: {len(rows)}\n").font.size = Pt(10)
 
                     # Table
@@ -361,7 +362,7 @@ async def create_enhanced_bank_check_report(
                 ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(1, len(headers)))
                 ws.cell(row=1, column=1, value='Bank Check Records Report').font = title_font
                 ws.cell(row=1, column=1).alignment = Alignment(horizontal='center')
-                ws.cell(row=2, column=1, value=f"Report Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}").font = meta_font
+                ws.cell(row=2, column=1, value=f"Report Date: {report_now().strftime('%Y-%m-%d %H:%M:%S')}").font = meta_font
                 ws.cell(row=3, column=1, value=f"Number of Records: {len(data_rows)}").font = meta_font
 
                 # Table header row

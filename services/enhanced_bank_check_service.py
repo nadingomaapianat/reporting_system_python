@@ -6,6 +6,7 @@ import os
 import json
 import httpx
 from datetime import datetime
+from utils.report_time import report_now
 from utils.https_cert import get_httpx_verify
 from typing import Dict, Any, Tuple, List
 from pathlib import Path
@@ -208,7 +209,7 @@ class EnhancedBankCheckService:
             ("إجمالي عدد الشيكات", "Total Number of Checks", len(records)),
             ("إجمالي المبلغ", "Total Amount", f"{total_amount:,} EGP"),
             ("متوسط المبلغ", "Average Amount", f"{total_amount // len(records) if records else 0:,} EGP"),
-            ("تاريخ التقرير", "Report Date", datetime.now().strftime('%Y-%m-%d')),
+            ("تاريخ التقرير", "Report Date", report_now().strftime('%Y-%m-%d')),
             ("وقت التقرير", "Report Time", datetime.now().strftime('%H:%M:%S'))
         ]
         
@@ -267,7 +268,7 @@ class EnhancedBankCheckService:
 
         # Report info
         info_para = doc.add_paragraph()
-        info_para.add_run(f"تاريخ التقرير / Report Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        info_para.add_run(f"تاريخ التقرير / Report Date: {report_now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         info_para.add_run(f"عدد السجلات / Number of Records: {len(records)}\n")
         info_para.add_run(f"إجمالي المبلغ / Total Amount: {sum(record.get('total_receivables', 0) for record in records):,} EGP")
 

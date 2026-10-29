@@ -12,6 +12,7 @@ import os
 import re
 import sys
 from datetime import datetime
+from utils.report_time import report_now
 
 from utils.jwt_context import set_request_jwt_claims
 from utils.export_utils import neutralize_formulas
@@ -1159,7 +1160,7 @@ def generate_excel_report(columns, data_rows, header_config=None):
         # Add generation date
         if show_date:
             ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(columns))
-            ws.cell(row=current_row, column=1, value=f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            ws.cell(row=current_row, column=1, value=f"Generated on: {report_now().strftime('%Y-%m-%d %H:%M:%S')}")
             ws.cell(row=current_row, column=1).font = Font(size=10, italic=True, color=font_color_rgb)
             ws.cell(row=current_row, column=1).alignment = Alignment(horizontal='center')
             current_row += 1
@@ -1423,7 +1424,7 @@ def generate_excel_report(columns, data_rows, header_config=None):
     if footer_show_date or footer_show_confidentiality or footer_show_page_numbers:
         footer_text = []
         if footer_show_date:
-            footer_text.append(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            footer_text.append(f"Generated on: {report_now().strftime('%Y-%m-%d %H:%M:%S')}")
         if footer_show_confidentiality:
             footer_text.append(footer_confidentiality_text)
         if footer_show_page_numbers:
@@ -1697,7 +1698,7 @@ def generate_word_report(columns, data_rows, header_config=None):
         # Add generation date
         if show_date:
             date_para = doc.add_paragraph()
-            current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            current_date = report_now().strftime('%Y-%m-%d %H:%M:%S')
             date_run = date_para.add_run(f"Generated on: {current_date}")
             date_run.font.size = Pt(10)
             date_run.font.italic = True
@@ -1829,7 +1830,7 @@ def generate_word_report(columns, data_rows, header_config=None):
         
         footer_text = []
         if footer_show_date:
-            current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            current_date = report_now().strftime('%Y-%m-%d %H:%M:%S')
             footer_text.append(f"Generated on: {current_date}")
         if footer_show_confidentiality:
             footer_text.append(footer_confidentiality_text)
@@ -2182,7 +2183,7 @@ def generate_comprehensive_grc_word_report(
     add_para('', size=12)
     
     date_para = doc.add_paragraph()
-    date_run = date_para.add_run(f'Generated: {datetime.now().strftime("%B %d, %Y")}')
+    date_run = date_para.add_run(f'Generated: {report_now().strftime("%B %d, %Y")}')
     date_run.font.size = Pt(12)
     date_run.font.italic = True
     date_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
@@ -3062,7 +3063,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
         
         # Add generation date
         if show_date:
-            current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            current_date = report_now().strftime('%Y-%m-%d %H:%M:%S')
             story.append(Paragraph(f"Generated on: {current_date}", date_style))
         
         story.append(Spacer(1, 20))
@@ -3247,7 +3248,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
         
         footer_text = []
         if footer_show_date:
-            current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            current_date = report_now().strftime('%Y-%m-%d %H:%M:%S')
             footer_text.append(f"Generated on: {current_date}")
         if footer_show_confidentiality:
             footer_text.append(footer_confidentiality_text)

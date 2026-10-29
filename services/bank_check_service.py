@@ -1,5 +1,6 @@
 from io import BytesIO
 from datetime import datetime
+from utils.report_time import report_now
 from typing import Dict, Any, Tuple
 import os
 import re
@@ -336,7 +337,7 @@ class BankCheckService:
         if extracted.get('payee'):
             doc.add_paragraph(f"Payee: {extracted.get('payee')}")
         doc.add_paragraph(f"Days Remaining: {form.get('daysRemaining') or ''}")
-        doc.add_paragraph(f"Generated At: {datetime.now().isoformat(timespec='seconds')}")
+        doc.add_paragraph(f"Generated At: {report_now().isoformat(timespec='seconds')}")
 
         buffer = BytesIO()
         doc.save(buffer)
