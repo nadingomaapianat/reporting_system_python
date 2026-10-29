@@ -10,3 +10,6 @@ __pycache__
 htmlcov
 debug_log.txt
 *.log
+.env.*
+environment.env*
+.passcode
