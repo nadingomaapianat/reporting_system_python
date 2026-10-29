@@ -790,7 +790,9 @@ class KriService:
           SELECT
             K.code,
             K.kriName AS name,
-            K.createdAt,
+            -- each row is one assessment, so show when it was entered (also what the date filter uses);
+            -- the KRI's own createdAt is NULL for imported KRIs
+            COALESCE(kv.createdAt, K.createdAt) AS createdAt,
             kv.id AS kriValueId,
             kv.value AS value,
             ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name,

@@ -939,7 +939,8 @@ def generate_excel_report(columns, data_rows, header_config=None):
     # Callers that pass an already-final, exact column set (e.g. a heatmap-style mirror
     # with a visible "KRI ID" column) can opt out of the id/uuid column filter.
     if header_config and header_config.get("noHiddenColumnFilter"):
-        columns, data_rows = list(columns or []), [list(r) for r in (data_rows or [])]
+        from utils.export_utils import normalize_export_rows
+        columns, data_rows = list(columns or []), normalize_export_rows(data_rows)
     else:
         from utils.export_utils import filter_export_columns_rows
         columns, data_rows = filter_export_columns_rows(columns or [], data_rows or [])
@@ -993,7 +994,8 @@ def generate_excel_report(columns, data_rows, header_config=None):
     
     # Logo settings
     show_logo = header_config.get("showLogo", True)
-    logo_base64 = header_config.get("logoBase64", "")
+    from utils.export_utils import report_logo_base64
+    logo_base64 = report_logo_base64(header_config)  # uploaded logo, else the bank's REPORT_LOGO_FILE
     logo_position = header_config.get("logoPosition", "left")
     logo_height = header_config.get("logoHeight", 36)
     logo_file = None  # client paths are not trusted (file probe); logos come as logoBase64
@@ -1096,8 +1098,10 @@ def generate_excel_report(columns, data_rows, header_config=None):
                     ws.add_image(xl_image, 'C1')
                 elif logo_position == 'right':
                     ws.add_image(xl_image, 'E1')
-                
-                current_row += 2  # Leave space for logo
+
+                # Make row 1 as tall as the logo (px -> points) so it doesn't sit over the bank name
+                ws.row_dimensions[1].height = desired_h * 0.75 + 6
+                current_row += 1
             except Exception as e:
                 pass  # Continue without logo if there's an error
         
@@ -1340,10 +1344,16 @@ def generate_excel_report(columns, data_rows, header_config=None):
     
     # Auto-fit columns if enabled
     if excel_auto_fit_columns:
+        # Title / bank / date rows are merged across the table: don't size column A to their text
+        merged_anchors = {
+            (rng.min_row, rng.min_col) for rng in ws.merged_cells.ranges if rng.max_col > rng.min_col
+        }
         for col_idx in range(1, len(columns) + 1):
             max_length = 0
             column_letter = get_column_letter(col_idx)
             for row_idx in range(1, ws.max_row + 1):
+                if (row_idx, col_idx) in merged_anchors:
+                    continue
                 try:
                     cell = ws.cell(row=row_idx, column=col_idx)
                     if hasattr(cell, 'value') and cell.value:
@@ -1525,7 +1535,8 @@ def generate_word_report(columns, data_rows, header_config=None):
     
     # Logo settings
     show_logo = header_config.get("showLogo", True)
-    logo_base64 = header_config.get("logoBase64", "")
+    from utils.export_utils import report_logo_base64
+    logo_base64 = report_logo_base64(header_config)  # uploaded logo, else the bank's REPORT_LOGO_FILE
     logo_position = header_config.get("logoPosition", "left")
     logo_height = header_config.get("logoHeight", 36)
     logo_file = None  # client paths are not trusted (file probe); logos come as logoBase64
@@ -1620,7 +1631,7 @@ def generate_word_report(columns, data_rows, header_config=None):
         # Add bank information at top if configured
         if show_bank_info and bank_name and bank_info_location == "top":
             bank_para = doc.add_paragraph()
-            bank_run = bank_para.add_run(f"🏦 {bank_name}")
+            bank_run = bank_para.add_run(bank_name)
             bank_run.font.size = Pt(12)
             bank_run.font.bold = True
             bank_run.font.color.rgb = font_color_rgb
@@ -1769,7 +1780,7 @@ def generate_word_report(columns, data_rows, header_config=None):
         doc.add_paragraph()  # Add spacing
         
         bank_para = doc.add_paragraph()
-        bank_run = bank_para.add_run(f"🏦 {bank_name}")
+        bank_run = bank_para.add_run(bank_name)
         bank_run.font.size = Pt(12)
         bank_run.font.bold = True
         bank_run.font.color.rgb = font_color_rgb
@@ -2872,7 +2883,8 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     
     # Logo settings
     show_logo = header_config.get("showLogo", True)
-    logo_base64 = header_config.get("logoBase64", "")
+    from utils.export_utils import report_logo_base64
+    logo_base64 = report_logo_base64(header_config)  # uploaded logo, else the bank's REPORT_LOGO_FILE
     logo_position = header_config.get("logoPosition", "left")
     logo_height = header_config.get("logoHeight", 36)
     logo_file = None  # client paths are not trusted (file probe); logos come as logoBase64
@@ -3027,7 +3039,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
                 pass
         # Add bank information at top if configured
         if show_bank_info and bank_name and bank_info_location == "top":
-            story.append(Paragraph(f"🏦 {paragraph_cell_text(bank_name)}", bank_style))
+            story.append(Paragraph(paragraph_cell_text(bank_name), bank_style))
             if bank_address:
                 story.append(Paragraph(paragraph_cell_text(bank_address), bank_style))
             if bank_phone or bank_website:
@@ -3208,7 +3220,7 @@ def generate_pdf_report(columns, data_rows, header_config=None):
     # Add bank information at bottom if configured
     if show_bank_info and bank_name and bank_info_location == "bottom":
         story.append(Spacer(1, 20))
-        story.append(Paragraph(f"🏦 {paragraph_cell_text(bank_name)}", bank_style))
+        story.append(Paragraph(paragraph_cell_text(bank_name), bank_style))
         if bank_address:
             story.append(Paragraph(paragraph_cell_text(bank_address), bank_style))
         if bank_phone or bank_website:

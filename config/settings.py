@@ -55,6 +55,9 @@ BANK_INFO = {
     'address': env('REPORT_BANK_ADDRESS'),
     'phone': env('REPORT_BANK_PHONE'),
     'website': env('REPORT_BANK_WEBSITE'),
+    # Image file (relative to the project root, or absolute) used as the report logo when the
+    # user has not uploaded one in the header settings. Unset = no logo.
+    'logo_file': env('REPORT_LOGO_FILE'),
 }
 
 # Export Configuration

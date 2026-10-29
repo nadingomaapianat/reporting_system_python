@@ -1544,8 +1544,8 @@ class ControlService:
             ap.responsible AS [Action Plan Owner],
             ap.expected_cost AS [Expected Cost],
             ap.business_unit AS [Business Unit Status],
-            CASE WHEN ap.meeting_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.meeting_date AS DATETIME), 105) ELSE NULL END AS [Meeting Date],
-            CASE WHEN ap.implementation_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.implementation_date AS DATETIME), 105) ELSE NULL END AS [Implementation Date],
+            CASE WHEN ap.meeting_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.meeting_date AS DATETIME), 103) ELSE NULL END AS [Meeting Date],
+            CASE WHEN ap.implementation_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.implementation_date AS DATETIME), 103) ELSE NULL END AS [Implementation Date],
             ap.not_attend AS [Did Not Attend]
         FROM {self.get_fully_qualified_table_name('Actionplans')} ap
         LEFT JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} cdt ON ap.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL
@@ -1586,8 +1586,8 @@ class ControlService:
             ap.responsible AS [Action Plan Owner],
             ap.expected_cost AS [Expected Cost],
             ap.business_unit AS [Business Unit Status],
-            CASE WHEN ap.meeting_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.meeting_date AS DATETIME), 105) ELSE NULL END AS [Meeting Date],
-            CASE WHEN ap.implementation_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.implementation_date AS DATETIME), 105) ELSE NULL END AS [Implementation Date],
+            CASE WHEN ap.meeting_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.meeting_date AS DATETIME), 103) ELSE NULL END AS [Meeting Date],
+            CASE WHEN ap.implementation_date IS NOT NULL THEN CONVERT(VARCHAR(20), CAST(ap.implementation_date AS DATETIME), 103) ELSE NULL END AS [Implementation Date],
             ap.not_attend AS [Did Not Attend]
         FROM {self.get_fully_qualified_table_name('Actionplans')} ap
         LEFT JOIN {self.get_fully_qualified_table_name('ControlDesignTests')} cdt ON ap.controlDesignTest_id = cdt.id AND cdt.deletedAt IS NULL

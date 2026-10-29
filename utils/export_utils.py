@@ -123,14 +123,93 @@ def _normalize_column_label_for_filter(col: Union[str, dict, Any]) -> str:
     return h
 
 
+_default_logo_cache: dict = {}
+
+
+def report_logo_base64(header_config: dict) -> str:
+    """Logo for an export: the one uploaded in the header settings, else the server's
+    REPORT_LOGO_FILE, else '' (no logo). Never a path sent by the client."""
+    uploaded = (header_config or {}).get("logoBase64") or ""
+    if uploaded:
+        return uploaded
+    if 'b64' not in _default_logo_cache:
+        import base64
+        import os
+        from config.settings import BANK_INFO
+        b64 = ''
+        path = BANK_INFO.get('logo_file') or ''
+        if path:
+            if not os.path.isabs(path):
+                path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), path)
+            try:
+                with open(path, 'rb') as fh:
+                    b64 = base64.b64encode(fh.read()).decode('ascii')
+            except OSError:
+                b64 = ''
+        _default_logo_cache['b64'] = b64
+    return _default_logo_cache['b64']
+
+
+# Whole-cell ISO date / datetime, as str(datetime) or Node JSON produce:
+# "2026-10-29", "2026-10-29 13:24:13.123000", "2026-10-29T13:24:13.000Z", "...+02:00"
+_ISO_DATE_CELL_RE = re.compile(
+    r'^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?)?(?:Z|[+-]\d{2}:?\d{2})?$'
+)
+_EMPTY_CELL_STRINGS = frozenset({'None', 'none', 'null', 'NULL', 'NaT', 'nan', 'NaN', 'undefined'})
+
+
+def normalize_export_cell(value):
+    """Last-step cleanup applied to every PDF/Excel table cell, so dates read the same in every
+    report no matter which dashboard branch built the row: DD/MM/YYYY, plus HH:MM when there is
+    a time of day. Missing values ("None", "null"... from str(None)) become N/A. Anything else
+    (numbers included, so Excel keeps numeric cells) is returned unchanged."""
+    if value is None:
+        return 'N/A'
+    if isinstance(value, datetime):
+        if (value.hour, value.minute, value.second) == (0, 0, 0):
+            return value.strftime('%d/%m/%Y')
+        return value.strftime('%d/%m/%Y %H:%M')
+    if isinstance(value, date):
+        return value.strftime('%d/%m/%Y')
+    if not isinstance(value, str):
+        return value
+    s = value.strip()
+    if s in _EMPTY_CELL_STRINGS:
+        return 'N/A'
+    m = _ISO_DATE_CELL_RE.match(s)
+    if not m:
+        return value
+    y, mo, d, hh, mi, ss = m.groups()
+    try:
+        datetime(int(y), int(mo), int(d))
+    except ValueError:
+        return value
+    if hh is None or (hh, mi, ss or '00') == ('00', '00', '00'):
+        return f'{d}/{mo}/{y}'
+    return f'{d}/{mo}/{y} {hh}:{mi}'
+
+
+def normalize_export_rows(data_rows: Sequence[Sequence[Any]]) -> List[List[Any]]:
+    return [[normalize_export_cell(c) for c in (row or [])] for row in (data_rows or [])]
+
+
 def filter_export_columns_rows(
     columns: Sequence,
     data_rows: Sequence[Sequence[Any]],
 ) -> Tuple[List, List[List[Any]]]:
     """
-    Drop hidden id/uuid columns by index so Excel/PDF tables stay aligned.
+    Drop hidden id/uuid columns by index so Excel/PDF tables stay aligned, and normalize
+    date / empty cells (normalize_export_cell). Every PDF and Excel export passes through here.
     Safe when columns is a list of str or dicts with label/key (dynamic reports).
     """
+    columns, data_rows = _drop_hidden_export_columns(columns, data_rows)
+    return columns, normalize_export_rows(data_rows)
+
+
+def _drop_hidden_export_columns(
+    columns: Sequence,
+    data_rows: Sequence[Sequence[Any]],
+) -> Tuple[List, List[List[Any]]]:
     if not columns or not data_rows:
         return list(columns), [list(r) for r in data_rows]
     keep: List[int] = []
@@ -199,10 +278,18 @@ def format_cell_value_for_export(key: str, value, _from_bytes: int = 0) -> str:
                 pass
         return ''
 
-    key_lower = str(key).lower().strip()
-    include_time = key_lower in DATETIME_KEYS_LOWER
-    # Format if key looks like a date field
-    if key_lower in DATE_KEYS or key_lower.endswith('_date') or key_lower.endswith('date'):
+    key_str = str(key).strip()
+    key_lower = key_str.lower()
+    # timestamp columns (createdAt, submittedAt, deleted_at, [Approved At]...) show the time too
+    is_timestamp_key = key_str.endswith('At') or key_lower.endswith('_at') or key_lower.endswith(' at')
+    include_time = key_lower in DATETIME_KEYS_LOWER or is_timestamp_key
+    # DB datetime values are always dates, whatever the column key (otherwise str() leaks "2026-10-29 13:24:13.123000")
+    if isinstance(value, (datetime, date)):
+        formatted = _try_format_date(value, include_time=include_time)
+        if formatted is not None:
+            return formatted
+    # Format if key looks like a date field (DATE_KEYS is mixed-case, so compare the original key too)
+    if key_str in DATE_KEYS or key_lower in DATE_KEYS or is_timestamp_key or key_lower.endswith('_date') or key_lower.endswith('date'):
         formatted = _try_format_date(value, include_time=include_time)
         if formatted is not None:
             return formatted

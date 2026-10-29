@@ -260,8 +260,9 @@ def generate_pdf_report(
     
     # Logo
     show_logo = header_config.get("showLogo", True)
-    logo_base64 = header_config.get("logoBase64", "")
-    logo_file = header_config.get("logoFile")
+    from utils.export_utils import report_logo_base64
+    logo_base64 = report_logo_base64(header_config)
+    logo_file = None  # client paths are not trusted (file probe); logos come as logoBase64
     logo_position = header_config.get("logoPosition", "left")
     logo_height = header_config.get("logoHeight", 36)
     
@@ -337,23 +338,8 @@ def generate_pdf_report(
                     story.append(Spacer(1, 12))
             except:
                 pass
-        elif show_logo and not (logo_base64 or logo_file):
-            # Fallback: render a simple emoji logo so a logo appears consistently
-            try:
-                logo_style = ParagraphStyle(
-                    'LogoFallback',
-                    parent=styles['Title'],
-                    fontSize=max(12, int(logo_height) // 2),
-                    alignment=TA_CENTER,
-                    spaceAfter=6,
-                    textColor=font_color_rl,
-                    fontName=ARABIC_FONT_NAME or (DEFAULT_FONT_NAME + '-Bold' if DEFAULT_FONT_NAME != 'Helvetica' else 'Helvetica-Bold')
-                )
-                story.append(Paragraph("🏦", logo_style))
-                story.append(Spacer(1, 6))
-            except Exception:
-                pass
-        
+        # No emoji fallback when there is no logo: the PDF fonts have no emoji glyphs, so it printed as an empty box
+
         # Bank info
         if show_bank_info and bank_name:
             bank_style = ParagraphStyle(
@@ -364,8 +350,7 @@ def generate_pdf_report(
                 alignment=TA_CENTER,
                 spaceAfter=3
             )
-            # Prepend a small bank icon for consistency across dashboards
-            story.append(Paragraph(paragraph_cell_text(f"🏦 {bank_name}"), bank_style))
+            story.append(Paragraph(paragraph_cell_text(bank_name), bank_style))
             if bank_address:
                 story.append(Paragraph(paragraph_cell_text(bank_address), bank_style))
             if bank_phone or bank_website:
@@ -598,9 +583,9 @@ def generate_pdf_report(
                 out_row.append(Paragraph(paragraph_cell_text(text), cell_style))
             processed_rows.append(out_row)
 
-        # Calculate column widths (full width with margins)
-        # Add small buffer to compensate for any internal reportlab padding
-        available_width = page_size[0] - (left_margin + right_margin) + 20
+        # Column widths add up to exactly the frame width: anything wider runs past the right
+        # edge and the last column (e.g. "Created At") gets cut off. Cell padding is inside colWidths.
+        available_width = doc.width
         num_cols = len(column_headers)
         # Weighted widths: give any column with 'name' more width; '#' minimal
         weights: List[float] = []
