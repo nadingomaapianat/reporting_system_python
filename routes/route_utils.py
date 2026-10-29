@@ -95,7 +95,9 @@ def extract_user_and_function_params(request: Any) -> tuple[Optional[str], Optio
         # Node signs { id }; some JWTs use sub only
         _uid = user.get("id") or user.get("sub")
         user_id = str(_uid).strip() if _uid is not None and str(_uid).strip() else None
-        group_name = user.get('group') or user.get('groupName') or None
+        # groupName first: in the main app's token `group` is the group's id (a UUID), so reading it
+        # first made super admins signed in with the d_c_c_t_p cookie look like normal users
+        group_name = user.get('groupName') or user.get('group') or None
 
     if user_id and isinstance(user_id, str):
         user_id = user_id.strip() or None
