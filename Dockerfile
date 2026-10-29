@@ -25,6 +25,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application
 COPY . .
 
+# Run as an unprivileged user; it owns /app because exports are written under it
+# (reports_export/, transaction/, exports/) and env_vault writes .enc / .passcode here.
+RUN useradd --system --uid 10001 --home /app app && chown -R app:app /app
+USER app
+
 # App listens on 8000; override with PORT env
 EXPOSE 8000
 
