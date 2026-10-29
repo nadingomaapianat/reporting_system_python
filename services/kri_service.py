@@ -6,6 +6,7 @@ import os
 from typing import List, Dict, Any, Optional
 from config import get_db_connection
 from utils.pymssql_params import normalize_params
+from utils.node_grc_query import sql_date
 from utils.jwt_context import get_request_jwt_claims
 from utils.reporting_access import is_reporting_admin
 
@@ -165,11 +166,11 @@ class KriService:
         """Return KRIs grouped by risk level"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -200,11 +201,11 @@ class KriService:
         """Return breached KRIs by department"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -238,11 +239,11 @@ class KriService:
         """Return KRI assessment count by department"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -275,11 +276,11 @@ class KriService:
         """Return list of all KRIs with same columns as UI Total KRIs modal (code, kri_name, function_name, frequency, threshold, added_by_name, assigned_person_name, type, type_percentage_or_figure, rcm_functions, risk_mapping, status, created_by_name, createdAt)."""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -332,11 +333,11 @@ class KriService:
         """Return all KRIs (code, kri_name, function_name) for the Overall KRI Statuses table"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -375,11 +376,11 @@ class KriService:
         """Return KRIs by level with derived logic from latest values (matches Node.js)"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -440,11 +441,11 @@ class KriService:
         """Return count of KRIs by function (simplified - just count KRIs per function)"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -482,11 +483,11 @@ class KriService:
         """Return KRI health status list"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -527,11 +528,11 @@ class KriService:
         """Return KRI assessment count by function (count assessments from KriValues table)"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND kv.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND kv.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND kv.createdAt >= '{start_date}'"
+            date_filter = f"AND kv.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND kv.createdAt <= '{end_date}'"
+            date_filter = f"AND kv.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -571,11 +572,11 @@ class KriService:
         """Return monthly KRI counts grouped by assessment"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND kv.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND kv.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND kv.createdAt >= '{start_date}'"
+            date_filter = f"AND kv.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND kv.createdAt <= '{end_date}'"
+            date_filter = f"AND kv.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -610,11 +611,11 @@ class KriService:
         """Return number of newly created KRIs per month"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -644,11 +645,11 @@ class KriService:
         """Return number of deleted KRIs by month"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -677,11 +678,11 @@ class KriService:
         """Return KRIs overdue vs not overdue based on related Action Plans"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -726,11 +727,11 @@ class KriService:
         """Return overdue KRIs with department from Actionplans or linked Function"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -775,11 +776,11 @@ class KriService:
         latest linked action plan for a business-response field (no such column exists)."""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -855,11 +856,11 @@ class KriService:
         """Return all KRIs submitted by function"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -897,11 +898,11 @@ class KriService:
         """Return KRI counts by month and year"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -933,11 +934,11 @@ class KriService:
         """Return KRI counts by frequency"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -967,11 +968,11 @@ class KriService:
         """Return risks linked to KRIs (count per KRI name)"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -1007,11 +1008,11 @@ class KriService:
         """Return KRI and Risk relationships (detailed list)"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -1051,11 +1052,11 @@ class KriService:
         """Return KRIs without linked risks"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))
@@ -1094,11 +1095,11 @@ class KriService:
         """Return active KRIs details"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND k.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND k.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND k.createdAt >= '{start_date}'"
+            date_filter = f"AND k.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND k.createdAt <= '{end_date}'"
+            date_filter = f"AND k.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_kri_function_filter("k", access, self._selected_function_ids(function_id, function_ids))

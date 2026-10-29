@@ -9,6 +9,7 @@ from config import get_db_connection
 from utils.jwt_context import get_request_jwt_claims
 from utils.reporting_access import is_reporting_admin
 from utils.pymssql_params import normalize_params
+from utils.node_grc_query import sql_date
 
 def write_debug(msg):
     """Write debug message to file with timestamp"""
@@ -125,7 +126,7 @@ class IncidentService:
             return ""
         parts = []
         if start_date:
-            parts.append(f"AND i.createdAt >= '{start_date}'")
+            parts.append(f"AND i.createdAt >= '{sql_date(start_date)}'")
         if end_date:
             try:
                 s = end_date.replace("Z", "+00:00").strip()
@@ -136,7 +137,7 @@ class IncidentService:
                 end_exclusive = next_day.strftime("%Y-%m-%dT%H:%M:%S.000Z")
             except Exception:
                 end_exclusive = end_date
-            parts.append(f"AND i.createdAt < '{end_exclusive}'")
+            parts.append(f"AND i.createdAt < '{sql_date(end_exclusive)}'")
         return (" " + " ".join(parts)) if parts else ""
     
     async def execute_query(self, query: str, params: Optional[List] = None) -> List[Dict[str, Any]]:
@@ -194,7 +195,7 @@ class IncidentService:
         """Return incidents list with all columns for Excel export. Uses only tables/columns used elsewhere in this service."""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND i.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -348,11 +349,11 @@ class IncidentService:
         """Return incidents count by category (excludes NULL and deleted categories)"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND i.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
+            date_filter = f"AND i.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+            date_filter = f"AND i.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -387,11 +388,11 @@ class IncidentService:
         """Return incidents monthly trend counts grouped by occurrence_date"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND i.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
+            date_filter = f"AND i.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+            date_filter = f"AND i.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -423,11 +424,11 @@ class IncidentService:
         """Return incidents time series by month (matches grc-incidents.service.ts)"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND i.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
+            date_filter = f"AND i.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+            date_filter = f"AND i.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -484,11 +485,11 @@ class IncidentService:
         """Return top financial impacts grouped by category with total net loss"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND i.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
+            date_filter = f"AND i.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+            date_filter = f"AND i.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -524,11 +525,11 @@ class IncidentService:
         """Return net loss and recovery data for incidents"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND i.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
+            date_filter = f"AND i.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+            date_filter = f"AND i.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -565,11 +566,11 @@ class IncidentService:
         """Return incidents count by event type (excludes NULL and deleted event types)"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND i.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
+            date_filter = f"AND i.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+            date_filter = f"AND i.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -603,11 +604,11 @@ class IncidentService:
         """Return incidents count by financial impact (excludes NULL and deleted financial impacts)"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND i.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
+            date_filter = f"AND i.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+            date_filter = f"AND i.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -642,11 +643,11 @@ class IncidentService:
         """Return new incidents count per month (matches grc-incidents.service.ts)"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND i.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
+            date_filter = f"AND i.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+            date_filter = f"AND i.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -689,11 +690,11 @@ class IncidentService:
         """Return incidents with timeframe values (matches grc-incidents.service.ts)"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND i.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
+            date_filter = f"AND i.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+            date_filter = f"AND i.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -772,11 +773,11 @@ class IncidentService:
         """Return ATM theft incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -814,11 +815,11 @@ class IncidentService:
         """Return internal fraud incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -856,11 +857,11 @@ class IncidentService:
         """Return external fraud incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -898,11 +899,11 @@ class IncidentService:
         """Return physical asset damage incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -940,11 +941,11 @@ class IncidentService:
         """Return people error incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -982,11 +983,11 @@ class IncidentService:
         """Return incidents with recognition time calculation (last 12 months)"""
         date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND i.occurrence_date BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND i.occurrence_date BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND i.occurrence_date >= '{start_date}'"
+            date_filter = f"AND i.occurrence_date >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND i.occurrence_date <= '{end_date}'"
+            date_filter = f"AND i.occurrence_date <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1023,11 +1024,11 @@ class IncidentService:
         """Return operational loss value by month (last 12 months)"""
         date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND i.occurrence_date BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND i.occurrence_date BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND i.occurrence_date >= '{start_date}'"
+            date_filter = f"AND i.occurrence_date >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND i.occurrence_date <= '{end_date}'"
+            date_filter = f"AND i.occurrence_date <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1061,11 +1062,11 @@ class IncidentService:
         """Return monthly trend analysis by incident type (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1118,11 +1119,11 @@ class IncidentService:
         """Return loss analysis by risk category (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1158,11 +1159,11 @@ class IncidentService:
         """Return comprehensive operational loss dashboard metrics (last 12 months)"""
         date_filter = "COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1267,11 +1268,11 @@ class IncidentService:
         """Return incidents with financial impact and function details (matches grc-incidents.service.ts)"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND i.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND i.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND i.createdAt >= '{start_date}'"
+            date_filter = f"AND i.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND i.createdAt <= '{end_date}'"
+            date_filter = f"AND i.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1309,11 +1310,11 @@ class IncidentService:
         """Return ATM theft incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1351,11 +1352,11 @@ class IncidentService:
         """Return internal fraud incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1393,11 +1394,11 @@ class IncidentService:
         """Return external fraud incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1435,11 +1436,11 @@ class IncidentService:
         """Return physical asset damage incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1477,11 +1478,11 @@ class IncidentService:
         """Return people error incidents (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1519,11 +1520,11 @@ class IncidentService:
         """Return incidents with recognition time calculation (last 12 months)"""
         date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND i.occurrence_date BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND i.occurrence_date BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND i.occurrence_date >= '{start_date}'"
+            date_filter = f"AND i.occurrence_date >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND i.occurrence_date <= '{end_date}'"
+            date_filter = f"AND i.occurrence_date <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1560,11 +1561,11 @@ class IncidentService:
         """Return operational loss value by month (last 12 months)"""
         date_filter = "AND i.occurrence_date >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND i.occurrence_date BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND i.occurrence_date BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND i.occurrence_date >= '{start_date}'"
+            date_filter = f"AND i.occurrence_date >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND i.occurrence_date <= '{end_date}'"
+            date_filter = f"AND i.occurrence_date <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1598,11 +1599,11 @@ class IncidentService:
         """Return monthly trend analysis by incident type (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1655,11 +1656,11 @@ class IncidentService:
         """Return loss analysis by risk category (last 12 months)"""
         date_filter = "AND COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+            date_filter = f"AND COALESCE(i.occurrence_date, i.createdAt) <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))
@@ -1937,11 +1938,11 @@ class IncidentService:
         """Return comprehensive operational loss dashboard metrics (last 12 months)"""
         date_filter = "COALESCE(i.occurrence_date, i.createdAt) >= DATEADD(MONTH, -12, GETDATE())"
         if start_date and end_date:
-            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) >= '{start_date}'"
+            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) <= '{end_date}'"
+            date_filter = f"COALESCE(i.occurrence_date, i.createdAt) <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_incident_function_filter("i", access, self._selected_function_ids(function_id, function_ids))

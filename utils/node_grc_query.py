@@ -23,6 +23,20 @@ def is_iso_date_value(s: Optional[str]) -> bool:
     return isinstance(s, str) and _ISO_DATE_VALUE.fullmatch(s.strip()) is not None
 
 
+def sql_date(value) -> str:
+    """
+    The date to write into SQL text, or ValueError. The services build date filters as
+    f"... BETWEEN '{start_date}' ..."; this makes each of them safe on its own, whatever route
+    called it (DateParamsMiddleware only covers query strings, not JSON bodies).
+    """
+    if hasattr(value, "isoformat"):  # date / datetime objects
+        value = value.isoformat()
+    text = value.strip() if isinstance(value, str) else ""
+    if not _ISO_DATE_VALUE.fullmatch(text):
+        raise ValueError("Invalid date filter")
+    return text
+
+
 def norm_grc_query_string(s: Optional[str]) -> Optional[str]:
     """Mirror grc-comply.controller.ts getAllReports `norm` (plus -> space, trim, collapse spaces)."""
     if s is None or not isinstance(s, str):

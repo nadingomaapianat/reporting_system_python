@@ -8,6 +8,7 @@ from datetime import datetime
 from config import get_db_connection
 from utils.jwt_context import get_request_jwt_claims
 from utils.pymssql_params import normalize_params
+from utils.node_grc_query import sql_date
 from utils.reporting_access import is_reporting_admin
 
 def write_debug(msg):
@@ -233,11 +234,11 @@ class RiskService:
         """Get risks grouped by category"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND r.created_at BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.created_at BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND r.created_at >= '{start_date}'"
+            date_filter = f"AND r.created_at >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND r.created_at <= '{end_date}'"
+            date_filter = f"AND r.created_at <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -270,11 +271,11 @@ class RiskService:
         """Get risks grouped by event type"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
+            date_filter = f"AND r.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+            date_filter = f"AND r.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -307,11 +308,11 @@ class RiskService:
         """Get list of risks filtered by inherent_value level (e.g., 'High', 'Medium', 'Low')."""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
+            date_filter = f"AND r.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+            date_filter = f"AND r.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -344,11 +345,11 @@ class RiskService:
         """Get list of all risks (filtered by date if provided)."""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
+            date_filter = f"AND r.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+            date_filter = f"AND r.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -382,11 +383,11 @@ class RiskService:
         """Get total risks count"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
+            date_filter = f"AND r.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+            date_filter = f"AND r.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -414,11 +415,11 @@ class RiskService:
         """Get high risks count"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND createdAt >= '{start_date}'"
+            date_filter = f"AND createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND createdAt <= '{end_date}'"
+            date_filter = f"AND createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -447,11 +448,11 @@ class RiskService:
         """Get medium risks count"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND createdAt >= '{start_date}'"
+            date_filter = f"AND createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND createdAt <= '{end_date}'"
+            date_filter = f"AND createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -480,11 +481,11 @@ class RiskService:
         """Get low risks count"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND createdAt >= '{start_date}'"
+            date_filter = f"AND createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND createdAt <= '{end_date}'"
+            date_filter = f"AND createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -615,11 +616,11 @@ class RiskService:
         """Get new risks this month count"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND createdAt >= '{start_date}'"
+            date_filter = f"AND createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND createdAt <= '{end_date}'"
+            date_filter = f"AND createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -655,11 +656,11 @@ class RiskService:
         """Get risks grouped by category"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
+            date_filter = f"AND r.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+            date_filter = f"AND r.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -691,11 +692,11 @@ class RiskService:
         """Get risks by event type for charts"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
+            date_filter = f"AND r.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+            date_filter = f"AND r.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -726,11 +727,11 @@ class RiskService:
         """Get created and deleted risks per quarter"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
+            date_filter = f"AND r.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+            date_filter = f"AND r.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -781,11 +782,11 @@ class RiskService:
         """Get quarterly risk creation trends"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
+            date_filter = f"AND r.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+            date_filter = f"AND r.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -821,11 +822,11 @@ class RiskService:
         """Get risk distribution by financial impact level"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
+            date_filter = f"AND r.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+            date_filter = f"AND r.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -867,11 +868,11 @@ class RiskService:
         """Get total number of risks per department, filtered by function access"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
+            date_filter = f"AND r.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+            date_filter = f"AND r.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -903,11 +904,11 @@ class RiskService:
         """Get number of risks per business process"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
+            date_filter = f"AND r.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+            date_filter = f"AND r.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -939,11 +940,11 @@ class RiskService:
         """Get inherent risk & residual risk comparison"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
+            date_filter = f"AND r.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+            date_filter = f"AND r.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -976,11 +977,11 @@ class RiskService:
         """Get high residual risk overview"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
+            date_filter = f"AND r.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+            date_filter = f"AND r.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -1067,11 +1068,11 @@ class RiskService:
         """Get risks and their controls count"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
+            date_filter = f"AND r.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+            date_filter = f"AND r.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -1104,11 +1105,11 @@ class RiskService:
         """Get controls and risk count"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND c.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND c.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND c.createdAt >= '{start_date}'"
+            date_filter = f"AND c.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND c.createdAt <= '{end_date}'"
+            date_filter = f"AND c.createdAt <= '{sql_date(end_date)}'"
 
         # Note: This query is about Controls, but we filter by Risks that are linked
         # So we still need to filter the Risks side
@@ -1143,11 +1144,11 @@ class RiskService:
         """Get all risks details - matches frontend allRisks table structure, filtered by function"""
         date_filter = ""
         if start_date and end_date:
-            date_filter = f"AND r.createdAt BETWEEN '{start_date}' AND '{end_date}'"
+            date_filter = f"AND r.createdAt BETWEEN '{sql_date(start_date)}' AND '{sql_date(end_date)}'"
         elif start_date:
-            date_filter = f"AND r.createdAt >= '{start_date}'"
+            date_filter = f"AND r.createdAt >= '{sql_date(start_date)}'"
         elif end_date:
-            date_filter = f"AND r.createdAt <= '{end_date}'"
+            date_filter = f"AND r.createdAt <= '{sql_date(end_date)}'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))
@@ -1197,9 +1198,9 @@ class RiskService:
         # and silently drop that day's records compared to what the dashboard shows.
         date_filter = ""
         if start_date:
-            date_filter += f" AND r.createdAt >= '{start_date}'"
+            date_filter += f" AND r.createdAt >= '{sql_date(start_date)}'"
         if end_date:
-            date_filter += f" AND r.createdAt <= '{end_date} 23:59:59'"
+            date_filter += f" AND r.createdAt <= '{sql_date(end_date)} 23:59:59'"
 
         access = await self._get_user_function_access(user_id, group_name)
         function_filter = self._build_risk_function_filter("r", access, self._selected_function_ids(function_id, function_ids))

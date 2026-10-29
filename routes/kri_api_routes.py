@@ -90,23 +90,12 @@ async def export_kris_pdf(
         description="Comma-separated function IDs (multi-select); mirrors Node dashboard filters",
     ),
 ):
-    """Export KRIs dashboard to PDF (GET or POST with optional body.totalKrisList or body.kriDetailsWithActionPlans)."""
+    """Export KRIs dashboard to PDF (GET, or POST from the existing frontend; body rows are ignored)."""
     kri_details_override = None
     total_kris_list_override = None
-    if request.method == "POST":
-        try:
-            body = await request.json()
-            if isinstance(body, dict):
-                if "totalKrisList" in body:
-                    total_kris_list_override = body.get("totalKrisList")
-                    if not isinstance(total_kris_list_override, list):
-                        total_kris_list_override = []
-                if "kriDetailsWithActionPlans" in body:
-                    kri_details_override = body.get("kriDetailsWithActionPlans")
-                    if not isinstance(kri_details_override, list):
-                        kri_details_override = []
-        except Exception:
-            pass
+    # Rows a client POSTs are ignored: the export always rebuilds them on the server (same date /
+    # function filters, the caller's own auth), so a user cannot put made-up rows into a saved
+    # export. The POST method stays accepted for the existing frontend (same as incidents).
     global kri_service
     try:
         write_debug(f"[KRIS PDF] startDate={startDate} endDate={endDate}")
@@ -333,23 +322,12 @@ async def export_kris_excel(
         description="Comma-separated function IDs (multi-select); mirrors Node dashboard filters",
     ),
 ):
-    """Export KRIs dashboard to Excel (GET or POST with optional body.totalKrisList or body.kriDetailsWithActionPlans)."""
+    """Export KRIs dashboard to Excel (GET, or POST from the existing frontend; body rows are ignored)."""
     kri_details_override = None
     total_kris_list_override = None
-    if request.method == "POST":
-        try:
-            body = await request.json()
-            if isinstance(body, dict):
-                if "totalKrisList" in body:
-                    total_kris_list_override = body.get("totalKrisList")
-                    if not isinstance(total_kris_list_override, list):
-                        total_kris_list_override = []
-                if "kriDetailsWithActionPlans" in body:
-                    kri_details_override = body.get("kriDetailsWithActionPlans")
-                    if not isinstance(kri_details_override, list):
-                        kri_details_override = []
-        except Exception:
-            pass
+    # Rows a client POSTs are ignored: the export always rebuilds them on the server (same date /
+    # function filters, the caller's own auth), so a user cannot put made-up rows into a saved
+    # export. The POST method stays accepted for the existing frontend (same as incidents).
     global kri_service
     try:
         write_debug(f"Exporting KRIs report in Excel format for {startDate} to {endDate}")
