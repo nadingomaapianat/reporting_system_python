@@ -23,6 +23,10 @@ def write_debug(msg):
     sys.stderr.write(f"{msg_with_time}\n")
     sys.stderr.flush()
 
+# Dates are returned as FORMAT(CONVERT(datetime, col), 'yyyy-MM-dd HH:mm:ss') strings: the createdAt
+# columns are DATETIMEOFFSET (Sequelize's MSSQL default), which pymssql cannot decode -- selected raw
+# they come back as bytes and every export shows N/A, while the Node dashboard shows the date.
+
 class KriService:
     """Service for kri operations"""
 
@@ -799,7 +803,7 @@ class KriService:
             K.kriName AS name,
             -- each row is one assessment, so show when it was entered (also what the date filter uses);
             -- the KRI's own createdAt is NULL for imported KRIs
-            COALESCE(kv.createdAt, K.createdAt) AS createdAt,
+            FORMAT(CONVERT(datetime, COALESCE(kv.createdAt, K.createdAt)), 'yyyy-MM-dd HH:mm:ss') AS createdAt,
             kv.id AS kriValueId,
             kv.value AS value,
             ISNULL(COALESCE(frel.name, fkf.name), 'Unknown') AS function_name,
@@ -877,10 +881,10 @@ class KriService:
           SELECT
             K.code,
             K.kriName AS name,
-            K.createdAt,
+            FORMAT(CONVERT(datetime, K.createdAt), 'yyyy-MM-dd HH:mm:ss') AS createdAt,
             kv.id AS kriValueId,
             kv.value AS value,
-            kv.createdAt AS submittedAt,
+            FORMAT(CONVERT(datetime, kv.createdAt), 'yyyy-MM-dd HH:mm:ss') AS submittedAt,
             kv.preparerStatus AS preparerStatus,
             kv.checkerStatus AS checkerStatus,
             kv.reviewerStatus AS reviewerStatus,
@@ -1106,7 +1110,7 @@ class KriService:
           kv.reviewerStatus AS reviewerStatus,
           kv.acceptanceStatus AS acceptanceStatus,
           FORMAT(CONVERT(datetime, kv.createdAt), 'yyyy-MM-dd HH:mm:ss') AS submittedAt,
-          K.createdAt
+          FORMAT(CONVERT(datetime, K.createdAt), 'yyyy-MM-dd HH:mm:ss') AS createdAt
         FROM K
         INNER JOIN KriValues kv ON kv.kriId = K.id AND kv.deletedAt IS NULL AND ISNULL(kv.{field}, '') = 'refused' {kv_date_filter}
           {submission_filter}
