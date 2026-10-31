@@ -13,8 +13,12 @@ What gets a row:
   - successful reads do NOT (one row per chart/data call would bury the trail).
 
 userId is stored only for the user JWTAuthMiddleware verified (request.state.user). A refused
-request with none (an expired or forged token) is still written with an empty userId and the user
-its token names quoted in the description. A failed read carrying no token at all is not written.
+request with none is still written with an empty userId, but at most _ANON_ROWS_PER_MINUTE such
+rows a minute in total (one connection + INSERT each, so a flood of anonymous POSTs must not
+become a flood of inserts). Only a token signed with our secret (an expired session) is named in
+the description; what an unverified token claims is never written. A failed read carrying no
+token at all is not written. At most _MAX_PENDING inserts wait at once; beyond that rows are dropped.
+Request-supplied text (path, names) is written on one line, without control characters, capped.
 
 The caller's IP goes into Targets.ipAddress where that column exists (UB schema), otherwise into
 the description (ADIB schema) — detected once at runtime, so the file is the same on both branches.
@@ -59,6 +63,18 @@ _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 _THROTTLE_SECONDS = 60
 _THROTTLE_MAX_KEYS = 5000
 _MAX_CAPTURED_BODY = 16 * 1024
+# Rows a minute for requests without a verified user, all callers together.
+_ANON_ROWS_PER_MINUTE = 30
+# Inserts queued or running at once; each holds a worker thread and a DB connection.
+_MAX_PENDING = 50
+_MAX_DESCRIPTION = 2000
+# C0/C1 controls and Unicode line/paragraph separators: a decoded %0A in the path would otherwise
+# start a forged line ("Request: DELETE ...") in the SIEM description.
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f  ]+")
+
+
+def _one_line(value: Any, limit: int = 300) -> str:
+    return _CONTROL.sub(" ", str(value))[:limit]
 
 _DONE = {
     "CREATE": "created a record in",
@@ -207,7 +223,7 @@ def _tokens_of(path: str) -> list:
 
 
 def _module_name(path: str) -> str:
-    segments = [s for s in path.split("/") if s]
+    segments = [s for s in _one_line(path, 1000).split("/") if s]
     segment = next((s for s in segments if s.lower() not in _PREFIX_SEGMENTS), "Home")
     spaced = re.sub(r"([a-z])([A-Z])", r"\1 \2", segment)
     words = [w[:1].upper() + w[1:] for w in re.split(r"[-_\s]+", spaced) if w]
@@ -271,6 +287,8 @@ class ActivityLogMiddleware:
         self._recent: Dict[str, float] = {}
         self._last_error_at = 0.0
         self._tasks: set = set()
+        self._anon_window = (0.0, 0)  # (window start, rows written in it) for _ANON_ROWS_PER_MINUTE
+        self._last_drop_at = 0.0
         # Whether Targets has an ipAddress column (UB schema yes, ADIB no); read on the first insert.
         self._has_ip_column: Optional[bool] = None
 
@@ -325,8 +343,8 @@ class ActivityLogMiddleware:
         if not isinstance(user, dict):
             user = {}
         user_id = user.get("id") or None
-        # Who a refused token names. Only ever quoted in the description, never stored as userId:
-        # a refused request may carry a forged token.
+        # Who a refused token names: only a token signed with our secret (an expired session), and
+        # only quoted in the description, never stored as userId.
         tokens_sent = [] if user_id else self._candidate_tokens(scope)
         claimed = None if user_id else self._claimed_token_user(tokens_sent)
         # A failed read that carried no token at all names nobody and touched nothing — a tab left
@@ -337,6 +355,8 @@ class ActivityLogMiddleware:
         ip = self._client_ip(scope)
         caller = user_id or (claimed or {}).get("id") or ip
         if ((failed and is_read) or status == 429) and self._throttled(f"{caller}|{method}|{path}|{status}"):
+            return
+        if not user_id and not self._anon_allowed():
             return
 
         if status == 401:
@@ -358,24 +378,30 @@ class ActivityLogMiddleware:
 
         module = _module_name(path)
         who = user.get("name") or user.get("username")
+        who = _one_line(who, 200) if who else None
         # A 5xx message is technical (it can be the raw database error): the row says "server error".
         error = _message_of(body) if failed and body and status < 500 else None
+        error = _one_line(error, 500) if error else None
         lines = [_describe(who, action, method, module, failed, status, error)]
         role = user.get("groupName")
         if role:
-            lines.append(f"Role: {role}")
-        if claimed and claimed["signature_valid"]:
-            name = claimed.get("name")
-            lines.append(f"Expired session of {name} ({claimed['id']})" if name else f"Expired session of {claimed['id']}")
-        elif claimed:
-            lines.append(f"Token claimed user {claimed['id']} (not verified)")
-        lines.append(f"Request: {method} {path[:300]} -> {status}")
+            lines.append(f"Role: {_one_line(role, 200)}")
+        if claimed:
+            uid, name = _one_line(claimed["id"], 100), claimed.get("name")
+            lines.append(f"Expired session of {_one_line(name, 200)} ({uid})" if name else f"Expired session of {uid}")
+        lines.append(f"Request: {_one_line(method, 10)} {_one_line(path)} -> {status}")
         ref = _UUID.search(path)
 
         row = (
             str(user_id) if user_id else None, action, "Failure" if failed else "Success", module,
-            clean_log_text("\n".join(lines)), ref.group(0) if ref else None,
+            clean_log_text("\n".join(lines))[:_MAX_DESCRIPTION], ref.group(0) if ref else None,
         )
+        if len(self._tasks) >= _MAX_PENDING:
+            now = time.monotonic()
+            if now - self._last_drop_at >= 60:
+                self._last_drop_at = now
+                logger.warning("[ActivityLog] %d inserts pending; dropping SIEM rows", len(self._tasks))
+            return
         try:
             task = asyncio.get_running_loop().create_task(asyncio.to_thread(self._insert, row, ip))
         except RuntimeError:
@@ -438,30 +464,34 @@ class ActivityLogMiddleware:
 
     @staticmethod
     def _claimed_token_user(tokens: list) -> Optional[Dict[str, Any]]:
-        """The user a refused token names: signature_valid when one was signed with our secret (an
-        expired session), otherwise a forged or garbled token whose id is only a claim."""
+        """The user a refused token names, only when it was signed with our secret (an expired
+        session). A forged or garbled token names nobody: its id is only a claim."""
         try:
             from utils.auth import JWT_ALGORITHM, JWT_SECRET
         except Exception:
-            JWT_ALGORITHM, JWT_SECRET = "HS256", ""
-        if JWT_SECRET:
-            for raw in tokens:
-                try:
-                    payload = jwt.decode(raw, JWT_SECRET, algorithms=[JWT_ALGORITHM], options={"verify_exp": False})
-                except Exception:
-                    continue
-                uid = payload.get("id") or payload.get("sub")
-                if isinstance(uid, str) and uid:
-                    return {"id": uid, "name": payload.get("name") or payload.get("username"), "signature_valid": True}
+            return None
+        if not JWT_SECRET:
+            return None
         for raw in tokens:
             try:
-                payload = jwt.decode(raw, options={"verify_signature": False})
+                payload = jwt.decode(raw, JWT_SECRET, algorithms=[JWT_ALGORITHM], options={"verify_exp": False})
             except Exception:
                 continue
             uid = payload.get("id") or payload.get("sub") if isinstance(payload, dict) else None
             if isinstance(uid, str) and uid:
-                return {"id": uid[:100], "signature_valid": False}
+                return {"id": uid, "name": payload.get("name") or payload.get("username")}
         return None
+
+    def _anon_allowed(self) -> bool:
+        """At most _ANON_ROWS_PER_MINUTE rows a minute for requests without a verified user."""
+        now = time.monotonic()
+        start, count = self._anon_window
+        if now - start >= 60:
+            start, count = now, 0
+        if count >= _ANON_ROWS_PER_MINUTE:
+            return False
+        self._anon_window = (start, count + 1)
+        return True
 
     @staticmethod
     def _client_ip(scope) -> Optional[str]:
@@ -472,7 +502,10 @@ class ActivityLogMiddleware:
         except Exception:
             client = scope.get("client")
             ip = client[0] if client else None
-        return ip.replace("::ffff:", "") if ip else None
+        # get_client_ip may return an X-Forwarded-For hop: request text, so one line and capped.
+        if not ip:
+            return None
+        return _one_line(ip.replace("::ffff:", ""), 64).strip() or None
 
     def _throttled(self, key: str) -> bool:
         now = time.monotonic()

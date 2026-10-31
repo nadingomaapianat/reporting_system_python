@@ -14,7 +14,7 @@ Both columns are required: `isSessionActive` can be left stale-true when a JWT m
 but `currentToken` is always nulled on a real logout, so the reliable test is
 `isSessionActive = 1 AND currentToken IS NOT NULL`.
 
-Read-only here. Fail-open on DB error (a transient outage must not lock everyone out),
+Read-only here. Fail-closed on DB error (a session that cannot be checked is refused),
 consistent with token_blocklist.is_token_blocked.
 """
 from __future__ import annotations
@@ -33,7 +33,7 @@ _cache: dict[str, tuple[bool, float]] = {}
 
 
 def is_user_session_active(user_id: Optional[str]) -> bool:
-    """True if the user's main-app session is still active. Fail-open on DB error."""
+    """True if the user's main-app session is still active. Fail-closed (False) on DB error."""
     if not user_id or not str(user_id).strip():
         return False
     uid = str(user_id).strip()

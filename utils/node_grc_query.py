@@ -12,9 +12,10 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 # YYYY-MM-DD, optionally with a time and zone (same rule as reporting Node's DateParamsMiddleware).
-# The allowed characters can never close a SQL string literal.
+# The allowed characters can never close a SQL string literal. [0-9], not \d: \d also matches
+# Arabic-Indic and other Unicode digits, which SQL Server cannot read as a date.
 _ISO_DATE_VALUE = re.compile(
-    r"\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,7})?)?(?:Z|[+-]\d{2}:?\d{2})?)?"
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}(?:[ T][0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:\.[0-9]{1,7})?)?(?:Z|[+-][0-9]{2}:?[0-9]{2})?)?"
 )
 
 

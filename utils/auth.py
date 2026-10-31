@@ -36,6 +36,11 @@ REPORTING_NODE_TOKEN_LEGACY = "reporting_node_token"  # current single cookie
 REPORTING_NODE_TOKEN_PREFIX = "reporting_node_token"  # split chunks: _1, _2, …
 IFRAME_COOKIE_PREFIX = "iframe_d_c_c_t_p"
 MAIN_COOKIE_PREFIX = "d_c_c_t_p"
+# Every cookie candidate_jwt_strings reads (name or name prefix). utils/csrf.py demands a CSRF
+# token on export GETs that carry any of them; keep the two in step by adding new cookies here.
+AUTH_COOKIE_PREFIXES: Tuple[str, ...] = (
+    REPORTING_NODE_TOKEN_PREFIX, REPORTING_AUTH_COOKIE_NAME, IFRAME_COOKIE_PREFIX, MAIN_COOKIE_PREFIX,
+)
 
 # Maximum number of split-cookie parts to attempt to reconstruct (matches Node).
 _MAX_SPLIT_PARTS = 64
@@ -46,11 +51,13 @@ _ALLOW_QUERY_TOKEN_GET = os.getenv("REPORTING_ALLOW_QUERY_TOKEN_AUTH", "false").
     "true", "1", "yes",
 )
 
-# Public paths: allowed without a JWT. Extended for debug below.
+# Public paths: allowed without a JWT. Extended for debug below. Exact paths only (a trailing
+# slash is ignored): a prefix match also let /healthz-x or /api/auth/logout-all skip the JWT.
 PUBLIC_PATHS: List[str] = [
     "/csrf/token",
     "/api/auth/logout",
     "/docs",
+    "/docs/oauth2-redirect",  # Swagger UI page, served only when the docs are on
     "/redoc",
     "/openapi.json",
     "/health",
@@ -326,7 +333,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
 
         log_incoming_auth_headers(request)
 
-        if any(request.url.path.startswith(path) for path in PUBLIC_PATHS):
+        if (request.url.path.rstrip("/") or "/") in PUBLIC_PATHS:
             return await call_next(request)
 
         token_str, payload = resolve_jwt_token_and_payload(request)

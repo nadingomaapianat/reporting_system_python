@@ -18,6 +18,17 @@ try:
     load_dotenv("environment.env")
 except ImportError:
     pass
+
+# CSRF tokens are signed with CSRF_SECRET only (no fallback to the JWT secret): refuse to start
+# without it rather than refuse every write later.
+try:
+    from utils.csrf import validate_csrf_secret
+
+    validate_csrf_secret()
+except RuntimeError as _csrf_err:
+    print(f"[startup] {_csrf_err}", file=sys.stderr)
+    sys.exit(1)
+
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -28,12 +39,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 print("DEBUG: main.py - About to import routers...")
 # Import directly from api_routes to avoid circular dependency via utils/__init__.py
 from utils import api_routes
-from utils.csrf import CSRFMiddleware, create_csrf_token, set_csrf_cookie
+from utils.csrf import CSRFMiddleware, create_csrf_token, csrf_user_id, set_csrf_cookie
 from utils.auth import JWTAuthMiddleware
 from utils.activity_log import ActivityLogMiddleware
 from utils.page_permissions import PagePermissionMiddleware
 from utils.security_middleware import DateParamsMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware
-from utils.error_sanitizer import sanitize_error_message, is_production
+from utils.error_sanitizer import GENERIC_ERROR_MESSAGE, sanitize_error_message, is_production
 api_router = api_routes.router
 print("DEBUG: main.py - All routers imported (consolidated in api_router)")
 
@@ -69,6 +80,7 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         logger.error("GLOBAL EXCEPTION: %s: %s", type(exc).__name__, exc, exc_info=True)
+        # Production: a fixed message (WAPT09); the detail is only in the log above.
         safe_message = sanitize_error_message(str(exc), is_production())
         return JSONResponse(
             status_code=500,
@@ -82,7 +94,7 @@ def create_app() -> FastAPI:
         detail = exc.detail
         if exc.status_code >= 500 and is_production():
             logger.error("HTTP %s on %s: %s", exc.status_code, request.url.path, exc.detail)
-            detail = "An error occurred while processing your request. Please try again later."
+            detail = GENERIC_ERROR_MESSAGE
         return JSONResponse(status_code=exc.status_code, content={"detail": detail}, headers=getattr(exc, "headers", None))
 
     @app.middleware("http")
@@ -171,8 +183,9 @@ def create_app() -> FastAPI:
     app.include_router(api_router)
 
     @app.get("/csrf/token")
-    async def get_csrf_token(response: Response):
-        token = create_csrf_token()
+    async def get_csrf_token(request: Request, response: Response):
+        # Bound to the user whose login cookie / Bearer came with this request (unbound if none).
+        token = create_csrf_token(csrf_user_id(request))
         set_csrf_cookie(response, token, secure=csrf_cookie_secure)
         return {"csrfToken": token}
 

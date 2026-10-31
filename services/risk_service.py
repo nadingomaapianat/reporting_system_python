@@ -569,7 +569,7 @@ class RiskService:
         params = []
         if start_date and end_date:
             import re
-            if re.match(r"^\d{4}-\d{2}-\d{2}", str(start_date).strip()) and re.match(r"^\d{4}-\d{2}-\d{2}", str(end_date).strip()):
+            if re.match(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}", str(start_date).strip()) and re.match(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}", str(end_date).strip()):
                 start = str(start_date).strip()[:10]
                 end = str(end_date).strip()[:10]
                 residual_date_filter = " AND rr.createdAt >= %s AND rr.createdAt <= %s"
